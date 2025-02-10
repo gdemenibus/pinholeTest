@@ -1,184 +1,119 @@
-use glium::{glutin::surface::WindowSurface, winit::{application::ApplicationHandler, event_loop::EventLoop, window::Window}, Display, DrawParameters};
+use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event_loop::EventLoop, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
+use crate::{shader, vertex::Vertex, vertex};
+use glium::Surface;
+use glium::winit::event::WindowEvent;
 
-use std::num::NonZeroU32;
-use glium::Display;
-use glutin::prelude::*;
-use glutin::display::GetGlDisplay;
-use glutin::surface::WindowSurface;
-use raw_window_handle::HasWindowHandle;
-use winit::event_loop::ActiveEventLoop;
-use winit::event::WindowEvent;
-use winit::window::WindowId;
-use winit::application::ApplicationHandler;
-use crate::camera::CameraState;
 
-pub trait ApplicationContext {
-    fn draw_frame(&mut self, _display: &Display<WindowSurface>) { }
-    fn new(display: &Display<WindowSurface>) -> Self;
-    fn update(&mut self) { }
-    fn handle_window_event(&mut self, _event: &glium::winit::event::WindowEvent, _window: &glium::winit::window::Window) { }
-    const WINDOW_TITLE:&'static str;
+use crate::{camera::CameraState, texture};
+
+// Deal with applicaiton State
+// RN, only does 
+pub struct App<'a> {
+    window: Option<Window>,
+    display: Display<WindowSurface>,
+    t: f32,
+    texture: Texture2d,
+    camera: CameraState,
+    vertex_buffer: VertexBuffer<Vertex>,
+    // TODO: This might not work for complex shapes!
+    indices: NoIndices,
+    program: Program,
+    draw_params: glium::DrawParameters<'a>,
+
+}
+impl App<'_> {
+    pub fn new<'a>(window: Option<Window>, display: Display<WindowSurface>) -> App<'a> {
+
+
+        let shape = vertex::debug_triangle();
+        let vertex_buffer = glium::VertexBuffer::new(&display, &shape).unwrap();
+        let vertex_shader = shader::load_shader("./shaders/vertex.glsl");
+        let fragment_shader = shader::load_shader("./shaders/fragment.glsl");
+
+        let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), &display);
+        let camera = CameraState::new();
+
+        let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
+        let program = glium::Program::from_source(&display, &vertex_shader, &fragment_shader, None).unwrap();
+
+        let draw_params = glium::DrawParameters {
+            depth: glium::Depth {
+                test: glium::draw_parameters::DepthTest::IfLess,
+                write: true,
+                .. Default::default()
+            },
+            backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
+            .. Default::default()
+        };
+
+        App{window, display, t: 0.0, texture, camera,  vertex_buffer, indices, program, draw_params}
+}
 }
 
-pub struct State<T> {
-    pub display: glium::Display<WindowSurface>,
-    pub window: glium::winit::window::Window,
-    pub context: T,
-}
+impl ApplicationHandler for App<'_> {
 
-struct App<T> {
-    state: Option<State<T>>,
-    visible: bool,
-    close_promptly: bool,
-}
-
-impl<T: ApplicationContext + 'static> ApplicationHandler<()> for App<T> {
-    // The resumed/suspended handlers are mostly for Android compatiblity since the context can get lost there at any point.
-    // For convenience's sake, the resumed handler is also called on other platforms on program startup.
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.state = Some(State::new(event_loop, self.visible));
-        if !self.visible && self.close_promptly {
-            event_loop.exit();
-        }
+    // Exists for android. also called on start up
+    fn resumed(&mut self, event_loop: &glium::winit::event_loop::ActiveEventLoop) {
+        //self.window = Some(event_loop.create_window(Window::default_attributes()).unwrap());
     }
-    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        self.state = None;
-    }
 
-    fn window_event(&mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
+    fn window_event(
+        &mut self,
+        event_loop: &glium::winit::event_loop::ActiveEventLoop,
+        window_id: glium::winit::window::WindowId,
+        event: glium::winit::event::WindowEvent,
     ) {
         match event {
-            glium::winit::event::WindowEvent::Resized(new_size) => {
-                if let Some(state) = &self.state {
-                    state.display.resize(new_size.into());
-                }
+            WindowEvent::CloseRequested => {
+                println!("The close button was pressed; stopping");
+                event_loop.exit();
             },
-            glium::winit::event::WindowEvent::RedrawRequested => {
-                if let Some(state) = &mut self.state {
-                    state.context.update();
-                    state.context.draw_frame(&state.display);
-                    if self.close_promptly {
-                        event_loop.exit();
-                    }
-                }
-            },
-            // Exit the event loop when requested (by closing the window for example) or when
-            // pressing the Esc key.
-            glium::winit::event::WindowEvent::CloseRequested
-            | glium::winit::event::WindowEvent::KeyboardInput { event: glium::winit::event::KeyEvent {
-                state: glium::winit::event::ElementState::Pressed,
-                logical_key: glium::winit::keyboard::Key::Named(glium::winit::keyboard::NamedKey::Escape),
-                ..
-            }, ..} => {
-                event_loop.exit()
-            },
-            // Every other event
-            ev => {
-                if let Some(state) = &mut self.state {
-                    state.context.handle_window_event(&ev, &state.window);
-                }
-            },
+            WindowEvent::Resized(window_size) => {
+                    self.display.resize(window_size.into());
+            }
+
+            WindowEvent::RedrawRequested => {
+                // Redraw the application.
+                //
+                // It's preferable for applications that do not render continuously to render in
+                // this event rather than in AboutToWait, since rendering in here allows
+                // the program to gracefully handle redraws requested by the OS.
+
+                // Draw.
+                
+                self.t += 0.02;
+                let matrix = [
+                    [ self.t.cos(), self.t.sin(), 0.0, 0.0],
+                    [-self.t.sin(), self.t.cos(), 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0f32],
+                ];
+                let mut frame = self.display.draw();
+                frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
+
+
+                let uniforms = uniform! {
+                    matrix: matrix,
+                    tex: &self.texture,
+                    perspective: self.camera.get_perspective(),
+                    view: self.camera.get_view(),
+
+                };
+
+                frame.draw(&self.vertex_buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
+
+                frame.finish().unwrap();
+                self.camera.update();
+
+                // Queue a RedrawRequested event.
+                //
+                // You only need to call this if you've determined that you need to redraw in
+                // applications which do not always need to. Applications that redraw continuously
+                // can render here instead.
+                self.window.as_ref().unwrap().request_redraw();
+            }
+            
+            _ => self.camera.process_input(&event),
         }
-    }
-
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(state) = &self.state {
-            state.window.request_redraw();
-        }
-    }
-}
-
-impl<T: ApplicationContext + 'static> State<T> {
-    pub fn new(
-        event_loop: &glium::winit::event_loop::ActiveEventLoop,
-        visible: bool,
-    ) -> Self {
-        let window_attributes = winit::window::Window::default_attributes()
-            .with_title(T::WINDOW_TITLE).with_visible(visible);
-        let config_template_builder = glutin::config::ConfigTemplateBuilder::new();
-        let display_builder = glutin_winit::DisplayBuilder::new().with_window_attributes(Some(window_attributes));
-
-        // First we create a window
-        let (window, gl_config) = display_builder
-            .build(event_loop, config_template_builder, |mut configs| {
-                // Just use the first configuration since we don't have any special preferences here
-                configs.next().unwrap()
-            })
-            .unwrap();
-        let window = window.unwrap();
-
-        // Then the configuration which decides which OpenGL version we'll end up using, here we just use the default which is currently 3.3 core
-        // When this fails we'll try and create an ES context, this is mainly used on mobile devices or various ARM SBC's
-        // If you depend on features available in modern OpenGL Versions you need to request a specific, modern, version. Otherwise things will very likely fail.
-        let window_handle = window.window_handle().expect("couldn't obtain window handle");
-        let context_attributes = glutin::context::ContextAttributesBuilder::new().build(Some(window_handle.into()));
-        let fallback_context_attributes = glutin::context::ContextAttributesBuilder::new()
-            .with_context_api(glutin::context::ContextApi::Gles(None))
-            .build(Some(window_handle.into()));
-
-        let not_current_gl_context = Some(unsafe {
-            gl_config.display().create_context(&gl_config, &context_attributes).unwrap_or_else(|_| {
-                gl_config.display()
-                    .create_context(&gl_config, &fallback_context_attributes)
-                    .expect("failed to create context")
-            })
-        });
-
-        // Determine our framebuffer size based on the window size, or default to 800x600 if it's invisible
-        let (width, height): (u32, u32) = if visible { window.inner_size().into() } else { (800, 600) };
-        let attrs = glutin::surface::SurfaceAttributesBuilder::<WindowSurface>::new().build(
-            window_handle.into(),
-            NonZeroU32::new(width).unwrap(),
-            NonZeroU32::new(height).unwrap(),
-        );
-        // Now we can create our surface, use it to make our context current and finally create our display
-        let surface = unsafe { gl_config.display().create_window_surface(&gl_config, &attrs).unwrap() };
-        let current_context = not_current_gl_context.unwrap().make_current(&surface).unwrap();
-        let display = glium::Display::from_context_surface(current_context, surface).unwrap();
-
-        Self::from_display_window(display, window)
-    }
-
-    pub fn from_display_window(
-        display: glium::Display<WindowSurface>,
-        window: glium::winit::window::Window,
-    ) -> Self {
-        let context = T::new(&display);
-        Self {
-            display,
-            window,
-            context,
-        }
-    }
-
-    /// Start the event_loop and keep rendering frames until the program is closed
-    pub fn run_loop() {
-        let event_loop = glium::winit::event_loop::EventLoop::builder()
-            .build()
-            .expect("event loop building");
-        let mut app = App::<T> {
-            state: None,
-            visible: true,
-            close_promptly: false,
-        };
-        let result = event_loop.run_app(&mut app);
-        result.unwrap();
-    }
-
-    /// Create a context and draw a single frame
-    pub fn run_once(visible: bool) {
-        let event_loop = glium::winit::event_loop::EventLoop::builder()
-            .build()
-            .expect("event loop building");
-        let mut app = App::<T> {
-            state: None,
-            visible,
-            close_promptly: true,
-        };
-        let result = event_loop.run_app(&mut app);
-        result.unwrap();
     }
 }
