@@ -5,10 +5,9 @@ mod shader;
 mod matrix;
 mod texture;
 mod camera;
+use camera::CameraState;
 use glium::Surface;
-use matrix::view_matrix;
 
-#[allow(deprecated)]
 fn main() {
     // Event loop handles windows and device events
     // Make a window builder 
@@ -29,6 +28,8 @@ fn main() {
     let program = glium::Program::from_source(&display, &vertex_shader, &fragment_shader, None).unwrap();
 
 
+    // Create our camera
+    let mut camera = CameraState::new();
 
 
 
@@ -69,50 +70,26 @@ fn main() {
                 },
             glium::winit::event::WindowEvent::RedrawRequested => {
 
-                let view = view_matrix(&[2.0, -1.0, 1.0], &[-2.0, 1.0, 1.0], &[0.0, 1.0, 0.0]);                let mut frame = display.draw();
+                t += 0.02;
+                let mut frame = display.draw();
                 frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
 
-                let perspective = {
-                    let (width, height) = frame.get_dimensions();
-                    let aspect_ratio = height as f32 / width as f32;
-
-                    let fov: f32 = 3.141592 / 3.0;
-                    let zfar = 1024.0;
-                    let znear = 0.1;
-
-                    let f = 1.0 / (fov / 2.0).tan();
-
-                    [
-                        [f *   aspect_ratio   ,    0.0,              0.0              ,   0.0],
-                        [         0.0         ,     f ,              0.0              ,   0.0],
-                        [         0.0         ,    0.0,  (zfar+znear)/(zfar-znear)    ,   1.0],
-                        [         0.0         ,    0.0, -(2.0*zfar*znear)/(zfar-znear),   0.0],
-                    ]
-                };
 
                 let uniforms = uniform! {
                     matrix: matrix,
                     tex: &texture,
-                    perspective: perspective,
-                    view: view,
+                    perspective: camera.get_perspective(),
+                    view: camera.get_view(),
 
                 };
 
-                frame.draw(&vertex_buffer, indices, &program, &glium::uniforms::EmptyUniforms,
-                            &Default::default()).unwrap();
+                frame.draw(&vertex_buffer, indices, &program, &uniforms,&params).unwrap();
 
                 frame.finish().unwrap();
-                // We update `t`
-                t += 0.02;
-                    // We use the sine of t as an offset, this way we get a nice smooth animation
-                let x_off = t.sin() * 0.5;
 
-                let mut target = display.draw();
-                target.clear_color(0.0, 0.0, 1.0, 1.0);
-                target.draw(&vertex_buffer, &indices, &program, &uniforms,&params).unwrap();
-                target.finish().unwrap();
+                camera.update();
             },
-                _ => (),
+                _ => camera.process_input(&event),
             },
             glium::winit::event::Event::AboutToWait => {
                 window.request_redraw();
