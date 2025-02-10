@@ -6,6 +6,12 @@ pub trait ToArr {
     fn to_arr(&self) -> Self::Output;
 }
 
+pub trait FromArr {
+    type Input;
+    fn from_arr(array: Self::Input) -> Self;
+
+}
+
 impl<T: BaseNum> ToArr for Matrix4<T> {
     type Output = [[T; 4]; 4];
     fn to_arr(&self) -> Self::Output {

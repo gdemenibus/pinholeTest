@@ -1,5 +1,6 @@
-use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event_loop::EventLoop, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
-use crate::{shader, vertex::Vertex, vertex};
+use cgmath::{Matrix4, SquareMatrix};
+use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
+use crate::{matrix::ToArr, shader, vertex::{self, floor, Vertex}};
 use glium::Surface;
 use glium::winit::event::WindowEvent;
 
@@ -11,14 +12,14 @@ use crate::{camera::CameraState, texture};
 pub struct App<'a> {
     window: Option<Window>,
     display: Display<WindowSurface>,
-    t: f32,
+    _t: f32,
     texture: Texture2d,
     camera: CameraState,
-    vertex_buffer: VertexBuffer<Vertex>,
+    vertex_buffer: Vec<VertexBuffer<Vertex>>,
     // TODO: This might not work for complex shapes!
     indices: NoIndices,
     program: Program,
-    draw_params: glium::DrawParameters<'a>,
+    draw_params: DrawParameters<'a>,
 
 }
 impl App<'_> {
@@ -26,7 +27,8 @@ impl App<'_> {
 
 
         let shape = vertex::debug_triangle();
-        let vertex_buffer = glium::VertexBuffer::new(&display, &shape).unwrap();
+        let vertex_buffer = vec![glium::VertexBuffer::new(&display, &shape).unwrap()];
+
         let vertex_shader = shader::load_shader("./shaders/vertex.glsl");
         let fragment_shader = shader::load_shader("./shaders/fragment.glsl");
 
@@ -42,21 +44,61 @@ impl App<'_> {
                 write: true,
                 .. Default::default()
             },
-            backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
+            //backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
             .. Default::default()
         };
 
-        App{window, display, t: 0.0, texture, camera,  vertex_buffer, indices, program, draw_params}
-}
+        App{window, display, _t: 0.0, texture, camera,  vertex_buffer, indices, program, draw_params}
+    }
+    pub fn draw_debug(&mut self) {
+
+        let test: Matrix4<f32> = cgmath::Matrix4::identity();
+        let matrix = test.to_arr();
+
+        let mut frame = self.display.draw();
+        frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
+
+
+        let uniforms = uniform! {
+            matrix: matrix,
+            tex: &self.texture,
+            perspective: self.camera.get_perspective(),
+            view: self.camera.get_view(),
+
+        };
+        for buffer in self.vertex_buffer.iter() {
+            //frame.draw(buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
+        }
+        // Testing out the floor before doing anything wacky with it
+        let shape = floor();
+
+        let matrix = shape.model_matrix;
+        let uniforms = uniform!{
+
+            matrix: matrix.to_arr(),
+            tex: &self.texture,
+            perspective: self.camera.get_perspective(),
+            view: self.camera.get_view(),
+        };
+        let buffer = glium::VertexBuffer::new(&self.display, &shape.vertex_buffer).unwrap();
+
+        frame.draw(&buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
+        frame.finish().unwrap();
+        self.camera.update();
+
+    }
+
 }
 
 impl ApplicationHandler for App<'_> {
 
     // Exists for android. also called on start up
+    #[allow(unused_variables)]
     fn resumed(&mut self, event_loop: &glium::winit::event_loop::ActiveEventLoop) {
         //self.window = Some(event_loop.create_window(Window::default_attributes()).unwrap());
     }
 
+    #[allow(unused_variables)]
     fn window_event(
         &mut self,
         event_loop: &glium::winit::event_loop::ActiveEventLoop,
@@ -69,7 +111,7 @@ impl ApplicationHandler for App<'_> {
                 event_loop.exit();
             },
             WindowEvent::Resized(window_size) => {
-                    self.display.resize(window_size.into());
+                self.display.resize(window_size.into());
             }
 
             WindowEvent::RedrawRequested => {
@@ -80,30 +122,8 @@ impl ApplicationHandler for App<'_> {
                 // the program to gracefully handle redraws requested by the OS.
 
                 // Draw.
-                
-                self.t += 0.02;
-                let matrix = [
-                    [ self.t.cos(), self.t.sin(), 0.0, 0.0],
-                    [-self.t.sin(), self.t.cos(), 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0f32],
-                ];
-                let mut frame = self.display.draw();
-                frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
+                self.draw_debug();
 
-
-                let uniforms = uniform! {
-                    matrix: matrix,
-                    tex: &self.texture,
-                    perspective: self.camera.get_perspective(),
-                    view: self.camera.get_view(),
-
-                };
-
-                frame.draw(&self.vertex_buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
-
-                frame.finish().unwrap();
-                self.camera.update();
 
                 // Queue a RedrawRequested event.
                 //
@@ -112,7 +132,7 @@ impl ApplicationHandler for App<'_> {
                 // can render here instead.
                 self.window.as_ref().unwrap().request_redraw();
             }
-            
+
             _ => self.camera.process_input(&event),
         }
     }
