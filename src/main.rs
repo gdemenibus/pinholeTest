@@ -7,9 +7,6 @@ mod texture;
 mod camera;
 mod app;
 use app::App;
-use camera::CameraState;
-use glium::Surface;
-use egui_glium::egui_winit;
 use egui_glium::egui_winit::egui;
 
 fn main() {

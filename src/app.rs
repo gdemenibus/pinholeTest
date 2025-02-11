@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use cgmath::{Matrix4, SquareMatrix, Vector3};
 use egui_glium::egui_winit::egui;
 use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
@@ -6,16 +8,18 @@ use glium::Surface;
 use glium::winit::event::WindowEvent;
 
 
-use crate::{camera::CameraState, texture};
+use crate::{camera::{Camera, CameraController, Projection}, texture};
 
 // Deal with application State
 // RN, only does 
 pub struct App<'a> {
     window: Window,
     display: Display<WindowSurface>,
-    _t: f32,
+    last_step: Instant,
     texture: Texture2d,
-    camera: CameraState,
+    camera: Camera,
+    controller: CameraController,
+    projection: Projection,
     vertex_buffer: Vec<VertexBuffer<Vertex>>,
     // TODO: This might not work for complex shapes!
     indices: NoIndices,
@@ -41,7 +45,10 @@ impl App<'_> {
         let fragment_shader = shader::load_shader("./shaders/fragment.glsl");
 
         let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), &display);
-        let camera = CameraState::new();
+
+        let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let projection = Projection::new(window.inner_size().width, window.inner_size().height, cgmath::Deg(45.0), 0.1, 100.0);
+        let controller = CameraController::new(4.0, 0.4);
 
         let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
         let program = glium::Program::from_source(&display, &vertex_shader, &fragment_shader, None).unwrap();
@@ -56,8 +63,9 @@ impl App<'_> {
             .. Default::default()
         };
         let selected_quad = QuadUISelect::A;
+        let last_step = Instant::now();
 
-        App{window, display, _t: 0.0, texture, camera,  vertex_buffer, indices, program, draw_params, ui, selected_quad, transform_z: 0.0}
+        App{window, display, last_step, texture, camera, projection, controller,  vertex_buffer, indices, program, draw_params, ui, selected_quad, transform_z: 0.0}
     }
     pub fn draw_debug(&mut self) {
 
@@ -71,8 +79,8 @@ impl App<'_> {
         let uniforms = uniform! {
             matrix: matrix,
             tex: &self.texture,
-            perspective: self.camera.get_perspective(),
-            view: self.camera.get_view(),
+            perspective: self.projection.calc_matrix().to_arr(),
+            view: self.camera.calc_matrix().to_arr(),
 
         };
         for buffer in self.vertex_buffer.iter() {
@@ -89,8 +97,8 @@ impl App<'_> {
 
             matrix: matrix.to_arr(),
             tex: &self.texture,
-            perspective: self.camera.get_perspective(),
-            view: self.camera.get_view(),
+            perspective: self.projection.calc_matrix().to_arr(),
+            view: self.camera.calc_matrix().to_arr(),
         };
         let buffer = glium::VertexBuffer::new(&self.display, &shape.vertex_buffer).unwrap();
 
@@ -99,7 +107,13 @@ impl App<'_> {
         // Paint the UI 
         self.ui.paint(&self.display, &mut frame);
         frame.finish().unwrap();
-        self.camera.update();
+        // How long has passed?
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_step);
+        self.last_step = now;
+        // Update camera
+        self.controller.update_camera(&mut self.camera, dt);
+        
 
     }
     pub fn define_ui(&mut self) {
@@ -143,7 +157,7 @@ impl ApplicationHandler for App<'_> {
                 event_loop.exit();
             },
             WindowEvent::Resized(window_size) => {
-                self.camera.resize(window_size.height, window_size.width);
+                self.projection.resize(window_size.width, window_size.height);
                 self.display.resize(window_size.into());
                 
 
@@ -171,9 +185,11 @@ impl ApplicationHandler for App<'_> {
                 // can render here instead.
                 self.window.request_redraw();
             }
-            WindowEvent::MouseInput { device_id, state, button } => {()}
+            WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+                self.controller.process_keyboard(event);
+            }
 
-            _ => self.camera.process_input(&event),
+            _ => {}
         }
     }
 }
