@@ -27,18 +27,14 @@ fn main() {
     //let mut egui_state = egui_winit::State::new(context, viewport, &window, None, None, None);
 
     //let input = egui_state.take_egui_input(&window);
-    let mut egui_render = egui_glium::EguiGlium::new(viewport, &display, &window, &event_loop);
-
-    egui_render.run(&window, |ctx| {
-        egui::Window::new("Hello World").show(ctx, |ui|{
-            ui.label("Hello Wold!");
-        } );
-    });
+    let egui_render = egui_glium::EguiGlium::new(viewport, &display, &window, &event_loop);
 
 
 
 
-    let mut app = App::new(Some(window), display, egui_render);
+
+    let mut app = App::new(window, display, egui_render);
+    app.define_ui();
     let _ = event_loop.run_app(&mut app);
     
 

@@ -1,4 +1,4 @@
-use cgmath::{Matrix4, SquareMatrix};
+use cgmath::{Matrix4, SquareMatrix, Vector3};
 use egui_glium::egui_winit::egui;
 use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
 use crate::{matrix::ToArr, shader, vertex::{self, floor, Vertex}};
@@ -11,7 +11,7 @@ use crate::{camera::CameraState, texture};
 // Deal with application State
 // RN, only does 
 pub struct App<'a> {
-    window: Option<Window>,
+    window: Window,
     display: Display<WindowSurface>,
     _t: f32,
     texture: Texture2d,
@@ -22,10 +22,16 @@ pub struct App<'a> {
     program: Program,
     draw_params: DrawParameters<'a>,
     ui: egui_glium::EguiGlium,
+    selected_quad: QuadUISelect,
+    transform_z: f32,
 
 }
+
+#[derive(PartialEq)]
+enum QuadUISelect { A, B, F }
+
 impl App<'_> {
-    pub fn new<'a>(window: Option<Window>, display: Display<WindowSurface>, ui: egui_glium::EguiGlium) -> App<'a> {
+    pub fn new<'a>(window: Window, display: Display<WindowSurface>, ui: egui_glium::EguiGlium) -> App<'a> {
 
 
         let shape = vertex::debug_triangle();
@@ -49,8 +55,9 @@ impl App<'_> {
             //backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
             .. Default::default()
         };
+        let selected_quad = QuadUISelect::A;
 
-        App{window, display, _t: 0.0, texture, camera,  vertex_buffer, indices, program, draw_params, ui}
+        App{window, display, _t: 0.0, texture, camera,  vertex_buffer, indices, program, draw_params, ui, selected_quad, transform_z: 0.0}
     }
     pub fn draw_debug(&mut self) {
 
@@ -60,6 +67,7 @@ impl App<'_> {
         let mut frame = self.display.draw();
         frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
 
+        // Paint the UI 
         self.ui.paint(&self.display, &mut frame);
 
         let uniforms = uniform! {
@@ -75,7 +83,10 @@ impl App<'_> {
         // Testing out the floor before doing anything wacky with it
         let shape = floor();
 
-        let matrix = shape.model_matrix;
+        let mut matrix = shape.model_matrix;
+        matrix = matrix * Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, self.transform_z));
+        
+
         let uniforms = uniform!{
 
             matrix: matrix.to_arr(),
@@ -89,6 +100,20 @@ impl App<'_> {
         frame.finish().unwrap();
         self.camera.update();
 
+    }
+    pub fn define_ui(&mut self) {
+
+        let window = &self.window;
+        self.ui.run(window, |ctx| {
+            egui::Window::new("UI").show(ctx, |ui|{
+                ui.label("Select Object");
+                ui.radio_value(&mut self.selected_quad, QuadUISelect::A, "A");
+                ui.radio_value(&mut self.selected_quad, QuadUISelect::B, "B");
+                ui.radio_value(&mut self.selected_quad, QuadUISelect::F, "F");
+                ui.add(egui::Slider::new(&mut self.transform_z, -1.0..=1.0).text("Distance from next Layer (z transform)"))
+
+            } );
+        });
     }
 
 }
@@ -108,6 +133,9 @@ impl ApplicationHandler for App<'_> {
         window_id: glium::winit::window::WindowId,
         event: glium::winit::event::WindowEvent,
     ) {
+
+        let window = &self.window;
+        self.ui.on_event(window, &event);
         match event {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
@@ -124,25 +152,20 @@ impl ApplicationHandler for App<'_> {
                 // this event rather than in AboutToWait, since rendering in here allows
                 // the program to gracefully handle redraws requested by the OS.
 
-            
-                let window = self.window.as_ref();
-                self.ui.run(window.unwrap(), |ctx| {
-                    egui::Window::new("Hello World").show(ctx, |ui|{
-                        ui.label("Hello Wold!");
-                    } );
-                });
+
+                self.define_ui();
                 // Draw.
                 //
                 self.draw_debug();
 
-        
+
 
                 // Queue a RedrawRequested event.
                 //
                 // You only need to call this if you've determined that you need to redraw in
                 // applications which do not always need to. Applications that redraw continuously
                 // can render here instead.
-                self.window.as_ref().unwrap().request_redraw();
+                self.window.request_redraw();
             }
             WindowEvent::MouseInput { device_id, state, button } => {()}
 
