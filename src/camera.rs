@@ -9,6 +9,8 @@ pub struct CameraState {
     moving_right: bool,
     moving_forward: bool,
     moving_backward: bool,
+    rotate_horizontal: f32,
+    rotate_vertical: f32,
 }
 
 impl CameraState {
@@ -23,6 +25,8 @@ impl CameraState {
             moving_right: false,
             moving_forward: false,
             moving_backward: false,
+            rotate_horizontal: 0.0,
+            rotate_vertical: 0.0,
         }
     }
 
@@ -146,6 +150,8 @@ impl CameraState {
             self.position.1 -= f.1 * 0.01;
             self.position.2 -= f.2 * 0.01;
         }
+
+
     }
 
     pub fn process_input(&mut self, event: &glium::winit::event::WindowEvent) {
@@ -164,4 +170,8 @@ impl CameraState {
             _ => (),
         };
     }
+    pub fn process_mouse(&mut self, mouse_dx: f64, mouse_dy: f64) {
+            self.rotate_horizontal = mouse_dx as f32;
+            self.rotate_vertical = mouse_dy as f32;
+        }
 }
