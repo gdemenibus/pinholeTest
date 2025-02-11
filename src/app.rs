@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use cgmath::{Matrix4, SquareMatrix, Vector3};
 use egui_glium::egui_winit::egui;
-use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
+use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, MouseButton}, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
 use crate::{matrix::ToArr, shader, vertex::{self, floor, Vertex}};
 use glium::Surface;
 use glium::winit::event::WindowEvent;
@@ -28,6 +28,7 @@ pub struct App<'a> {
     ui: egui_glium::EguiGlium,
     selected_quad: QuadUISelect,
     transform_z: f32,
+    mouse_press: bool
 
 }
 
@@ -65,7 +66,7 @@ impl App<'_> {
         let selected_quad = QuadUISelect::A;
         let last_step = Instant::now();
 
-        App{window, display, last_step, texture, camera, projection, controller,  vertex_buffer, indices, program, draw_params, ui, selected_quad, transform_z: 0.0}
+        App{window, display, last_step, texture, camera, projection, controller,  vertex_buffer, indices, program, draw_params, ui, selected_quad, transform_z: 0.0, mouse_press: false}
     }
     pub fn draw_debug(&mut self) {
 
@@ -188,8 +189,26 @@ impl ApplicationHandler for App<'_> {
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                 self.controller.process_keyboard(event);
             }
+            WindowEvent::MouseInput { device_id, state, button: MouseButton::Left } => {
+                self.mouse_press = state == ElementState::Pressed
+            }
 
             _ => {}
         }
+    }
+
+    #[allow(unused_variables)]
+    fn device_event(
+            &mut self,
+            event_loop: &glium::winit::event_loop::ActiveEventLoop,
+            device_id: glium::winit::event::DeviceId,
+            event: glium::winit::event::DeviceEvent,
+        ) {
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if self.mouse_press{
+                self.controller.process_mouse(delta.0, delta.1);
+            }
+        }
+        
     }
 }
