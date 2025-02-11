@@ -1,3 +1,7 @@
+use cgmath::Rad;
+
+use crate::matrix::ToArr;
+
 pub struct CameraState {
     aspect_ratio: f32,
     position: (f32, f32, f32),
@@ -11,6 +15,7 @@ pub struct CameraState {
     moving_backward: bool,
     rotate_horizontal: f32,
     rotate_vertical: f32,
+    fov: cgmath::Rad<f32>,
 }
 
 impl CameraState {
@@ -27,7 +32,12 @@ impl CameraState {
             moving_backward: false,
             rotate_horizontal: 0.0,
             rotate_vertical: 0.0,
+            fov: Rad(std::f32::consts::FRAC_2_PI),
         }
+    }
+    pub fn resize(&mut self, h: u32, w: u32 ) {
+        self.aspect_ratio = w as f32 / h as f32;
+
     }
 
     pub fn set_position(&mut self, pos: (f32, f32, f32)) {
@@ -39,19 +49,12 @@ impl CameraState {
     }
 
     pub fn get_perspective(&self) -> [[f32; 4]; 4] {
-        let fov: f32 = 3.141592 / 2.0;
         let zfar = 1024.0;
         let znear = 0.1;
 
-        let f = 1.0 / (fov / 2.0).tan();
 
-        // note: remember that this is column-major, so the lines of code are actually columns
-        [
-            [f / self.aspect_ratio,    0.0,              0.0              ,   0.0],
-            [         0.0         ,     f ,              0.0              ,   0.0],
-            [         0.0         ,    0.0,  (zfar+znear)/(zfar-znear)    ,   1.0],
-            [         0.0         ,    0.0, -(2.0*zfar*znear)/(zfar-znear),   0.0],
-        ]
+        cgmath::perspective(self.fov, self.aspect_ratio, znear, zfar).to_arr()
+
     }
 
     pub fn get_view(&self) -> [[f32; 4]; 4] {

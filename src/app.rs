@@ -67,8 +67,6 @@ impl App<'_> {
         let mut frame = self.display.draw();
         frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
 
-        // Paint the UI 
-        self.ui.paint(&self.display, &mut frame);
 
         let uniforms = uniform! {
             matrix: matrix,
@@ -97,6 +95,9 @@ impl App<'_> {
         let buffer = glium::VertexBuffer::new(&self.display, &shape.vertex_buffer).unwrap();
 
         frame.draw(&buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
+
+        // Paint the UI 
+        self.ui.paint(&self.display, &mut frame);
         frame.finish().unwrap();
         self.camera.update();
 
@@ -135,14 +136,17 @@ impl ApplicationHandler for App<'_> {
     ) {
 
         let window = &self.window;
-        self.ui.on_event(window, &event);
+        let _ = self.ui.on_event(window, &event);
         match event {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
             },
             WindowEvent::Resized(window_size) => {
+                self.camera.resize(window_size.height, window_size.width);
                 self.display.resize(window_size.into());
+                
+
             }
 
             WindowEvent::RedrawRequested => {
