@@ -1,6 +1,6 @@
 use std::{ str::FromStr, time::Instant};
 
-use cgmath::{Matrix4, SquareMatrix, Vector3};
+use cgmath::{Matrix4, SquareMatrix, Vector3, Vector4};
 use egui_glium::egui_winit::egui::{self, Align2};
 use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, KeyEvent, MouseButton}, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
 use crate::{matrix::ToArr, shader, vertex::{self, a, b, f, floor, Shape, Vertex}};
@@ -67,7 +67,13 @@ impl App<'_> {
         frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
 
         for shape in self.shapes.iter() {
-            let matrix = Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, shape.ui_state.distance)) * shape.model_matrix;
+            let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
+                Vector4::new(shape.ui_state.size.0, 0.0, 0.0, 0.0), 
+                Vector4::new(0.0, shape.ui_state.size.1, 0.0, 0.0),
+                Vector4::new(0.0, 0.0, 1.0, 0.0),
+                Vector4::new(0.0, 0.0, 0.0, 1.0),
+            );
+            let matrix = Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, shape.ui_state.distance))* shape.model_matrix * scale_matrix;
 
             
             let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
