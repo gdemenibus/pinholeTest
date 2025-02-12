@@ -1,0 +1,10 @@
+[package]
+name = "pinholeTest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cgmath = "0.18.0"
+egui_glium = "0.29.0"
+glium = "0.36.0"
+image = "0.25.5"
