@@ -63,16 +63,29 @@ impl Shape {
     }
     
 }
+#[derive(Debug, PartialEq)]
+pub enum LastChanged {
+    Resolution,
+    Pixel,
+    Size,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Lock {
+    Resolution,
+    Pixel,
+    Size,
+}
+
 pub struct ShapeUI {
     pub title: String,
     pub distance: f32,
     pub resolution: (f32, f32),
-    pub resolution_lock: bool,
     pub pixel_size: f32,
-    pub pixel_lock: bool,
     pub size: (f32, f32),
-    pub size_lock: bool,
-    pub alignment: Align2
+    pub alignment: Align2,
+    pub lock: Lock,
+    pub changed: LastChanged,
 }
 impl ShapeUI {
     pub fn define_ui(&mut self, ctx: &Context) {
@@ -86,38 +99,59 @@ impl ShapeUI {
                     ui.add(egui::Slider::new(&mut self.distance, -10.0..=10.0));
                     ui.end_row();
                     ui.label("Resolution:");
-                    ui.add(egui::DragValue::new(&mut self.resolution.0).speed(1.0));
-                    ui.add(egui::DragValue::new(&mut self.resolution.1).speed(1.0));
-                    if self.resolution_lock {
-                        ui.checkbox(&mut self.resolution_lock, "🔒".to_string());
-                    }
-                    else {
+                    let locked_res =  Lock::Resolution == self.lock;
 
-                        ui.checkbox(&mut self.resolution_lock, "🔓".to_string());
+                    let check_res_w = ui.add_enabled(!locked_res, egui::DragValue::new(&mut self.resolution.0).speed(1.0)).changed();
+                    let check_res_h = ui.add_enabled(!locked_res,egui::DragValue::new(&mut self.resolution.1).speed(1.0)).changed();
+
+                    if check_res_h || check_res_w {
+                        self.changed = LastChanged::Resolution;
                     }
+                    if let Lock::Resolution = self.lock {
+                        let _ = ui.button("🔒".to_string());
+                    }
+
+                    else if ui.button("🔓".to_string()).clicked() {
+                        self.lock = Lock::Resolution;
+                    }
+
                     ui.end_row();
+
                     ui.label("Pixel Size");
-                    ui.add(egui::Slider::new(&mut self.pixel_size, -10.0..=10.0));
 
-                    if self.pixel_lock {
-                        ui.checkbox(&mut self.pixel_lock, "🔒".to_string());
+                    let locked_res =  Lock::Pixel == self.lock;
+
+                    let check_pixel = ui.add_enabled(!locked_res, egui::Slider::new(&mut self.pixel_size, -10.0..=10.0)).changed();
+                    if check_pixel {
+                        self.changed = LastChanged::Pixel;
                     }
-                    else {
 
-                        ui.checkbox(&mut self.pixel_lock, "🔓".to_string());
+                    if let Lock::Pixel= self.lock {
+                        let _ = ui.button("🔒".to_string());
+                    }
+
+                    else if ui.button("🔓".to_string()).clicked() {
+                        self.lock = Lock::Pixel;
                     }
                     ui.end_row();
                     ui.label("Physical Size:");
-                    ui.add(egui::DragValue::new(&mut self.size.0).speed(1.0));
-                    ui.add(egui::DragValue::new(&mut self.size.1).speed(1.0));
 
-                    if self.size_lock {
-                        ui.checkbox(&mut self.size_lock, "🔒".to_string());
-                    }
-                    else {
+                    let locked_res =  Lock::Size == self.lock;
 
-                        ui.checkbox(&mut self.size_lock, "🔓".to_string());
+                    let physical_check_h = ui.add_enabled(!locked_res, egui::DragValue::new(&mut self.size.0).speed(1.0)).changed();
+                    let physical_check_w = ui.add_enabled(!locked_res, egui::DragValue::new(&mut self.size.1).speed(1.0)).changed();
+
+                    if physical_check_h || physical_check_w {
+                        self.changed = LastChanged::Size;
                     }
+
+                    if let Lock::Size= self.lock {
+                        let _ = ui.button("🔒".to_string());
+                    }
+                    else if ui.button("🔓".to_string()).clicked() {
+                        self.lock = Lock::Size;
+                    }
+                    ui.label(format!("{:?}", self.changed));
                     ui.end_row();
 
                 });
@@ -130,13 +164,36 @@ impl ShapeUI {
             title,
             distance: 10.0,
             resolution: (10.0, 10.0),
-            resolution_lock: false,
             pixel_size: 1.0,
-            pixel_lock: false,
             size: (10.0, 10.0),
-            size_lock: false,
             alignment,
+            changed: LastChanged::Resolution,
+            lock: Lock::Pixel,
         }
+    }
+    pub fn resolution_compute(&mut self) {
+        match self.changed {
+            LastChanged::Size => {
+                match self.lock {
+                    Lock::Resolution => {
+
+                    }
+                    Lock::Pixel => {
+
+                    }
+                    _ => {}
+                }
+
+            }
+            LastChanged::Pixel => {
+
+            }
+            LastChanged::Resolution => {
+
+            }
+        }
+
+
     }
 }
 
