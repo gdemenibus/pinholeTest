@@ -7,7 +7,9 @@ mod texture;
 mod camera;
 mod app;
 use app::App;
+use cgmath::{Matrix4, Vector3};
 use egui_glium::egui_winit::egui;
+use matrix::ToArr;
 
 fn main() {
     // Event loop handles windows and device events
@@ -16,7 +18,8 @@ fn main() {
     let event_loop = glium::winit::event_loop::EventLoop::builder().build().expect("event loop building");
     event_loop.set_control_flow(glium::winit::event_loop::ControlFlow::Poll);
 
-    let (window, display) = glium::backend::glutin::SimpleWindowBuilder::new().build(&event_loop);
+    let (window, display) = glium::backend::glutin::SimpleWindowBuilder::new().with_inner_size(1920, 1080).build(&event_loop);
+    
 
     // egui
     let context = egui::Context::default();
@@ -25,7 +28,6 @@ fn main() {
 
     //let input = egui_state.take_egui_input(&window);
     let egui_render = egui_glium::EguiGlium::new(viewport, &display, &window, &event_loop);
-
 
 
 

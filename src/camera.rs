@@ -4,10 +4,8 @@ use std::time::Duration;
 use glium::winit::event::ElementState;
 use glium::winit::dpi::PhysicalPosition;
 use glium::winit::event::MouseScrollDelta;
-use glium::winit::event::WindowEvent;
 use glium::winit::keyboard::{PhysicalKey, KeyCode};
 use std::f32::consts::FRAC_PI_2;
-use crate::matrix::ToArr;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 pub struct Camera {
@@ -31,6 +29,18 @@ impl Camera {
             pitch: pitch.into(),
         }
     }
+    pub fn direction_vec(&self) -> Vector3<f32> {
+
+        let (sin_pitch, cos_pitch) = self.pitch.0.sin_cos();
+        let (sin_yaw, cos_yaw) = self.yaw.0.sin_cos();
+
+            Vector3::new(
+                cos_pitch * cos_yaw,
+                sin_pitch,
+                cos_pitch * sin_yaw
+            ).normalize()
+
+}
 
     pub fn calc_matrix(&self) -> Matrix4<f32> {
         let (sin_pitch, cos_pitch) = self.pitch.0.sin_cos();

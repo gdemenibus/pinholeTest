@@ -1,9 +1,9 @@
-use std::time::Instant;
+use std::{ str::FromStr, time::Instant};
 
 use cgmath::{Matrix4, SquareMatrix, Vector3};
-use egui_glium::egui_winit::egui;
-use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, MouseButton}, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
-use crate::{matrix::ToArr, shader, vertex::{self, floor, Vertex}};
+use egui_glium::egui_winit::egui::{self, Align2};
+use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, KeyEvent, MouseButton}, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
+use crate::{matrix::ToArr, shader, vertex::{self, f, floor, Shape, Vertex}};
 use glium::Surface;
 use glium::winit::event::WindowEvent;
 
@@ -16,38 +16,32 @@ pub struct App<'a> {
     window: Window,
     display: Display<WindowSurface>,
     last_step: Instant,
-    texture: Texture2d,
     camera: Camera,
     controller: CameraController,
     projection: Projection,
-    vertex_buffer: Vec<VertexBuffer<Vertex>>,
+    shapes: Vec<Shape>,
     // TODO: This might not work for complex shapes!
     indices: NoIndices,
     program: Program,
     draw_params: DrawParameters<'a>,
     ui: egui_glium::EguiGlium,
-    selected_quad: QuadUISelect,
-    transform_z: f32,
-    mouse_press: bool
+    mouse_press: bool,
+    mouse_on_ui: bool,
 
 }
 
-#[derive(PartialEq)]
-enum QuadUISelect { A, B, F }
 
 impl App<'_> {
     pub fn new<'a>(window: Window, display: Display<WindowSurface>, ui: egui_glium::EguiGlium) -> App<'a> {
 
 
-        let shape = vertex::debug_triangle();
-        let vertex_buffer = vec![glium::VertexBuffer::new(&display, &shape).unwrap()];
+        let shapes = vec![floor(&display), f(&display)];
 
         let vertex_shader = shader::load_shader("./shaders/vertex.glsl");
         let fragment_shader = shader::load_shader("./shaders/fragment.glsl");
 
-        let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), &display);
 
-        let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let camera = Camera::new((0.0, 8.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection = Projection::new(window.inner_size().width, window.inner_size().height, cgmath::Deg(45.0), 0.1, 100.0);
         let controller = CameraController::new(4.0, 0.4);
 
@@ -63,47 +57,37 @@ impl App<'_> {
             //backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
             .. Default::default()
         };
-        let selected_quad = QuadUISelect::A;
         let last_step = Instant::now();
 
-        App{window, display, last_step, texture, camera, projection, controller,  vertex_buffer, indices, program, draw_params, ui, selected_quad, transform_z: 0.0, mouse_press: false}
+        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false}
     }
     pub fn draw_debug(&mut self) {
-
-        let test: Matrix4<f32> = cgmath::Matrix4::identity();
-        let matrix = test.to_arr();
 
         let mut frame = self.display.draw();
         frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
 
+        for shape in self.shapes.iter() {
+            let matrix = Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, shape.ui_state.distance)) * shape.model_matrix;
 
-        let uniforms = uniform! {
-            matrix: matrix,
-            tex: &self.texture,
-            perspective: self.projection.calc_matrix().to_arr(),
-            view: self.camera.calc_matrix().to_arr(),
+            
+            let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
+            
 
-        };
-        for buffer in self.vertex_buffer.iter() {
-            //frame.draw(buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
+            let uniforms = uniform!{
+                model: matrix.to_arr(),
+                tex: &shape.texture,
+                view_proj: view_proj.to_arr(),
+            };
+            let buffer = glium::VertexBuffer::new(&self.display, &shape.vertex_buffer).unwrap();
+
+            frame.draw(&buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
+
+
         }
+
+
         // Testing out the floor before doing anything wacky with it
-        let shape = floor();
 
-        let mut matrix = shape.model_matrix;
-        matrix = matrix * Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, self.transform_z));
-        
-
-        let uniforms = uniform!{
-
-            matrix: matrix.to_arr(),
-            tex: &self.texture,
-            perspective: self.projection.calc_matrix().to_arr(),
-            view: self.camera.calc_matrix().to_arr(),
-        };
-        let buffer = glium::VertexBuffer::new(&self.display, &shape.vertex_buffer).unwrap();
-
-        frame.draw(&buffer, self.indices, &self.program, &uniforms,&self.draw_params).unwrap();
 
         // Paint the UI 
         self.ui.paint(&self.display, &mut frame);
@@ -121,15 +105,13 @@ impl App<'_> {
 
         let window = &self.window;
         self.ui.run(window, |ctx| {
-            egui::Window::new("UI").show(ctx, |ui|{
-                ui.label("Select Object");
-                ui.radio_value(&mut self.selected_quad, QuadUISelect::A, "A");
-                ui.radio_value(&mut self.selected_quad, QuadUISelect::B, "B");
-                ui.radio_value(&mut self.selected_quad, QuadUISelect::F, "F");
-                ui.add(egui::Slider::new(&mut self.transform_z, -1.0..=1.0).text("Distance from next Layer (z transform)"))
+            for shape in self.shapes.iter_mut() {
+                
+                shape.ui_state.define_ui(ctx);
+            }
+
 
             } );
-        });
     }
 
 }
@@ -189,8 +171,9 @@ impl ApplicationHandler for App<'_> {
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                 self.controller.process_keyboard(event);
             }
-            WindowEvent::MouseInput { device_id, state, button: MouseButton::Left } => {
-                self.mouse_press = state == ElementState::Pressed
+            WindowEvent::MouseInput { device_id, state, button: MouseButton::Right } => {
+                self.mouse_press = state == ElementState::Pressed;
+
             }
 
             _ => {}
@@ -205,7 +188,7 @@ impl ApplicationHandler for App<'_> {
             event: glium::winit::event::DeviceEvent,
         ) {
         if let DeviceEvent::MouseMotion { delta } = event {
-            if self.mouse_press{
+            if self.mouse_press && !self.mouse_on_ui{
                 self.controller.process_mouse(delta.0, delta.1);
             }
         }
