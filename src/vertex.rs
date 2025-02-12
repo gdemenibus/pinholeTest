@@ -197,6 +197,26 @@ pub fn a(display: &Display<WindowSurface>) -> Shape {
     let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
 
     let alignment = Align2::LEFT_BOTTOM;
-    Shape{vertex_buffer: shape, model_matrix: movement, texture, ui_state: ShapeUI::default("Far Plane".to_string(), alignment)}
+    Shape{vertex_buffer: shape, model_matrix: movement, texture, ui_state: ShapeUI::default("A Plane".to_string(), alignment)}
 }
 
+
+pub fn b(display: &Display<WindowSurface>) -> Shape {
+    let shape = vec![
+        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+        Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
+        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+
+        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+        Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
+        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+    ];
+
+    let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -0.0));
+    let matrix: Matrix4<f32>  = Matrix4::from_scale(3.0);
+    let movement = translate * matrix;
+    let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
+
+    let alignment = Align2::LEFT_BOTTOM;
+    Shape{vertex_buffer: shape, model_matrix: movement, texture, ui_state: ShapeUI::default("B Plane".to_string(), alignment)}
+}
