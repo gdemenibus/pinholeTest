@@ -59,8 +59,11 @@ impl Shape {
 
     }
     pub fn position<F>(&mut self, transform: F) where F: FnOnce(&Matrix4<f32>, f32) -> Matrix4<f32>  {
+        todo!()
 
     }
+    
+    
     
 }
 #[derive(Debug, PartialEq)]
@@ -155,6 +158,7 @@ impl ShapeUI {
                     ui.end_row();
 
                 });
+            self.resolution_compute();
 
         });
 
@@ -163,9 +167,9 @@ impl ShapeUI {
         ShapeUI {
             title,
             distance: 10.0,
-            resolution: (10.0, 10.0),
+            resolution: (1.0, 1.0),
             pixel_size: 1.0,
-            size: (10.0, 10.0),
+            size: (1.0, 1.0),
             alignment,
             changed: LastChanged::Resolution,
             lock: Lock::Pixel,
@@ -176,9 +180,19 @@ impl ShapeUI {
             LastChanged::Size => {
                 match self.lock {
                     Lock::Resolution => {
+                        // Change pixel size
+                        self.pixel_size = self.size.0 / self.resolution.0;
+                        // sanity check
+                        let pixel_other = self.size.1 / self.resolution.1;
+                        if self.pixel_size != pixel_other {
+                            println!("WARNING, pixel's are no longer square? Height is {} and width is {}", self.pixel_size, pixel_other);
+                        }
 
                     }
                     Lock::Pixel => {
+                        // Pixel size is locked, size is changed, resolution must change
+                        self.resolution.0 = self.size.0 / self.pixel_size;
+                        self.resolution.1 = self.size.1 / self.pixel_size;
 
                     }
                     _ => {}
@@ -186,9 +200,45 @@ impl ShapeUI {
 
             }
             LastChanged::Pixel => {
+                match self.lock  {
+                    Lock::Resolution => {
+                        self.size.0 = self.resolution.0 * self.pixel_size;
+                        self.size.1 = self.resolution.1 * self.pixel_size;
+
+                    }
+
+                    Lock::Size => {
+
+                        self.resolution.0 = self.size.0 / self.pixel_size;
+                        self.resolution.1 = self.size.1 / self.pixel_size;
+
+                    }
+                    _ => {}
+                }
 
             }
             LastChanged::Resolution => {
+                match self.lock {
+                    Lock::Size => {
+
+                        // Change pixel size
+                        self.pixel_size = self.size.0 / self.resolution.0;
+                        // sanity check
+                        let pixel_other = self.size.1 / self.resolution.1;
+                        if self.pixel_size != pixel_other {
+                            println!("WARNING, pixel's are no longer square? Height is {} and width is {}", self.pixel_size, pixel_other);
+                        }
+
+                    }
+                    Lock::Pixel => {
+
+                        self.size.0 = self.resolution.0 * self.pixel_size;
+                        self.size.1 = self.resolution.1 * self.pixel_size;
+
+                    }
+                    _ => {}
+
+                }
 
             }
         }
