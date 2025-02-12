@@ -3,7 +3,7 @@ use std::{ str::FromStr, time::Instant};
 use cgmath::{Matrix4, SquareMatrix, Vector3};
 use egui_glium::egui_winit::egui::{self, Align2};
 use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, KeyEvent, MouseButton}, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
-use crate::{matrix::ToArr, shader, vertex::{self, f, floor, Shape, Vertex}};
+use crate::{matrix::ToArr, shader, vertex::{self, a, b, f, floor, Shape, Vertex}};
 use glium::Surface;
 use glium::winit::event::WindowEvent;
 
@@ -35,7 +35,7 @@ impl App<'_> {
     pub fn new<'a>(window: Window, display: Display<WindowSurface>, ui: egui_glium::EguiGlium) -> App<'a> {
 
 
-        let shapes = vec![floor(&display), f(&display)];
+        let shapes = vec![floor(&display), f(&display), a(&display), b(&display)];
 
         let vertex_shader = shader::load_shader("./shaders/vertex.glsl");
         let fragment_shader = shader::load_shader("./shaders/fragment.glsl");
