@@ -29,6 +29,8 @@ fn main() {
     //let input = egui_state.take_egui_input(&window);
     let egui_render = egui_glium::EguiGlium::new(viewport, &display, &window, &event_loop);
 
+    egui_extras::install_image_loaders(&context);
+
 
 
 
