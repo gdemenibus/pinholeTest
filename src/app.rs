@@ -1,14 +1,17 @@
-use std::{ str::FromStr, time::Instant};
+use std::  time::Instant;
 
-use cgmath::{Matrix4, SquareMatrix, Vector3, Vector4};
-use egui_glium::egui_winit::egui::{self, Align2};
-use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, KeyEvent, MouseButton}, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
+use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
+use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, KeyEvent, MouseButton}, keyboard::KeyCode, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
+use ::image::ImageBuffer;
 use crate::{matrix::ToArr, shader, vertex::{self, a, b, f, floor, Shape, Vertex}};
 use glium::Surface;
 use glium::winit::event::WindowEvent;
 
 
 use crate::{camera::{Camera, CameraController, Projection}, texture};
+
+use std::f32::consts::FRAC_PI_2;
+const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 // Deal with application State
 // RN, only does 
@@ -119,6 +122,61 @@ impl App<'_> {
 
             } );
     }
+    pub fn raytrace(&mut self) {
+        // Rebiuld the world?
+        // Eye Position
+        // Target position
+        // FOV (90 degrees)
+        // number of quare pixels on the viewport on each direction
+        // Vector which indicates where up is (given by camera)
+        //
+        // Target image, by pixel
+        // Distance between camera and plane?
+        //
+        println!("Starting Ray trace");
+        let image_height = 500;
+        let image_width = 500;
+        let size = image_width as usize * image_height as usize;
+        
+        // CAMERA MATH!
+
+        let d = 1.0;
+        let t_n = self.camera.direction_vec();
+        let b_n = t_n.cross(Vector3::new(0.0, 1.0, 0.0)).normalize();
+        let v_n = t_n.cross(b_n).normalize();
+        let center_view = self.camera.position + t_n * d;
+        let g_x = (SAFE_FRAC_PI_2 / 2.0).tan() * d;
+        // IMPORTANT: Might have width and height confused?
+        //
+        let g_y = g_x * ((image_height as f32 - 1.0) / (image_width as f32 - 1.0) );
+        let q_x = (2.0 * g_x) / (image_height as f32 - 1.0) * b_n;
+        let q_y = (2.0 * g_y) / (image_width as f32 - 1.0) * v_n;
+        let p_1_m = t_n * d - g_x * b_n - g_y * v_n;
+        let buf = ImageBuffer::from_fn(image_width, image_height, |x, y| {
+
+            let f_y = y as f32;
+            let f_x = x as f32;
+            let ray_dir = (p_1_m + q_x*(f_x - 1.0) + q_y *(f_y - 1.0)).normalize();
+            let ray_origin = self.camera.position;
+            for shape in self.shapes.iter() {
+                if shape.intersect(ray_origin, ray_dir) {
+                    return  image::Rgb([255 as u8, 255 as u8, 255 as u8]);
+                }
+            }
+            image::Rgb([0 as u8, 0 as u8, 0 as u8])
+        });
+        let res = buf.save_with_format("test", image::ImageFormat::Jpeg);
+        if res.is_err() {
+            println!("Could not write to file? {:?}", res);
+        }
+        println!("Rays traced!");
+        //let mut image: Vec<Vector3<f32>> = vec![Vector3::new(0.0,0.0,0.0); size];
+        
+        // Save image
+
+
+
+    }
 
 }
 
@@ -175,6 +233,11 @@ impl ApplicationHandler for App<'_> {
                 self.window.request_redraw();
             }
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+                if let glium::winit::keyboard::PhysicalKey::Code(KeyCode::KeyR) = event.physical_key{
+                    println!("RAY TRACE!");
+                    self.raytrace();
+                }
+                
                 self.controller.process_keyboard(event);
             }
             WindowEvent::MouseInput { device_id, state, button: MouseButton::Right } => {
