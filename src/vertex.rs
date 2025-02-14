@@ -1,10 +1,11 @@
-use cgmath::{BaseNum, Matrix4, Vector3};
+use cgmath::{BaseNum, InnerSpace, Matrix4, Point3, Vector3};
+use egui_glium::egui_winit::egui::ahash::HashSet;
 use egui_glium::egui_winit::egui::{self, Align2, Context, Ui};
 use glium::{glutin::surface::WindowSurface, winit::window::Window, Display, Texture2d};
 use crate::texture;
 use crate::matrix::{ToArr, FromArr};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
 pub struct Vertex {
     position: [f32; 3],
     tex_coords: [f32; 2],
@@ -27,6 +28,11 @@ impl<T:BaseNum> FromArr for Vector3<T> {
 
     }
     
+}
+impl Vertex {
+    pub fn to_cg_math(&self) -> Point3<f32> {
+        Point3::new(self.position[0], self.position[1], self.position[2])
+    }
 }
 
 
@@ -59,6 +65,52 @@ impl Shape {
 
     }
     pub fn position<F>(&mut self, transform: F) where F: FnOnce(&Matrix4<f32>, f32) -> Matrix4<f32>  {
+
+    }
+    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> bool {
+
+        let trig_1 : [Point3<f32>; 3]= self.vertex_buffer[0..3].iter().map(|x|  x.to_cg_math() ).collect::<Vec<_>>().try_into().unwrap();
+        
+        let trig_2 : [Point3<f32>; 3]= self.vertex_buffer[3..6].iter().map(|x|  x.to_cg_math() ).collect::<Vec<_>>().try_into().unwrap();
+        
+        let inter_1 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_1);
+        let inter_2 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_2);
+        inter_1.is_some() || inter_2.is_some()
+        
+
+    }
+    fn moller_trumbore_intersection(origin: Point3<f32>, direction: Vector3<f32>, triangle: [Point3<f32>; 3] ) -> Option<Point3<f32>> {
+        let e1 = triangle[1] - triangle[0];
+        let e2 = triangle[2] - triangle[0];
+        let ray_cross_e2 = direction.cross(e2);
+        let det = e1.dot(ray_cross_e2);
+
+        if det > -f32::EPSILON && det < f32::EPSILON {
+            return None;
+        }
+        let inv_det = 1.0 / det;
+	let s = origin - triangle[0];
+	let u = inv_det * s.dot(ray_cross_e2);
+	if u < 0.0 || u > 1.0 {
+		return None;
+	}
+
+	let s_cross_e1 = s.cross(e1);
+	let v = inv_det * direction.dot(s_cross_e1);
+	if v < 0.0 || u + v > 1.0 {
+		return None;
+	}
+	// At this stage we can compute t to find out where the intersection point is on the line.
+	let t = inv_det * e2.dot(s_cross_e1);
+
+	if t > f32::EPSILON { // ray intersection
+		let intersection_point = origin + direction * t;
+		return Some(intersection_point);
+	}
+	else { // This means that there is a line intersection but not a ray intersection.
+		return None;
+	}
+
         todo!()
 
     }
