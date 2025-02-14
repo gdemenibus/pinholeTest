@@ -1,14 +1,15 @@
 use std::  time::Instant;
 
 use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
-use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, KeyEvent, MouseButton}, keyboard::KeyCode, window::Window}, Display, DrawParameters, Program, Texture2d, VertexBuffer};
+use egui_glium::egui_winit::egui::{self, Align2, Context, TextureHandle};
+use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, MouseButton}, keyboard::KeyCode, window::Window}, Display, DrawParameters, Program, VertexBuffer};
 use ::image::ImageBuffer;
-use crate::{matrix::ToArr, shader, vertex::{self, a, b, f, floor, Shape, Vertex}};
+use crate::{matrix::ToArr, shader, vertex::{a, b, f, floor, Shape}};
 use glium::Surface;
 use glium::winit::event::WindowEvent;
 
 
-use crate::{camera::{Camera, CameraController, Projection}, texture};
+use crate::camera::{Camera, CameraController, Projection};
 
 use std::f32::consts::FRAC_PI_2;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
@@ -30,6 +31,7 @@ pub struct App<'a> {
     ui: egui_glium::EguiGlium,
     mouse_press: bool,
     mouse_on_ui: bool,
+    ray_trace_display: bool,
 
 }
 
@@ -62,14 +64,14 @@ impl App<'_> {
         };
         let last_step = Instant::now();
 
-        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false}
+        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false, ray_trace_display: false}
     }
     pub fn draw_debug(&mut self) {
 
         let mut frame = self.display.draw();
         frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
 
-        for shape in self.shapes.iter() {
+        for shape in self.shapes.iter_mut() {
             let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
                 Vector4::new(shape.ui_state.size.0, 0.0, 0.0, 0.0), 
                 Vector4::new(0.0, shape.ui_state.size.1, 0.0, 0.0),
@@ -77,6 +79,7 @@ impl App<'_> {
                 Vector4::new(0.0, 0.0, 0.0, 1.0),
             );
             let matrix = Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, shape.ui_state.distance))* shape.model_matrix * scale_matrix;
+            shape.placement_matrix = matrix;
 
             
             let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
@@ -114,11 +117,24 @@ impl App<'_> {
 
         let window = &self.window;
         self.ui.run(window, |ctx| {
+            egui_extras::install_image_loaders(ctx);
+
             for shape in self.shapes.iter_mut() {
                 
                 shape.ui_state.define_ui(ctx);
             }
 
+            if self.ray_trace_display {
+
+            egui::Window::new("RAY TRACER").pivot(Align2::RIGHT_TOP).show(ctx, |ui| {
+                    //ctx.forget_all_images();
+                    ctx.forget_image("file:://test.jpeg");
+                    ui.image("file://test.jpeg");
+
+                
+
+            });
+            }
 
             } );
     }
@@ -133,10 +149,9 @@ impl App<'_> {
         // Target image, by pixel
         // Distance between camera and plane?
         //
-        println!("Starting Ray trace");
+        //println!("Starting Ray trace");
         let image_height = 500;
         let image_width = 500;
-        let size = image_width as usize * image_height as usize;
         
         // CAMERA MATH!
 
@@ -144,38 +159,40 @@ impl App<'_> {
         let t_n = self.camera.direction_vec();
         let b_n = t_n.cross(Vector3::new(0.0, 1.0, 0.0)).normalize();
         let v_n = t_n.cross(b_n).normalize();
-        let center_view = self.camera.position + t_n * d;
         let g_x = (SAFE_FRAC_PI_2 / 2.0).tan() * d;
         // IMPORTANT: Might have width and height confused?
-        //
+        
         let g_y = g_x * ((image_height as f32 - 1.0) / (image_width as f32 - 1.0) );
         let q_x = (2.0 * g_x) / (image_height as f32 - 1.0) * b_n;
         let q_y = (2.0 * g_y) / (image_width as f32 - 1.0) * v_n;
         let p_1_m = t_n * d - g_x * b_n - g_y * v_n;
+
         let buf = ImageBuffer::from_fn(image_width, image_height, |x, y| {
 
             let f_y = y as f32;
             let f_x = x as f32;
             let ray_dir = (p_1_m + q_x*(f_x - 1.0) + q_y *(f_y - 1.0)).normalize();
             let ray_origin = self.camera.position;
+            let mut color = 0_u8;
+            let step = 255_u8 / 4_u8;
             for shape in self.shapes.iter() {
                 if shape.intersect(ray_origin, ray_dir) {
-                    return  image::Rgb([255 as u8, 255 as u8, 255 as u8]);
+                    color += step;
+                    return  image::Rgb([color, color, color]);
+
                 }
             }
-            image::Rgb([0 as u8, 0 as u8, 0 as u8])
+            image::Rgb([0_u8, 0_u8, 0_u8])
         });
-        let res = buf.save_with_format("test", image::ImageFormat::Jpeg);
+        //let color_img = egui::ColorImage::from_rgba_unmultiplied([image_width as usize, image_height as usize], &buf);
+        //self.ray_trace_display = Some(ctx.load_texture("image", color_img, TextureOptions::LINEAR));
+        let res = buf.save_with_format("test.jpeg", image::ImageFormat::Jpeg);
+        //
         if res.is_err() {
             println!("Could not write to file? {:?}", res);
         }
+        self.ray_trace_display = true;
         println!("Rays traced!");
-        //let mut image: Vec<Vector3<f32>> = vec![Vector3::new(0.0,0.0,0.0); size];
-        
-        // Save image
-
-
-
     }
 
 }
@@ -234,7 +251,6 @@ impl ApplicationHandler for App<'_> {
             }
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                 if let glium::winit::keyboard::PhysicalKey::Code(KeyCode::KeyR) = event.physical_key{
-                    println!("RAY TRACE!");
                     self.raytrace();
                 }
                 
