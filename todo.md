@@ -60,11 +60,14 @@ The resolution of our target images matters here as well basically
 
 
 ## First:
-Use Glium to build a rasterize camera that allows us to fly around the space.
-Place a simple rectangle with a texture
-Then, raytracer that writes to an image file
-Then, add both rectangles to represent window
-Then, modify raytracer to also produce this second image
+Code needs to be refactored to be more flexible
+In particular, reconsider how elements are placed
+
+Extend raytracer to use textures
+Extend raytracer to deal with semi opaquee object
+Extend ray tracer to be concurrent?
+
+
 
 
 
