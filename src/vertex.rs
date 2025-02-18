@@ -1,5 +1,5 @@
 use cgmath::{BaseNum, InnerSpace, Matrix4, Point3, Vector3, Vector4};
-use egui_glium::egui_winit::egui::{self, Align2, Context};
+use egui_glium::egui_winit::egui::{self, Align2, Context, Pos2, };
 use glium::{glutin::surface::WindowSurface, Display, Texture2d};
 use image::Rgba;
 use crate::texture;
@@ -152,7 +152,7 @@ impl Shape {
         let matrix: Matrix4<f32>  = Matrix4::from_scale(10.0);
         let movement = translate * matrix;
         let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
-        let ui_state = ShapeUI::default("Floor".to_string(), Align2::LEFT_TOP);
+        let ui_state = ShapeUI::default("Floor".to_string(), Pos2::new(0.0, 500.0));
         Shape::new(shape, movement, texture, "./resources/textures/Gibbon.jpg".to_string(), ui_state)
     }
 
@@ -175,7 +175,7 @@ impl Shape {
         let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
 
         let texture = texture::load_texture(texture_path.clone(), display);
-        let ui_state = ShapeUI::default("Far plane".to_string(), Align2::LEFT_CENTER);
+        let ui_state = ShapeUI::default("Far plane".to_string(), Pos2::new(0.0,200.0));
 
         Shape::new(shape, movement, texture, texture_path, ui_state)
     }
@@ -196,7 +196,7 @@ impl Shape {
         let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
 
         let texture = texture::load_texture(texture_path.clone(), display);
-        let ui_state = ShapeUI::default("A".to_string(), Align2::LEFT_BOTTOM);
+        let ui_state = ShapeUI::default("A".to_string(), Pos2::new(0.0,150.0));
 
         Shape::new(shape, movement, texture, texture_path, ui_state)
 
@@ -220,7 +220,7 @@ impl Shape {
         let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
 
         let texture = texture::load_texture(texture_path.clone(), display);
-        let ui_state = ShapeUI::default("B".to_string(), Align2::LEFT_BOTTOM);
+        let ui_state = ShapeUI::default("B".to_string(), Pos2::new(0.0,0.0));
         Shape::new(shape, movement, texture, texture_path, ui_state)
 
     }
@@ -247,13 +247,13 @@ pub struct ShapeUI {
     pub resolution: (f32, f32),
     pub pixel_size: f32,
     pub size: (f32, f32),
-    pub alignment: Align2,
+    pub position: Pos2,
     pub lock: Lock,
     pub changed: LastChanged,
 }
 impl ShapeUI {
     pub fn define_ui(&mut self, ctx: &Context) {
-        egui::Window::new(self.title.clone()).pivot(self.alignment).show(ctx, |ui| {
+        egui::Window::new(self.title.clone()).default_pos(self.position).show(ctx, |ui| {
             egui::Grid::new("my_grid")
                 .num_columns(2)
                 .spacing([4.0, 4.0])
@@ -324,14 +324,14 @@ impl ShapeUI {
         });
 
     }
-    pub fn default(title: String, alignment: Align2) -> ShapeUI {
+    pub fn default(title: String, position: Pos2) -> ShapeUI {
         ShapeUI {
             title,
             distance: 10.0,
             resolution: (1.0, 1.0),
             pixel_size: 1.0,
             size: (1.0, 1.0),
-            alignment,
+            position,
             changed: LastChanged::Resolution,
             lock: Lock::Pixel,
         }
