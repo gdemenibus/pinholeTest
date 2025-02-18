@@ -1,7 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, };
 
 use cgmath::{BaseNum, InnerSpace, Matrix4, Point3, Vector3, Vector4};
-use egui_glium::egui_winit::egui::{self, Align2, Context, Pos2, };
+use egui_glium::egui_winit::egui::mutex::RwLock;
+use egui_glium::egui_winit::egui::{self, Context, Pos2, };
 use glium::{glutin::surface::WindowSurface, Display, Texture2d};
 use image::Rgba;
 use crate::texture;
@@ -48,7 +49,7 @@ impl Vertex {
 
 
 pub struct Shape {
-    pub world: Arc<Mutex<ShapeWorld>>,
+    pub world: Arc<RwLock<ShapeWorld>>,
     pub texture: glium::Texture2d,
     pub ui_state: ShapeUI
 }
@@ -57,7 +58,7 @@ impl Shape {
         let tex = image::open(texture_path).unwrap();
         let world = ShapeWorld{vertex_buffer, model_matrix, placement_matrix: model_matrix,texture_image: tex.to_rgba8()};
         
-        Shape{world: Arc::new(Mutex::new(world)), texture, ui_state}
+        Shape{world: Arc::new(RwLock::new(world)), texture, ui_state}
     }
 
 
