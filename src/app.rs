@@ -4,7 +4,7 @@ use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
 use egui_glium::egui_winit::egui::{self, Align2, Context, TextureHandle};
 use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, MouseButton}, keyboard::KeyCode, window::Window}, Display, DrawParameters, Program, VertexBuffer};
 use ::image::ImageBuffer;
-use crate::{matrix::ToArr, shader, vertex::{a, b, f, floor, Shape}};
+use crate::{matrix::ToArr, shader, vertex:: Shape};
 use glium::Surface;
 use glium::winit::event::WindowEvent;
 
@@ -40,7 +40,7 @@ impl App<'_> {
     pub fn new<'a>(window: Window, display: Display<WindowSurface>, ui: egui_glium::EguiGlium) -> App<'a> {
 
 
-        let shapes = vec![floor(&display), f(&display), a(&display), b(&display)];
+        let shapes = vec![Shape::b(&display), Shape::a(&display), Shape::f(&display), Shape::floor(&display),  ];
 
         let vertex_shader = shader::load_shader("./shaders/vertex.glsl");
         let fragment_shader = shader::load_shader("./shaders/fragment.glsl");
@@ -128,8 +128,8 @@ impl App<'_> {
 
             egui::Window::new("RAY TRACER").pivot(Align2::RIGHT_TOP).show(ctx, |ui| {
                     //ctx.forget_all_images();
-                    ctx.forget_image("file:://test.jpeg");
-                    ui.image("file://test.jpeg");
+                    ctx.forget_image("file:://test.png");
+                    ui.image("file://test.png");
 
                 
 
@@ -173,20 +173,21 @@ impl App<'_> {
             let f_x = x as f32;
             let ray_dir = (p_1_m + q_x*(f_x - 1.0) + q_y *(f_y - 1.0)).normalize();
             let ray_origin = self.camera.position;
-            let mut color = 0_u8;
-            let step = 255_u8 / 4_u8;
+            // TODO: Right now the order of the shapes matters!
             for shape in self.shapes.iter() {
-                if shape.intersect(ray_origin, ray_dir) {
-                    color += step;
-                    return  image::Rgb([color, color, color]);
-
+                let intersect = shape.intersect(ray_origin, ray_dir);
+                if let Some(color) = intersect {
+                    return image::Rgba(color);
+                    
                 }
+
             }
-            image::Rgb([0_u8, 0_u8, 0_u8])
+
+                    image::Rgba([0_u8, 0_u8, 0_u8, 0_u8])
         });
         //let color_img = egui::ColorImage::from_rgba_unmultiplied([image_width as usize, image_height as usize], &buf);
         //self.ray_trace_display = Some(ctx.load_texture("image", color_img, TextureOptions::LINEAR));
-        let res = buf.save_with_format("test.jpeg", image::ImageFormat::Jpeg);
+        let res = buf.save_with_format("test.png", image::ImageFormat::Png);
         //
         if res.is_err() {
             println!("Could not write to file? {:?}", res);

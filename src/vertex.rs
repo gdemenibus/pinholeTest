@@ -2,6 +2,7 @@ use cgmath::{BaseNum, InnerSpace, Matrix4, Point2, Point3, Vector3, Vector4};
 use egui_glium::egui_winit::egui::ahash::HashSet;
 use egui_glium::egui_winit::egui::{self, Align2, Context, Ui};
 use glium::{glutin::surface::WindowSurface, winit::window::Window, Display, Texture2d};
+use image::Rgba;
 use crate::texture;
 use crate::matrix::{ToArr, FromArr};
 
@@ -61,15 +62,19 @@ pub struct Shape {
     pub model_matrix: Matrix4<f32>,
     pub placement_matrix: Matrix4<f32>,
     pub texture: glium::Texture2d,
+    pub texture_image: image::ImageBuffer<Rgba<u8>, Vec<u8>>,
     pub ui_state: ShapeUI
 }
 impl Shape {
-    pub fn new(vertex_buffer: Vec<Vertex>, model_matrix: Matrix4<f32>, texture: Texture2d, title: String) -> Shape{
+    pub fn new(vertex_buffer: Vec<Vertex>, model_matrix: Matrix4<f32>, texture: Texture2d, texture_path: String, ui_state: ShapeUI) -> Shape{
+        let tex = image::open(texture_path).unwrap();
+        
+        
 
-        Shape{vertex_buffer, model_matrix, placement_matrix: model_matrix, texture, ui_state: ShapeUI::default(title, Align2::LEFT_TOP)}
+        Shape{vertex_buffer, model_matrix, placement_matrix: model_matrix, texture, ui_state,texture_image: tex.to_rgba8()}
     }
 
-    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> bool {
+    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> Option<[u8; 4]> {
 
         let trig_1 : [Point3<f32>; 3]= self.vertex_buffer[0..3].iter().map(|x|  x.place_vertex(&self.placement_matrix)   ).collect::<Vec<_>>().try_into().unwrap();
         
@@ -78,13 +83,33 @@ impl Shape {
         let inter_1 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_1);
         let inter_2 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_2);
         if inter_1.is_some() {
-            let _intersect_point = inter_1.unwrap().0;
-            let _bary_point = inter_1.unwrap().1;
+            let bary_point = inter_1.unwrap().1;
+            Some(self.sample_texture(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]]))
         }
-        inter_1.is_some() || inter_2.is_some()
-        
+        else if inter_2.is_some(){
+            let bary_point = inter_2.unwrap().1;
+            Some(self.sample_texture(bary_point, [self.vertex_buffer[3], self.vertex_buffer[4], self.vertex_buffer[5]]))
+        }
+        else {
+            None
+        }
 
     }
+
+    fn sample_texture(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3]) -> [u8; 4] {
+        let x_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[0]  + bary_coords.y * triangle[1].tex_coords[0] + bary_coords.z * triangle[2].tex_coords[0])) * self.texture_image.width() as f32;
+        let y_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[1]  + bary_coords.y * triangle[1].tex_coords[1] + bary_coords.z * triangle[2].tex_coords[1])) * self.texture_image.height() as f32;
+
+        
+
+        // TODO: Interplate the texture
+        self.texture_image.get_pixel(x_coord as u32, y_coord as u32).0
+
+      
+ 
+    }
+
+
     fn moller_trumbore_intersection(origin: Point3<f32>, direction: Vector3<f32>, triangle: [Point3<f32>; 3] ) -> Option<(Point3<f32>, Point3<f32>)> {
         let e1 = triangle[1] - triangle[0];
         let e2 = triangle[2] - triangle[0];
@@ -113,7 +138,7 @@ impl Shape {
 
 	if t > f32::EPSILON { // ray intersection
 		let intersection_point = origin + direction * t;
-		Some((intersection_point, Point3::new(u, v, w)))
+		Some((intersection_point, Point3::new(w, u, v)))
 	}
 	else { // This means that there is a line intersection but not a ray intersection.
 		None
@@ -122,7 +147,94 @@ impl Shape {
 
     }
     
-    
+    pub fn floor(display: &Display<WindowSurface>) -> Shape {
+        let shape = vec![
+            Vertex { position: [-0.5, 0.0, -0.5], tex_coords: [0.0, 0.0] },
+            Vertex { position: [ 0.5, 0.0, -0.5], tex_coords: [1.0, 0.0] },
+            Vertex { position: [ 0.5, 0.0,  0.5], tex_coords: [1.0, 1.0] },
+
+            Vertex { position: [ 0.5,  0.0, 0.5], tex_coords: [1.0, 1.0] },
+            Vertex { position: [-0.5,  0.0, 0.5], tex_coords: [0.0, 1.0] },
+            Vertex { position: [-0.5,  0.0,-0.5], tex_coords: [0.0, 0.0] },
+        ];
+
+        let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0));
+        let matrix: Matrix4<f32>  = Matrix4::from_scale(10.0);
+        let movement = translate * matrix;
+        let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
+        let ui_state = ShapeUI::default("Floor".to_string(), Align2::LEFT_TOP);
+        Shape::new(shape, movement, texture, "./resources/textures/Gibbon.jpg".to_string(), ui_state)
+    }
+
+    pub fn f(display: &Display<WindowSurface>) -> Shape {
+        let shape = vec![
+            Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+            Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
+            Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+
+            Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+            Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
+            Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+        ];
+
+        let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -10.0));
+        let matrix: Matrix4<f32>  = Matrix4::from_scale(10.0);
+        let movement = translate * matrix;
+        // For real tests!
+        //let texture = texture::load_texture("./resources/textures/Planes_airport.jpeg".to_string(), display);
+        let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
+
+        let texture = texture::load_texture(texture_path.clone(), display);
+        let ui_state = ShapeUI::default("Far plane".to_string(), Align2::LEFT_CENTER);
+
+        Shape::new(shape, movement, texture, texture_path, ui_state)
+    }
+    pub fn a(display: &Display<WindowSurface>) -> Shape {
+        let shape = vec![
+            Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+            Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
+            Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+
+            Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+            Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
+            Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+        ];
+
+        let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -5.0));
+        let matrix: Matrix4<f32>  = Matrix4::from_scale(3.0);
+        let movement = translate * matrix;
+        let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
+
+        let texture = texture::load_texture(texture_path.clone(), display);
+        let ui_state = ShapeUI::default("A".to_string(), Align2::LEFT_BOTTOM);
+
+        Shape::new(shape, movement, texture, texture_path, ui_state)
+
+    }
+
+
+    pub fn b(display: &Display<WindowSurface>) -> Shape {
+        let shape = vec![
+            Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+            Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
+            Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+
+            Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
+            Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
+            Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
+        ];
+
+        let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -0.0));
+        let matrix: Matrix4<f32>  = Matrix4::from_scale(3.0);
+        let movement = translate * matrix;
+        let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
+
+        let texture = texture::load_texture(texture_path.clone(), display);
+        let ui_state = ShapeUI::default("B".to_string(), Align2::LEFT_BOTTOM);
+        Shape::new(shape, movement, texture, texture_path, ui_state)
+
+    }
+
     
 }
 #[derive(Debug, PartialEq)]
@@ -306,83 +418,3 @@ impl ShapeUI {
     }
 }
 
-pub fn floor(display: &Display<WindowSurface>) -> Shape {
-    let shape = vec![
-        Vertex { position: [-0.5, 0.0, -0.5], tex_coords: [0.0, 0.0] },
-        Vertex { position: [ 0.5, 0.0, -0.5], tex_coords: [1.0, 0.0] },
-        Vertex { position: [ 0.5, 0.0,  0.5], tex_coords: [1.0, 1.0] },
-
-        Vertex { position: [ 0.5,  0.0, 0.5], tex_coords: [1.0, 1.0] },
-        Vertex { position: [-0.5,  0.0, 0.5], tex_coords: [0.0, 1.0] },
-        Vertex { position: [-0.5,  0.0,-0.5], tex_coords: [0.0, 0.0] },
-    ];
-    
-    let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0));
-    let matrix: Matrix4<f32>  = Matrix4::from_scale(10.0);
-    let movement = translate * matrix;
-    let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
-    let alignment = Align2::LEFT_TOP;
-    Shape{vertex_buffer: shape, model_matrix: movement, placement_matrix: movement,  texture, ui_state: ShapeUI::default("Floor".to_string(), alignment)}
-}
-
-pub fn f(display: &Display<WindowSurface>) -> Shape {
-    let shape = vec![
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-        Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-        Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-    ];
-
-    let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -10.0));
-    let matrix: Matrix4<f32>  = Matrix4::from_scale(10.0);
-    let movement = translate * matrix;
-    // For real tests!
-    //let texture = texture::load_texture("./resources/textures/Planes_airport.jpeg".to_string(), display);
-    let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
-
-    let alignment = Align2::LEFT_CENTER;
-    Shape{vertex_buffer: shape, model_matrix: movement,  placement_matrix: movement,texture, ui_state: ShapeUI::default("Far Plane".to_string(), alignment)}
-}
-pub fn a(display: &Display<WindowSurface>) -> Shape {
-    let shape = vec![
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-        Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-        Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-    ];
-
-    let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -5.0));
-    let matrix: Matrix4<f32>  = Matrix4::from_scale(3.0);
-    let movement = translate * matrix;
-    let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
-
-    let alignment = Align2::LEFT_BOTTOM;
-    Shape{vertex_buffer: shape, model_matrix: movement,  placement_matrix: movement,texture, ui_state: ShapeUI::default("A Plane".to_string(), alignment)}
-}
-
-
-pub fn b(display: &Display<WindowSurface>) -> Shape {
-    let shape = vec![
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-        Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-        Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-    ];
-
-    let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -0.0));
-    let matrix: Matrix4<f32>  = Matrix4::from_scale(3.0);
-    let movement = translate * matrix;
-    let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
-
-    let alignment = Align2::LEFT_BOTTOM;
-    Shape{vertex_buffer: shape, model_matrix: movement,  placement_matrix: movement,texture, ui_state: ShapeUI::default("B Plane".to_string(), alignment)}
-}
