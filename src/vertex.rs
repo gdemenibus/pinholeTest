@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use cgmath::{BaseNum, InnerSpace, Matrix4, Point3, Vector3, Vector4};
 use egui_glium::egui_winit::egui::{self, Align2, Context, Pos2, };
 use glium::{glutin::surface::WindowSurface, Display, Texture2d};
@@ -44,99 +46,21 @@ impl Vertex {
 }
 
 
+
 pub struct Shape {
-    pub vertex_buffer: Vec<Vertex>,
-    pub model_matrix: Matrix4<f32>,
-    pub placement_matrix: Matrix4<f32>,
+    pub world: Arc<Mutex<ShapeWorld>>,
     pub texture: glium::Texture2d,
-    pub texture_image: image::ImageBuffer<Rgba<u8>, Vec<u8>>,
     pub ui_state: ShapeUI
 }
 impl Shape {
     pub fn new(vertex_buffer: Vec<Vertex>, model_matrix: Matrix4<f32>, texture: Texture2d, texture_path: String, ui_state: ShapeUI) -> Shape{
         let tex = image::open(texture_path).unwrap();
+        let world = ShapeWorld{vertex_buffer, model_matrix, placement_matrix: model_matrix,texture_image: tex.to_rgba8()};
         
-        
-
-        Shape{vertex_buffer, model_matrix, placement_matrix: model_matrix, texture, ui_state,texture_image: tex.to_rgba8()}
-    }
-
-    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> Option<([u8; 4], Point3<f32>)> {
-
-        let trig_1 : [Point3<f32>; 3]= self.vertex_buffer[0..3].iter().map(|x|  x.place_vertex(&self.placement_matrix)   ).collect::<Vec<_>>().try_into().unwrap();
-        
-        let trig_2 : [Point3<f32>; 3]= self.vertex_buffer[3..6].iter().map(|x|  x.place_vertex(&self.placement_matrix) ).collect::<Vec<_>>().try_into().unwrap();
-        
-        let inter_1 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_1);
-        let inter_2 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_2);
-
-        if let Some(( inter_point, bary_point)) = inter_1 {
-            let texture = self.sample_texture(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]]);
-            Some((texture, inter_point))
-        }
-        else if let Some(( inter_point, bary_point)) = inter_2 {
-            let texture = self.sample_texture(bary_point, [self.vertex_buffer[3], self.vertex_buffer[4], self.vertex_buffer[5]]);
-            Some((texture, inter_point))
-            
-        }
-        else {
-            None
-        }
-
+        Shape{world: Arc::new(Mutex::new(world)), texture, ui_state}
     }
 
 
-    fn sample_texture(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3]) -> [u8; 4] {
-        let x_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[0]  + bary_coords.y * triangle[1].tex_coords[0] + bary_coords.z * triangle[2].tex_coords[0])) * self.texture_image.width() as f32;
-        let y_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[1]  + bary_coords.y * triangle[1].tex_coords[1] + bary_coords.z * triangle[2].tex_coords[1])) * self.texture_image.height() as f32;
-
-        
-
-        // TODO: Interplate the texture
-        self.texture_image.get_pixel(x_coord as u32, y_coord as u32).0
-
-      
- 
-    }
-
-
-    fn moller_trumbore_intersection(origin: Point3<f32>, direction: Vector3<f32>, triangle: [Point3<f32>; 3] ) -> Option<(Point3<f32>, Point3<f32>)> {
-        let e1 = triangle[1] - triangle[0];
-        let e2 = triangle[2] - triangle[0];
-        let ray_cross_e2 = direction.cross(e2);
-        let det = e1.dot(ray_cross_e2);
-
-        if det > -f32::EPSILON && det < f32::EPSILON {
-            return None;
-        }
-        let inv_det = 1.0 / det;
-	let s = origin - triangle[0];
-	let u = inv_det * s.dot(ray_cross_e2);
-	if !(0.0..=1.0).contains(&u) {
-		return None;
-	}
-
-	let s_cross_e1 = s.cross(e1);
-	let v = inv_det * direction.dot(s_cross_e1);
-        let w = 1.0 - v - u;
-
-	if v < 0.0 || u + v > 1.0 {
-		return None;
-	}
-	// At this stage we can compute t to find out where the intersection point is on the line.
-	let t = inv_det * e2.dot(s_cross_e1);
-
-	if t > f32::EPSILON { // ray intersection
-		let intersection_point = origin + direction * t;
-		Some((intersection_point, Point3::new(w, u, v)))
-	}
-	else { // This means that there is a line intersection but not a ray intersection.
-		None
-	}
-
-
-    }
-    
     pub fn floor(display: &Display<WindowSurface>) -> Shape {
         let shape = vec![
             Vertex { position: [-0.5, 0.0, -0.5], tex_coords: [0.0, 0.0] },
@@ -226,6 +150,93 @@ impl Shape {
     }
 
     
+}
+
+pub struct ShapeWorld {
+    pub vertex_buffer: Vec<Vertex>,
+    pub model_matrix: Matrix4<f32>,
+    pub placement_matrix: Matrix4<f32>,
+    pub texture_image: image::ImageBuffer<Rgba<u8>, Vec<u8>>,
+
+
+}
+impl ShapeWorld {
+
+    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> Option<([u8; 4], Point3<f32>)> {
+
+        let trig_1 : [Point3<f32>; 3]= self.vertex_buffer[0..3].iter().map(|x|  x.place_vertex(&self.placement_matrix)   ).collect::<Vec<_>>().try_into().unwrap();
+        
+        let trig_2 : [Point3<f32>; 3]= self.vertex_buffer[3..6].iter().map(|x|  x.place_vertex(&self.placement_matrix) ).collect::<Vec<_>>().try_into().unwrap();
+        
+        let inter_1 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_1);
+        let inter_2 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_2);
+
+        if let Some(( inter_point, bary_point)) = inter_1 {
+            let texture = self.sample_texture(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]]);
+            Some((texture, inter_point))
+        }
+        else if let Some(( inter_point, bary_point)) = inter_2 {
+            let texture = self.sample_texture(bary_point, [self.vertex_buffer[3], self.vertex_buffer[4], self.vertex_buffer[5]]);
+            Some((texture, inter_point))
+            
+        }
+        else {
+            None
+        }
+
+    }
+
+
+    fn sample_texture(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3]) -> [u8; 4] {
+        let x_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[0]  + bary_coords.y * triangle[1].tex_coords[0] + bary_coords.z * triangle[2].tex_coords[0])) * self.texture_image.width() as f32;
+        let y_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[1]  + bary_coords.y * triangle[1].tex_coords[1] + bary_coords.z * triangle[2].tex_coords[1])) * self.texture_image.height() as f32;
+
+        
+
+        // TODO: Interplate the texture
+        self.texture_image.get_pixel(x_coord as u32, y_coord as u32).0
+
+      
+ 
+    }
+
+
+    fn moller_trumbore_intersection(origin: Point3<f32>, direction: Vector3<f32>, triangle: [Point3<f32>; 3] ) -> Option<(Point3<f32>, Point3<f32>)> {
+        let e1 = triangle[1] - triangle[0];
+        let e2 = triangle[2] - triangle[0];
+        let ray_cross_e2 = direction.cross(e2);
+        let det = e1.dot(ray_cross_e2);
+
+        if det > -f32::EPSILON && det < f32::EPSILON {
+            return None;
+        }
+        let inv_det = 1.0 / det;
+	let s = origin - triangle[0];
+	let u = inv_det * s.dot(ray_cross_e2);
+	if !(0.0..=1.0).contains(&u) {
+		return None;
+	}
+
+	let s_cross_e1 = s.cross(e1);
+	let v = inv_det * direction.dot(s_cross_e1);
+        let w = 1.0 - v - u;
+
+	if v < 0.0 || u + v > 1.0 {
+		return None;
+	}
+	// At this stage we can compute t to find out where the intersection point is on the line.
+	let t = inv_det * e2.dot(s_cross_e1);
+
+	if t > f32::EPSILON { // ray intersection
+		let intersection_point = origin + direction * t;
+		Some((intersection_point, Point3::new(w, u, v)))
+	}
+	else { // This means that there is a line intersection but not a ray intersection.
+		None
+	}
+
+
+    }
 }
 #[derive(Debug, PartialEq)]
 pub enum LastChanged {
