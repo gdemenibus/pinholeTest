@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use egui_glium::egui_winit::egui::mutex::RwLock;
 use std::{sync::Arc,   time::Instant};
 
 use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
@@ -92,7 +92,7 @@ impl App<'_> {
 
         for shape in self.shapes.iter_mut() {
             // lock shape:
-            let mut world = shape.world.lock().unwrap();
+            let mut world = shape.world.write();
 
             let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
                 Vector4::new(shape.ui_state.size.0, 0.0, 0.0, 0.0), 
@@ -186,7 +186,7 @@ impl App<'_> {
         let p_1_m = t_n * d - g_x * b_n - g_y * v_n;
 
         let ray_origin = self.camera.position;
-        let shapes: Vec<Arc<Mutex<ShapeWorld>>> = self.shapes.iter().map(|x|  x.world.clone()).collect();
+        let shapes: Vec<Arc<RwLock<ShapeWorld>>> = self.shapes.iter().map(|x|  x.world.clone()).collect();
 
 
 
@@ -199,7 +199,7 @@ impl App<'_> {
             
             // TODO: Right now the order of the shapes matters! Need to change that
             for shape in shapes.clone() {
-                let shape = shape.lock().unwrap();
+                let shape = shape.read();
 
 
                 let intersect = shape.intersect(ray_origin, ray_dir);
