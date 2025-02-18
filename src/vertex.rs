@@ -1,7 +1,6 @@
-use cgmath::{BaseNum, InnerSpace, Matrix4, Point2, Point3, Vector3, Vector4};
-use egui_glium::egui_winit::egui::ahash::HashSet;
-use egui_glium::egui_winit::egui::{self, Align2, Context, Ui};
-use glium::{glutin::surface::WindowSurface, winit::window::Window, Display, Texture2d};
+use cgmath::{BaseNum, InnerSpace, Matrix4, Point3, Vector3, Vector4};
+use egui_glium::egui_winit::egui::{self, Align2, Context};
+use glium::{glutin::surface::WindowSurface, Display, Texture2d};
 use image::Rgba;
 use crate::texture;
 use crate::matrix::{ToArr, FromArr};
@@ -45,18 +44,6 @@ impl Vertex {
 }
 
 
-pub fn debug_triangle()-> Vec<Vertex> {
-    let shape = vec![
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-        Vertex { position: [ 0.5, -0.5, 0.5], tex_coords: [1.0, 0.0] },
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-
-        Vertex { position: [ 0.5,  0.5, 0.5], tex_coords: [1.0, 1.0] },
-        Vertex { position: [-0.5,  0.5, 0.5], tex_coords: [0.0, 1.0] },
-        Vertex { position: [-0.5, -0.5, 0.5], tex_coords: [0.0, 0.0] },
-    ];
-    shape
-}
 pub struct Shape {
     pub vertex_buffer: Vec<Vertex>,
     pub model_matrix: Matrix4<f32>,
@@ -74,7 +61,7 @@ impl Shape {
         Shape{vertex_buffer, model_matrix, placement_matrix: model_matrix, texture, ui_state,texture_image: tex.to_rgba8()}
     }
 
-    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> Option<[u8; 4]> {
+    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> Option<([u8; 4], Point3<f32>)> {
 
         let trig_1 : [Point3<f32>; 3]= self.vertex_buffer[0..3].iter().map(|x|  x.place_vertex(&self.placement_matrix)   ).collect::<Vec<_>>().try_into().unwrap();
         
@@ -82,13 +69,15 @@ impl Shape {
         
         let inter_1 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_1);
         let inter_2 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_2);
-        if inter_1.is_some() {
-            let bary_point = inter_1.unwrap().1;
-            Some(self.sample_texture(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]]))
+
+        if let Some(( inter_point, bary_point)) = inter_1 {
+            let texture = self.sample_texture(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]]);
+            Some((texture, inter_point))
         }
-        else if inter_2.is_some(){
-            let bary_point = inter_2.unwrap().1;
-            Some(self.sample_texture(bary_point, [self.vertex_buffer[3], self.vertex_buffer[4], self.vertex_buffer[5]]))
+        else if let Some(( inter_point, bary_point)) = inter_2 {
+            let texture = self.sample_texture(bary_point, [self.vertex_buffer[3], self.vertex_buffer[4], self.vertex_buffer[5]]);
+            Some((texture, inter_point))
+            
         }
         else {
             None

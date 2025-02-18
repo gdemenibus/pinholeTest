@@ -63,7 +63,6 @@ The resolution of our target images matters here as well basically
 Code needs to be refactored to be more flexible
 In particular, reconsider how elements are placed
 
-Extend raytracer to use textures
 Extend raytracer to deal with semi opaquee object
 Extend ray tracer to be concurrent?
 
