@@ -173,17 +173,19 @@ impl App<'_> {
             let f_x = x as f32;
             let ray_dir = (p_1_m + q_x*(f_x - 1.0) + q_y *(f_y - 1.0)).normalize();
             let ray_origin = self.camera.position;
+            let mut color = [0_u8, 0_u8, 0_u8, 0_u8];
             // TODO: Right now the order of the shapes matters!
+            //
             for shape in self.shapes.iter() {
                 let intersect = shape.intersect(ray_origin, ray_dir);
-                if let Some(color) = intersect {
+                if let Some((color, point)) = intersect {
                     return image::Rgba(color);
                     
                 }
 
             }
 
-                    image::Rgba([0_u8, 0_u8, 0_u8, 0_u8])
+                    image::Rgba(color)
         });
         //let color_img = egui::ColorImage::from_rgba_unmultiplied([image_width as usize, image_height as usize], &buf);
         //self.ray_trace_display = Some(ctx.load_texture("image", color_img, TextureOptions::LINEAR));
@@ -251,8 +253,10 @@ impl ApplicationHandler for App<'_> {
                 self.window.request_redraw();
             }
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
-                if let glium::winit::keyboard::PhysicalKey::Code(KeyCode::KeyR) = event.physical_key{
-                    self.raytrace();
+                if event.state == ElementState::Pressed {
+                    if let glium::winit::keyboard::PhysicalKey::Code(KeyCode::KeyR) = event.physical_key{
+                        self.raytrace();
+                    }
                 }
                 
                 self.controller.process_keyboard(event);
