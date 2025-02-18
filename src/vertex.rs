@@ -85,6 +85,7 @@ impl Shape {
 
     }
 
+
     fn sample_texture(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3]) -> [u8; 4] {
         let x_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[0]  + bary_coords.y * triangle[1].tex_coords[0] + bary_coords.z * triangle[2].tex_coords[0])) * self.texture_image.width() as f32;
         let y_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[1]  + bary_coords.y * triangle[1].tex_coords[1] + bary_coords.z * triangle[2].tex_coords[1])) * self.texture_image.height() as f32;

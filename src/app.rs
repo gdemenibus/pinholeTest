@@ -1,8 +1,10 @@
-use std::  time::Instant;
+use std::{sync::Arc,   time::Instant};
 
 use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
-use egui_glium::egui_winit::egui::{self, Align2, Context, TextureHandle};
-use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{application::ApplicationHandler, event::{DeviceEvent, ElementState, MouseButton}, keyboard::KeyCode, window::Window}, Display, DrawParameters, Program, VertexBuffer};
+use egui_glium::egui_winit::egui::{self, Align2, Color32, ColorImage, TextureHandle, TextureOptions};
+use egui_glium::egui_winit::egui::ImageData;
+use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{event::{DeviceEvent, ElementState, MouseButton}, keyboard::KeyCode, window::Window}, Display, DrawParameters, Program};
+use glium::winit::application::ApplicationHandler;
 use ::image::ImageBuffer;
 use crate::{matrix::ToArr, shader, vertex:: Shape};
 use glium::Surface;
@@ -13,6 +15,9 @@ use crate::camera::{Camera, CameraController, Projection};
 
 use std::f32::consts::FRAC_PI_2;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
+
+const RAY_HEIGHT: usize = 500;
+const RAY_WIDTH: usize = 500;
 
 // Deal with application State
 // RN, only does 
@@ -32,6 +37,9 @@ pub struct App<'a> {
     mouse_press: bool,
     mouse_on_ui: bool,
     ray_trace_display: bool,
+    ray_tace_file_name: String,
+    raytrace_handler: TextureHandle,
+
 
 }
 
@@ -53,6 +61,10 @@ impl App<'_> {
         let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
         let program = glium::Program::from_source(&display, &vertex_shader, &fragment_shader, None).unwrap();
 
+        let raytrace_handler = ui.egui_ctx().load_texture("Rayrender", 
+            ImageData::Color(Arc::new(ColorImage::new([RAY_WIDTH, RAY_HEIGHT], Color32::TRANSPARENT))),
+            TextureOptions::default());
+
         let draw_params = glium::DrawParameters {
             depth: glium::Depth {
                 test: glium::draw_parameters::DepthTest::IfLess,
@@ -64,7 +76,7 @@ impl App<'_> {
         };
         let last_step = Instant::now();
 
-        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false, ray_trace_display: false}
+        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false, ray_trace_display: false, raytrace_handler}
     }
     pub fn draw_debug(&mut self) {
 
@@ -72,6 +84,7 @@ impl App<'_> {
         frame.clear_color_and_depth((0.0, 0.0,1.0 , 1.0), 1.0);
 
         for shape in self.shapes.iter_mut() {
+
             let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
                 Vector4::new(shape.ui_state.size.0, 0.0, 0.0, 0.0), 
                 Vector4::new(0.0, shape.ui_state.size.1, 0.0, 0.0),
@@ -81,9 +94,9 @@ impl App<'_> {
             let matrix = Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, shape.ui_state.distance))* shape.model_matrix * scale_matrix;
             shape.placement_matrix = matrix;
 
-            
+
             let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
-            
+
 
             let uniforms = uniform!{
                 model: matrix.to_arr(),
@@ -110,7 +123,7 @@ impl App<'_> {
         self.last_step = now;
         // Update camera
         self.controller.update_camera(&mut self.camera, dt);
-        
+
 
     }
     pub fn define_ui(&mut self) {
@@ -120,23 +133,27 @@ impl App<'_> {
             egui_extras::install_image_loaders(ctx);
 
             for shape in self.shapes.iter_mut() {
-                
+
                 shape.ui_state.define_ui(ctx);
             }
 
-            if self.ray_trace_display {
 
-            egui::Window::new("RAY TRACER").pivot(Align2::RIGHT_TOP).show(ctx, |ui| {
+                egui::Window::new("RAY TRACER").pivot(Align2::RIGHT_TOP).show(ctx, |ui| {
+                    ui.add(
+                        egui::Image::new(&self.raytrace_handler)
+                    );
+
+
                     //ctx.forget_all_images();
-                    ctx.forget_image("file:://test.png");
-                    ui.image("file://test.png");
+                    //ctx.forget_image("file:://test.png");
+                    //ui.image("file://test.png");
 
-                
 
-            });
-            }
 
-            } );
+
+                });
+
+        } );
     }
     pub fn raytrace(&mut self) {
         // Rebiuld the world?
@@ -150,9 +167,9 @@ impl App<'_> {
         // Distance between camera and plane?
         //
         //println!("Starting Ray trace");
-        let image_height = 500;
-        let image_width = 500;
-        
+        let image_height: u32 = RAY_HEIGHT.try_into().unwrap();
+        let image_width: u32 = RAY_WIDTH.try_into().unwrap();
+
         // CAMERA MATH!
 
         let d = 1.0;
@@ -161,7 +178,7 @@ impl App<'_> {
         let v_n = t_n.cross(b_n).normalize();
         let g_x = (SAFE_FRAC_PI_2 / 2.0).tan() * d;
         // IMPORTANT: Might have width and height confused?
-        
+
         let g_y = g_x * ((image_height as f32 - 1.0) / (image_width as f32 - 1.0) );
         let q_x = (2.0 * g_x) / (image_height as f32 - 1.0) * b_n;
         let q_y = (2.0 * g_y) / (image_width as f32 - 1.0) * v_n;
@@ -173,27 +190,29 @@ impl App<'_> {
             let f_x = x as f32;
             let ray_dir = (p_1_m + q_x*(f_x - 1.0) + q_y *(f_y - 1.0)).normalize();
             let ray_origin = self.camera.position;
-            let mut color = [0_u8, 0_u8, 0_u8, 0_u8];
-            // TODO: Right now the order of the shapes matters!
-            //
+            let  color = [0_u8, 0_u8, 0_u8, 0_u8];
+            // TODO: Right now the order of the shapes matters! Need to change that
             for shape in self.shapes.iter() {
                 let intersect = shape.intersect(ray_origin, ray_dir);
-                if let Some((color, point)) = intersect {
+                if let Some((color, _point)) = intersect {
                     return image::Rgba(color);
-                    
+
                 }
 
             }
 
-                    image::Rgba(color)
+            image::Rgba(color)
         });
+
+        let raw = ColorImage::from_rgba_unmultiplied([RAY_WIDTH, RAY_HEIGHT], &buf.into_raw());
+        self.raytrace_handler.set(raw, TextureOptions::default());
         //let color_img = egui::ColorImage::from_rgba_unmultiplied([image_width as usize, image_height as usize], &buf);
         //self.ray_trace_display = Some(ctx.load_texture("image", color_img, TextureOptions::LINEAR));
-        let res = buf.save_with_format("test.png", image::ImageFormat::Png);
+        //let res = buf.save_with_format("test.png", image::ImageFormat::Png);
         //
-        if res.is_err() {
-            println!("Could not write to file? {:?}", res);
-        }
+        //if res.is_err() {
+        //    println!("Could not write to file? {:?}", res);
+        //}
         self.ray_trace_display = true;
         println!("Rays traced!");
     }
@@ -226,7 +245,7 @@ impl ApplicationHandler for App<'_> {
             WindowEvent::Resized(window_size) => {
                 self.projection.resize(window_size.width, window_size.height);
                 self.display.resize(window_size.into());
-                
+
 
             }
 
@@ -258,7 +277,7 @@ impl ApplicationHandler for App<'_> {
                         self.raytrace();
                     }
                 }
-                
+
                 self.controller.process_keyboard(event);
             }
             WindowEvent::MouseInput { device_id, state, button: MouseButton::Right } => {
@@ -272,16 +291,16 @@ impl ApplicationHandler for App<'_> {
 
     #[allow(unused_variables)]
     fn device_event(
-            &mut self,
-            event_loop: &glium::winit::event_loop::ActiveEventLoop,
-            device_id: glium::winit::event::DeviceId,
-            event: glium::winit::event::DeviceEvent,
-        ) {
+        &mut self,
+        event_loop: &glium::winit::event_loop::ActiveEventLoop,
+        device_id: glium::winit::event::DeviceId,
+        event: glium::winit::event::DeviceEvent,
+    ) {
         if let DeviceEvent::MouseMotion { delta } = event {
             if self.mouse_press && !self.mouse_on_ui{
                 self.controller.process_mouse(delta.0, delta.1);
             }
         }
-        
+
     }
 }
