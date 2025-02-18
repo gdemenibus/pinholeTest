@@ -7,9 +7,7 @@ mod texture;
 mod camera;
 mod app;
 use app::App;
-use cgmath::{Matrix4, Vector3};
 use egui_glium::egui_winit::egui;
-use matrix::ToArr;
 
 fn main() {
     // Event loop handles windows and device events
@@ -30,7 +28,6 @@ fn main() {
     let egui_render = egui_glium::EguiGlium::new(viewport, &display, &window, &event_loop);
 
     egui_extras::install_image_loaders(&context);
-
 
 
 

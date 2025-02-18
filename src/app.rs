@@ -1,7 +1,7 @@
 use std::{sync::Arc,   time::Instant};
 
 use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
-use egui_glium::egui_winit::egui::{self, Align2, Color32, ColorImage, TextureHandle, TextureOptions};
+use egui_glium::egui_winit::egui::{self, Align2, Color32, ColorImage, TextureHandle, TextureOptions, Vec2};
 use egui_glium::egui_winit::egui::ImageData;
 use glium::{glutin::surface::WindowSurface, index::NoIndices, winit::{event::{DeviceEvent, ElementState, MouseButton}, keyboard::KeyCode, window::Window}, Display, DrawParameters, Program};
 use glium::winit::application::ApplicationHandler;
@@ -76,7 +76,7 @@ impl App<'_> {
         };
         let last_step = Instant::now();
 
-        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false, ray_trace_display: false, raytrace_handler}
+        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false, ray_trace_display: false, ray_tace_file_name: "test.png".to_string(), raytrace_handler}
     }
     pub fn draw_debug(&mut self) {
 
@@ -133,24 +133,16 @@ impl App<'_> {
             egui_extras::install_image_loaders(ctx);
 
             for shape in self.shapes.iter_mut() {
-
                 shape.ui_state.define_ui(ctx);
             }
 
 
-                egui::Window::new("RAY TRACER").pivot(Align2::RIGHT_TOP).show(ctx, |ui| {
+                egui::Window::new("RAY TRACER").anchor(Align2::RIGHT_TOP, Vec2::new(1.0,1.0)).default_open(false).show(ctx, |ui| {
                     ui.add(
                         egui::Image::new(&self.raytrace_handler)
                     );
-
-
-                    //ctx.forget_all_images();
-                    //ctx.forget_image("file:://test.png");
-                    //ui.image("file://test.png");
-
-
-
-
+                    ui.checkbox(&mut self.ray_trace_display, "Save as file");
+                    ui.text_edit_singleline(&mut self.ray_tace_file_name);
                 });
 
         } );
@@ -203,16 +195,16 @@ impl App<'_> {
 
             image::Rgba(color)
         });
+        if self.ray_trace_display {
+            let res = buf.save_with_format(self.ray_tace_file_name.clone(), image::ImageFormat::Png);
+            
+            if res.is_err() {
+                println!("Could not write to file? {:?}", res);
+            }
+        }
 
         let raw = ColorImage::from_rgba_unmultiplied([RAY_WIDTH, RAY_HEIGHT], &buf.into_raw());
         self.raytrace_handler.set(raw, TextureOptions::default());
-        //let color_img = egui::ColorImage::from_rgba_unmultiplied([image_width as usize, image_height as usize], &buf);
-        //self.ray_trace_display = Some(ctx.load_texture("image", color_img, TextureOptions::LINEAR));
-        //let res = buf.save_with_format("test.png", image::ImageFormat::Png);
-        //
-        //if res.is_err() {
-        //    println!("Could not write to file? {:?}", res);
-        //}
         self.ray_trace_display = true;
         println!("Rays traced!");
     }
@@ -272,13 +264,16 @@ impl ApplicationHandler for App<'_> {
                 self.window.request_redraw();
             }
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
-                if event.state == ElementState::Pressed {
+                if event.state == ElementState::Pressed && !self.mouse_on_ui {
                     if let glium::winit::keyboard::PhysicalKey::Code(KeyCode::KeyR) = event.physical_key{
                         self.raytrace();
                     }
                 }
+                
+                if !self.mouse_on_ui{
+                    self.controller.process_keyboard(event);
+                }
 
-                self.controller.process_keyboard(event);
             }
             WindowEvent::MouseInput { device_id, state, button: MouseButton::Right } => {
                 self.mouse_press = state == ElementState::Pressed;
