@@ -14,12 +14,13 @@ use glium::winit::event::WindowEvent;
 
 
 use crate::camera::{Camera, CameraController, Projection};
+use crate::raytracer::Raytracer;
 
-use std::f32::consts::FRAC_PI_2;
-const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
-const RAY_HEIGHT: usize = 1500;
-const RAY_WIDTH: usize = 1500;
+use crate::SAFE_FRAC_PI_2;
+use crate::RAY_HEIGHT;
+use crate::RAY_WIDTH;
+
 
 // Deal with application State
 // RN, only does 
@@ -38,10 +39,7 @@ pub struct App<'a> {
     ui: egui_glium::EguiGlium,
     mouse_press: bool,
     mouse_on_ui: bool,
-    ray_trace_display: bool,
-    ray_trace_save: bool,
-    ray_tace_file_name: String,
-    raytrace_handler: TextureHandle,
+    raytracer: Raytracer,
 
 
 }
@@ -62,7 +60,9 @@ impl App<'_> {
 
 
         let camera = Camera::new((0.0, 8.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection = Projection::new(window.inner_size().width, window.inner_size().height, cgmath::Deg(45.0), 0.1, 100.0);
+
+        let projection = Projection::new(window.inner_size().width, window.inner_size().height, cgmath::Deg(90.0), 0.1, 100.0);
+
         let controller = CameraController::new(4.0, 0.4);
 
         let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
@@ -82,8 +82,9 @@ impl App<'_> {
             .. Default::default()
         };
         let last_step = Instant::now();
+        let raytracer = Raytracer::new( false,  true,  "test.png".to_string(), raytrace_handler);
 
-        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false, ray_trace_display: false, ray_trace_save: true, ray_tace_file_name: "test.png".to_string(), raytrace_handler}
+        App{window, display, last_step,  camera, projection, controller,  shapes, indices, program, draw_params, ui,  mouse_press: false, mouse_on_ui: false, raytracer }
     }
     pub fn draw_debug(&mut self) {
 
@@ -95,12 +96,12 @@ impl App<'_> {
             let mut world = shape.world.write();
 
             let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
-                Vector4::new(shape.ui_state.size.0, 0.0, 0.0, 0.0), 
-                Vector4::new(0.0, shape.ui_state.size.1, 0.0, 0.0),
+                Vector4::new(world.ui_state.size.0, 0.0, 0.0, 0.0), 
+                Vector4::new(0.0, world.ui_state.size.1, 0.0, 0.0),
                 Vector4::new(0.0, 0.0, 1.0, 0.0),
                 Vector4::new(0.0, 0.0, 0.0, 1.0),
             );
-            let matrix = Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, shape.ui_state.distance))* world.model_matrix * scale_matrix;
+            let matrix = Matrix4::<f32>::from_translation(Vector3::new(0.0,0.0, world.ui_state.distance))* world.model_matrix * scale_matrix;
             world.placement_matrix = matrix;
 
 
@@ -142,88 +143,21 @@ impl App<'_> {
             egui_extras::install_image_loaders(ctx);
 
             for shape in self.shapes.iter_mut() {
-                shape.ui_state.define_ui(ctx);
+                let mut world = shape.world.write();
+                world.ui_state.define_ui(ctx);
             }
-
-
-                egui::Window::new("RAY TRACER").anchor(Align2::RIGHT_TOP, Vec2::new(1.0,1.0)).default_open(false).show(ctx, |ui| {
-                    ui.add(
-                        egui::Image::new(&self.raytrace_handler).max_size(Vec2::new(500.0, 500.0))
-                    );
-                    ui.checkbox(&mut self.ray_trace_save, "Save as file");
-                    ui.text_edit_singleline(&mut self.ray_tace_file_name);
-                });
-
+            self.raytracer.ui_draw(ctx);
         } );
     }
     pub fn raytrace(&mut self) {
-        // Rebiuld the world?
-        // Eye Position
-        // Target position
-        // FOV (90 degrees)
-        // number of quare pixels on the viewport on each direction
-        // Vector which indicates where up is (given by camera)
-        //
-        // Target image, by pixel
-        // Distance between camera and plane?
-        //
-        //println!("Starting Ray trace");
-        let image_height: u32 = RAY_HEIGHT.try_into().unwrap();
-        let image_width: u32 = RAY_WIDTH.try_into().unwrap();
 
-        // CAMERA MATH!
-
-        let d = 1.0;
         let t_n = self.camera.direction_vec();
-        let b_n = t_n.cross(Vector3::new(0.0, 1.0, 0.0)).normalize();
-        let v_n = t_n.cross(b_n).normalize();
-        let g_x = (SAFE_FRAC_PI_2 / 2.0).tan() * d;
-        // IMPORTANT: Might have width and height confused?
-
-        let g_y = g_x * ((image_height as f32 - 1.0) / (image_width as f32 - 1.0) );
-        let q_x = (2.0 * g_x) / (image_height as f32 - 1.0) * b_n;
-        let q_y = (2.0 * g_y) / (image_width as f32 - 1.0) * v_n;
-        let p_1_m = t_n * d - g_x * b_n - g_y * v_n;
 
         let ray_origin = self.camera.position;
         let shapes: Vec<Arc<RwLock<ShapeWorld>>> = self.shapes.iter().map(|x|  x.world.clone()).collect();
+        self.raytracer.raytrace(t_n, ray_origin, shapes);
 
 
-
-        let buf = ImageBuffer::from_par_fn(image_width, image_height, |x, y| {
-
-            let f_y = y as f32;
-            let f_x = x as f32;
-            let  color = [0_u8, 0_u8, 0_u8, 0_u8];
-            let ray_dir = (p_1_m + q_x*(f_x - 1.0) + q_y *(f_y - 1.0)).normalize();
-            
-            // TODO: Right now the order of the shapes matters! Need to change that
-            for shape in shapes.clone() {
-                let shape = shape.read();
-
-
-                let intersect = shape.intersect(ray_origin, ray_dir);
-                if let Some((color, _point)) = intersect {
-                    return image::Rgba(color);
-
-                }
-
-            }
-
-            image::Rgba(color)
-        });
-        if self.ray_trace_save {
-            let res = buf.save_with_format(self.ray_tace_file_name.clone(), image::ImageFormat::Png);
-            
-            if res.is_err() {
-                println!("Could not write to file? {:?}", res);
-            }
-        }
-
-        let raw = ColorImage::from_rgba_unmultiplied([RAY_WIDTH, RAY_HEIGHT], &buf.into_raw());
-        self.raytrace_handler.set(raw, TextureOptions::default());
-        self.ray_trace_display = true;
-        println!("Rays traced!");
     }
 
 }
@@ -259,13 +193,6 @@ impl ApplicationHandler for App<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                // Redraw the application.
-                //
-                // It's preferable for applications that do not render continuously to render in
-                // this event rather than in AboutToWait, since rendering in here allows
-                // the program to gracefully handle redraws requested by the OS.
-
-
                 self.define_ui();
                 // Draw.
                 //
@@ -273,11 +200,6 @@ impl ApplicationHandler for App<'_> {
 
 
 
-                // Queue a RedrawRequested event.
-                //
-                // You only need to call this if you've determined that you need to redraw in
-                // applications which do not always need to. Applications that redraw continuously
-                // can render here instead.
                 self.window.request_redraw();
             }
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {

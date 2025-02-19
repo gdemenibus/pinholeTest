@@ -40,7 +40,7 @@ Include ray count in parameters?
 
 Produce two views / images: the difference in views
 
-Inspect 3D world? does that make any sense?
+Inspect 3D world? Does that make any sense?
 
 Do I march the ray? WE will see how 
 
@@ -69,5 +69,21 @@ Extend ray tracer to be concurrent?
 
 
 
+## How to find the pixel and pixel center:
+Transform the intersection into quad cords
+Multiply by the size will give us the "pixel coordinates"
+Rounding will give us the nearest pixel (probably minus 1?)
+Center doable
+
+Then need to translate this back to view space
+
+
+How quad space looks:
+
+0,0 ----- 1,0
+ |         |
+ |         |
+ |         |
+0,1-------1,1     
 
 
