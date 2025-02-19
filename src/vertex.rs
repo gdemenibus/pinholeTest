@@ -1,6 +1,5 @@
-use std::sync::{Arc, };
-
-use cgmath::{BaseNum, InnerSpace, Matrix4, Point3, Vector3, Vector4};
+use std::sync::Arc;
+use cgmath::{BaseNum, EuclideanSpace, InnerSpace, Matrix4 , Point3, Vector3, Vector4};
 use egui_glium::egui_winit::egui::mutex::RwLock;
 use egui_glium::egui_winit::egui::{self, Context, Pos2, };
 use glium::{glutin::surface::WindowSurface, Display, Texture2d};
@@ -51,14 +50,13 @@ impl Vertex {
 pub struct Shape {
     pub world: Arc<RwLock<ShapeWorld>>,
     pub texture: glium::Texture2d,
-    pub ui_state: ShapeUI
 }
 impl Shape {
     pub fn new(vertex_buffer: Vec<Vertex>, model_matrix: Matrix4<f32>, texture: Texture2d, texture_path: String, ui_state: ShapeUI) -> Shape{
         let tex = image::open(texture_path).unwrap();
-        let world = ShapeWorld{vertex_buffer, model_matrix, placement_matrix: model_matrix,texture_image: tex.to_rgba8()};
+        let world = ShapeWorld{vertex_buffer, model_matrix, placement_matrix: model_matrix,texture_image: tex.to_rgba8(), ui_state};
         
-        Shape{world: Arc::new(RwLock::new(world)), texture, ui_state}
+        Shape{world: Arc::new(RwLock::new(world)), texture}
     }
 
 
@@ -97,7 +95,7 @@ impl Shape {
         let movement = translate * matrix;
         // For real tests!
         //let texture = texture::load_texture("./resources/textures/Planes_airport.jpeg".to_string(), display);
-        let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
+        let texture_path ="./resources/textures/Golden monkey.jpg".to_string(); 
 
         let texture = texture::load_texture(texture_path.clone(), display);
         let ui_state = ShapeUI::default("Far plane".to_string(), Pos2::new(0.0,200.0));
@@ -118,7 +116,7 @@ impl Shape {
         let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -5.0));
         let matrix: Matrix4<f32>  = Matrix4::from_scale(3.0);
         let movement = translate * matrix;
-        let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
+        let texture_path ="./resources/textures/Mandril.jpg".to_string(); 
 
         let texture = texture::load_texture(texture_path.clone(), display);
         let ui_state = ShapeUI::default("A".to_string(), Pos2::new(0.0,150.0));
@@ -142,7 +140,7 @@ impl Shape {
         let translate: Matrix4<f32>= Matrix4::from_translation(Vector3::new(0.0, 5.0, -0.0));
         let matrix: Matrix4<f32>  = Matrix4::from_scale(3.0);
         let movement = translate * matrix;
-        let texture_path ="./resources/textures/Gibbon.jpg".to_string(); 
+        let texture_path ="./resources/textures/new-debrazza.jpg".to_string(); 
 
         let texture = texture::load_texture(texture_path.clone(), display);
         let ui_state = ShapeUI::default("B".to_string(), Pos2::new(0.0,0.0));
@@ -158,12 +156,13 @@ pub struct ShapeWorld {
     pub model_matrix: Matrix4<f32>,
     pub placement_matrix: Matrix4<f32>,
     pub texture_image: image::ImageBuffer<Rgba<u8>, Vec<u8>>,
+    pub ui_state: ShapeUI,
 
 
 }
 impl ShapeWorld {
 
-    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> Option<([u8; 4], Point3<f32>)> {
+    pub fn intersect(&self, vect_pos: Point3<f32>, vec_dir: Vector3<f32>) -> Option<([u8; 4], Point3<f32>, Vector3<f32>)> {
 
         let trig_1 : [Point3<f32>; 3]= self.vertex_buffer[0..3].iter().map(|x|  x.place_vertex(&self.placement_matrix)   ).collect::<Vec<_>>().try_into().unwrap();
         
@@ -173,12 +172,15 @@ impl ShapeWorld {
         let inter_2 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_2);
 
         if let Some(( inter_point, bary_point)) = inter_1 {
+            let contact_pixel = self.pixel_center_real_space(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]], trig_1);
             let texture = self.sample_texture(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]]);
-            Some((texture, inter_point))
+            Some((texture, inter_point, contact_pixel))
         }
         else if let Some(( inter_point, bary_point)) = inter_2 {
+
+            let contact_pixel = self.pixel_center_real_space(bary_point, [self.vertex_buffer[0], self.vertex_buffer[1], self.vertex_buffer[2]], trig_2);
             let texture = self.sample_texture(bary_point, [self.vertex_buffer[3], self.vertex_buffer[4], self.vertex_buffer[5]]);
-            Some((texture, inter_point))
+            Some((texture, inter_point, contact_pixel))
             
         }
         else {
@@ -189,8 +191,8 @@ impl ShapeWorld {
 
 
     fn sample_texture(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3]) -> [u8; 4] {
-        let x_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[0]  + bary_coords.y * triangle[1].tex_coords[0] + bary_coords.z * triangle[2].tex_coords[0])) * self.texture_image.width() as f32;
-        let y_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[1]  + bary_coords.y * triangle[1].tex_coords[1] + bary_coords.z * triangle[2].tex_coords[1])) * self.texture_image.height() as f32;
+        let x_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[0]  + bary_coords.y * triangle[1].tex_coords[0] + bary_coords.z * triangle[2].tex_coords[0])) * self.texture_image.width() as f32 - 1.0;
+        let y_coord = (1.0 - (bary_coords.x * triangle[0].tex_coords[1]  + bary_coords.y * triangle[1].tex_coords[1] + bary_coords.z * triangle[2].tex_coords[1])) * self.texture_image.height() as f32 - 1.0;
 
         
 
@@ -199,6 +201,45 @@ impl ShapeWorld {
 
       
  
+    }
+
+
+    #[allow(dead_code)]
+    //0,0 ----- 1,0
+    // |         |
+    // |         |
+    // |         |
+    //0,1-------1,1     
+    fn pixel_center_real_space(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3], trig: [Point3<f32>; 3]  ) -> Vector3<f32> {
+        let x_coord = 1.0 - (bary_coords.x * triangle[0].tex_coords[0]  + bary_coords.y * triangle[1].tex_coords[0] + bary_coords.z * triangle[2].tex_coords[0]);
+        let y_coord = 1.0 - (bary_coords.x * triangle[0].tex_coords[1]  + bary_coords.y * triangle[1].tex_coords[1] + bary_coords.z * triangle[2].tex_coords[1]);
+        let pixel_height = self.ui_state.resolution.1;
+        let pixel_width = self.ui_state.resolution.0;
+
+        let x_f_pixel = x_coord * pixel_width;
+        let y_f_pixel = y_coord * pixel_height;
+        let x_pixel = x_f_pixel.floor();
+        let y_pixel = y_f_pixel.floor();
+        
+        let center_x_pixel = x_pixel + 0.5;
+        let center_y_pixel = y_pixel + 0.5;
+
+        // reverse linear interpolation?
+        let e1 = trig[1] - trig[0];
+        let e2 = trig[2] - trig[0];
+
+        let relative_x_pixel = center_x_pixel / pixel_width;
+        let x_vec = e1 * relative_x_pixel;
+
+        let relative_y_pixel = center_y_pixel / pixel_width;
+        let y_vec = e2 * relative_y_pixel;
+
+        
+        x_vec + y_vec + trig[0].to_vec()
+        // x and y coords are currently expressed in quad space
+        // Need to: Get the pixel they intersect with, get that pixel center in quad space, and
+        // then get that back view space (apply transoformation to this point?) Yes, should.
+
     }
 
 

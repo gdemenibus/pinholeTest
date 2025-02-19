@@ -6,8 +6,14 @@ mod matrix;
 mod texture;
 mod camera;
 mod app;
+mod raytracer;
 use app::App;
 use egui_glium::egui_winit::egui;
+
+use std::f32::consts::FRAC_PI_2;
+pub const RAY_HEIGHT: usize = 1500;
+pub const RAY_WIDTH: usize = 1500;
+pub const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 fn main() {
     // Event loop handles windows and device events
