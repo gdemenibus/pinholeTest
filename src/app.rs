@@ -9,6 +9,7 @@ use egui_glium::egui_winit::egui::ImageData;
 use egui_glium::egui_winit::egui::{Color32, ColorImage, TextureOptions};
 use glium::winit::application::ApplicationHandler;
 use glium::winit::event::WindowEvent;
+use glium::Surface;
 use glium::{
     glutin::surface::WindowSurface,
     index::NoIndices,
@@ -19,7 +20,6 @@ use glium::{
     },
     Display, DrawParameters, Program,
 };
-use glium::{Frame, Surface};
 
 use crate::camera::{Camera, CameraController, Projection};
 use crate::raytracer::Raytracer;
@@ -198,6 +198,7 @@ impl App<'_> {
         // Update camera
         self.controller.update_camera(&mut self.camera, dt);
     }
+
     pub fn define_ui(&mut self) {
         let window = &self.window;
         self.ui.run(window, |ctx| {
@@ -210,6 +211,7 @@ impl App<'_> {
             self.raytracer.ui_draw(ctx);
         });
     }
+
     pub fn raytrace(&mut self) {
         let t_n = self.camera.direction_vec();
 
