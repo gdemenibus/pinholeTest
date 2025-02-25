@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::matrix::FromArr;
@@ -15,6 +14,7 @@ use cgmath::Point3;
 use cgmath::Vector3;
 use cgmath::Vector4;
 use egui_glium::egui_winit::egui;
+use egui_glium::egui_winit::egui::ahash::HashMap;
 use egui_glium::egui_winit::egui::mutex::Mutex;
 use egui_glium::egui_winit::egui::mutex::RwLock;
 use egui_glium::egui_winit::egui::Align2;
@@ -157,7 +157,7 @@ impl Raytracer {
         let p_1_m = t_n * d - g_x * b_n - g_y * v_n;
 
         let ray_origin = camera_position;
-        let second_image = Mutex::new(HashMap::new());
+        let second_image = Mutex::new(HashMap::default());
 
         let buf = ImageBuffer::from_par_fn(image_width, image_height, |x, y| {
             let f_y = y as f32;
@@ -175,16 +175,15 @@ impl Raytracer {
                 let intersect = shape.intersect(ray_origin, ray_dir);
 
                 if let Some((color, point, pixel_center)) = intersect {
-                    let line = Line::new(ray_origin, point);
-                    self.debug_rays.write().push(line);
-
                     if shape.is_transparent {
                         intersections.push(pixel_center);
                         // edit the color
-
                         continue;
                         //update the intersection info in an intelligent way
                     }
+
+                    let line = Line::new(ray_origin, point);
+                    self.debug_rays.write().push(line);
                     let color_vec = Vector4::<u8>::from_arr(color);
                     // edit the color?
                     color_sum = color_vec;

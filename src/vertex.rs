@@ -72,22 +72,6 @@ impl Vertex {
         let placement = model * vector;
         Point3::new(placement.x, placement.y, placement.z)
     }
-    pub fn degenerate_triangle(start: Point3<f32>, end: Point3<f32>) -> [Vertex; 3] {
-        [
-            Vertex {
-                position: start.to_vec().to_arr(),
-                tex_coords: [0.0, 0.0],
-            },
-            Vertex {
-                position: end.to_vec().to_arr(),
-                tex_coords: [1.0, 0.0],
-            },
-            Vertex {
-                position: start.to_vec().to_arr(),
-                tex_coords: [1.0, 1.0],
-            },
-        ]
-    }
 }
 
 pub struct Shape {
@@ -298,6 +282,9 @@ impl ShapeWorld {
         vect_pos: Point3<f32>,
         vec_dir: Vector3<f32>,
     ) -> Option<([u8; 4], Point3<f32>, Vector3<f32>)> {
+        let pixel_count_height = self.ui_state.resolution.1 / self.ui_state.pixel_size;
+        let pixel_count_width = self.ui_state.resolution.0 / self.ui_state.pixel_size;
+
         let trig_1: [Point3<f32>; 3] = self.vertex_buffer[0..3]
             .iter()
             .map(|x| x.place_vertex(&self.placement_matrix))
@@ -316,7 +303,7 @@ impl ShapeWorld {
         let inter_2 = Self::moller_trumbore_intersection(vect_pos, vec_dir, trig_2);
 
         if let Some((inter_point, bary_point)) = inter_1 {
-            let contact_pixel = self.pixel_center_real_space(
+            let contact_pixel = Self::pixel_center_real_space(
                 bary_point,
                 [
                     self.vertex_buffer[0],
@@ -324,6 +311,8 @@ impl ShapeWorld {
                     self.vertex_buffer[2],
                 ],
                 trig_1,
+                pixel_count_height,
+                pixel_count_width,
             );
             let texture = self.sample_texture(
                 bary_point,
@@ -335,7 +324,7 @@ impl ShapeWorld {
             );
             Some((texture, inter_point, contact_pixel))
         } else if let Some((inter_point, bary_point)) = inter_2 {
-            let contact_pixel = self.pixel_center_real_space(
+            let contact_pixel = Self::pixel_center_real_space(
                 bary_point,
                 [
                     self.vertex_buffer[0],
@@ -343,6 +332,8 @@ impl ShapeWorld {
                     self.vertex_buffer[2],
                 ],
                 trig_2,
+                pixel_count_height,
+                pixel_count_width,
             );
             let texture = self.sample_texture(
                 bary_point,
@@ -387,11 +378,12 @@ impl ShapeWorld {
     // |         |
     // |         |
     //0,1-------1,1
-    fn pixel_center_real_space(
-        &self,
+    pub fn pixel_center_real_space(
         bary_coords: Point3<f32>,
         triangle: [Vertex; 3],
         trig: [Point3<f32>; 3],
+        pixel_height: f32,
+        pixel_width: f32,
     ) -> Vector3<f32> {
         let x_coord = 1.0
             - (bary_coords.x * triangle[0].tex_coords[0]
@@ -401,8 +393,6 @@ impl ShapeWorld {
             - (bary_coords.x * triangle[0].tex_coords[1]
                 + bary_coords.y * triangle[1].tex_coords[1]
                 + bary_coords.z * triangle[2].tex_coords[1]);
-        let pixel_height = self.ui_state.resolution.1;
-        let pixel_width = self.ui_state.resolution.0;
 
         let x_f_pixel = x_coord * pixel_width;
         let y_f_pixel = y_coord * pixel_height;
@@ -428,7 +418,7 @@ impl ShapeWorld {
         // then get that back view space (apply transoformation to this point?) Yes, should.
     }
 
-    fn moller_trumbore_intersection(
+    pub fn moller_trumbore_intersection(
         origin: Point3<f32>,
         direction: Vector3<f32>,
         triangle: [Point3<f32>; 3],
@@ -648,5 +638,78 @@ impl ShapeUI {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn pixel_center_test() {
+        let triangle = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let trig = [
+            Vertex {
+                position: [0.0, 0.0, 0.0],
+                tex_coords: [0.0, 0.0],
+            },
+            Vertex {
+                position: [1.0, 0.0, 0.0],
+                tex_coords: [1.0, 0.0],
+            },
+            Vertex {
+                position: [0.0, 1.0, 0.0],
+                tex_coords: [0.0, 1.0],
+            },
+        ];
+        let origin = Point3::new(0.1, 0.1, 1.0);
+        let directoin = Vector3::new(0.1, 0.1, -1.0);
+        let (intersection, bary) =
+            ShapeWorld::moller_trumbore_intersection(origin, directoin, triangle).unwrap();
+
+        let pixel_h = 1.0;
+        let pixel_w = 1.0;
+        let pixel_center =
+            ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w);
+        let real_center = Vector3::new(0.5, 0.5, 0.0);
+        assert_eq!(real_center, pixel_center);
+        assert_ne!(intersection.to_vec(), real_center);
+    }
+    #[test]
+    fn pixel_2by2_test() {
+        let triangle = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let trig = [
+            Vertex {
+                position: [0.0, 0.0, 0.0],
+                tex_coords: [0.0, 0.0],
+            },
+            Vertex {
+                position: [1.0, 0.0, 0.0],
+                tex_coords: [1.0, 0.0],
+            },
+            Vertex {
+                position: [0.0, 1.0, 0.0],
+                tex_coords: [0.0, 1.0],
+            },
+        ];
+        let origin = Point3::new(0.1, 0.1, 1.0);
+        let directoin = Vector3::new(0.1, 0.1, -1.0);
+        let (intersection, bary) =
+            ShapeWorld::moller_trumbore_intersection(origin, directoin, triangle).unwrap();
+
+        let pixel_h = 2.0;
+        let pixel_w = 2.0;
+        let pixel_center =
+            ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w);
+        let real_center = Vector3::new(0.25, 0.25, 0.0);
+        assert_eq!(real_center, pixel_center);
+        assert_ne!(intersection.to_vec(), real_center);
     }
 }
