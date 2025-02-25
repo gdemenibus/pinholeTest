@@ -13,3 +13,4 @@ image = {version = "0.25.5", features= ["jpeg", "png", "rayon"]}
 
 [profile.release]
 debug = true
+strip = false

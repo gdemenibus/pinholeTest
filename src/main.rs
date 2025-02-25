@@ -1,12 +1,12 @@
 #[macro_use]
 extern crate glium;
-mod vertex;
-mod shader;
-mod matrix;
-mod texture;
-mod camera;
 mod app;
+mod camera;
+mod matrix;
 mod raytracer;
+mod shader;
+mod texture;
+mod vertex;
 use app::App;
 use egui_glium::egui_winit::egui;
 
@@ -17,13 +17,16 @@ pub const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 fn main() {
     // Event loop handles windows and device events
-    // Make a window builder 
+    // Make a window builder
     // Call build method of the simple window builder to get the window and display
-    let event_loop = glium::winit::event_loop::EventLoop::builder().build().expect("event loop building");
+    let event_loop = glium::winit::event_loop::EventLoop::builder()
+        .build()
+        .expect("event loop building");
     event_loop.set_control_flow(glium::winit::event_loop::ControlFlow::Poll);
 
-    let (window, display) = glium::backend::glutin::SimpleWindowBuilder::new().with_inner_size(1920, 1080).build(&event_loop);
-    
+    let (window, display) = glium::backend::glutin::SimpleWindowBuilder::new()
+        .with_inner_size(1920, 1080)
+        .build(&event_loop);
 
     // egui
     let context = egui::Context::default();
@@ -35,11 +38,7 @@ fn main() {
 
     egui_extras::install_image_loaders(&context);
 
-
-
     let mut app = App::new(window, display, egui_render);
     app.define_ui();
     let _ = event_loop.run_app(&mut app);
-    
-
 }
