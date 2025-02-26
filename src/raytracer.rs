@@ -8,6 +8,7 @@ use crate::vertex::ShapeWorld;
 use crate::RAY_HEIGHT;
 use crate::RAY_WIDTH;
 use crate::SAFE_FRAC_PI_2;
+use cgmath::EuclideanSpace;
 use cgmath::InnerSpace;
 use cgmath::Matrix4;
 use cgmath::Point3;
@@ -144,7 +145,7 @@ impl Raytracer {
 
         // CAMERA MATH!
 
-        let d = 0.1;
+        let d = 1.0;
         let t_n = camera_dir;
         let b_n = t_n.cross(Vector3::new(0.0, 1.0, 0.0)).normalize();
         let v_n = t_n.cross(b_n).normalize();
@@ -158,6 +159,7 @@ impl Raytracer {
 
         let ray_origin = camera_position;
         let second_image = Mutex::new(HashMap::default());
+        let miss = Mutex::new(0);
 
         let buf = ImageBuffer::from_par_fn(image_width, image_height, |x, y| {
             let f_y = y as f32;
@@ -176,17 +178,20 @@ impl Raytracer {
 
                 if let Some((color, point, pixel_center)) = intersect {
                     if shape.is_transparent {
+                        let pixel_center = Point3::from_vec(pixel_center);
                         intersections.push(pixel_center);
+                        //let line = Line::new(ray_origin, pixel_center);
+                        //self.debug_b_rays.write().push(line);
                         // edit the color
-                        continue;
                         //update the intersection info in an intelligent way
+                        //
+                    } else {
+                        let color_vec = Vector4::<u8>::from_arr(color);
+                        let line = Line::new(ray_origin, point);
+                        self.debug_rays.write().push(line);
+                        // edit the color?
+                        color_sum = color_vec;
                     }
-
-                    let line = Line::new(ray_origin, point);
-                    self.debug_rays.write().push(line);
-                    let color_vec = Vector4::<u8>::from_arr(color);
-                    // edit the color?
-                    color_sum = color_vec;
                 }
             }
 
@@ -194,28 +199,34 @@ impl Raytracer {
             if intersections.len() == 2 {
                 let a_pixel = intersections[0];
                 let b_pixel = intersections[1];
+
                 let ray_prime_origin = a_pixel;
                 let ray_prime_direction = b_pixel - a_pixel;
                 let shape = shapes[2].read();
-                let ray_prime_origin =
-                    Point3::new(ray_prime_origin.x, ray_prime_origin.y, ray_prime_origin.z);
 
                 if let Some((color, point, _center)) =
                     shape.intersect(ray_prime_origin, ray_prime_direction)
                 {
+                    //let line = Line::new(ray_prime_origin, point);
+                    //self.debug_b_rays.write().push(line);
+                    second_image.lock().insert((x, y), color);
                     let line = Line::new(ray_prime_origin, point);
                     self.debug_b_rays.write().push(line);
-
-                    second_image.lock().insert((x, y), color);
+                } else {
+                    *miss.lock() += 1;
+                    second_image.lock().insert((x, y), [0_u8, 0_u8, 0_u8, 0_u8]);
                 }
             }
 
             image::Rgba(color_sum.to_arr())
         });
-        println!(
-            "Intersection between pixels is: {:}",
-            second_image.lock().len()
-        );
+
+        // println!(
+        //     "Intersection between pixels is: {:}",
+        //     second_image.lock().len()
+        // );
+        // Rays are missing the object, despite the object being there?
+        println!("Miss count:: {:}", miss.lock());
 
         let second_buffer = ImageBuffer::from_fn(image_width, image_height, |x, y| {
             let image = second_image.lock();

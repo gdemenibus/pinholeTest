@@ -267,6 +267,7 @@ impl Shape {
     }
 }
 
+#[derive(Debug)]
 pub struct ShapeWorld {
     pub vertex_buffer: Vec<Vertex>,
     pub model_matrix: Matrix4<f32>,
@@ -282,8 +283,10 @@ impl ShapeWorld {
         vect_pos: Point3<f32>,
         vec_dir: Vector3<f32>,
     ) -> Option<([u8; 4], Point3<f32>, Vector3<f32>)> {
-        let pixel_count_height = self.ui_state.resolution.1 / self.ui_state.pixel_size;
-        let pixel_count_width = self.ui_state.resolution.0 / self.ui_state.pixel_size;
+        let pixel_count_height = self.ui_state.resolution.1 as f32;
+        let pixel_count_width = self.ui_state.resolution.0 as f32;
+
+        let pixel_size = self.ui_state.pixel_size;
 
         let trig_1: [Point3<f32>; 3] = self.vertex_buffer[0..3]
             .iter()
@@ -313,6 +316,7 @@ impl ShapeWorld {
                 trig_1,
                 pixel_count_height,
                 pixel_count_width,
+                pixel_size,
             );
             let texture = self.sample_texture(
                 bary_point,
@@ -334,6 +338,7 @@ impl ShapeWorld {
                 trig_2,
                 pixel_count_height,
                 pixel_count_width,
+                pixel_size,
             );
             let texture = self.sample_texture(
                 bary_point,
@@ -382,37 +387,43 @@ impl ShapeWorld {
         bary_coords: Point3<f32>,
         triangle: [Vertex; 3],
         trig: [Point3<f32>; 3],
-        pixel_height: f32,
-        pixel_width: f32,
+        number_of_pixels_height: f32,
+        number_of_pixels_width: f32,
+        pixel_size: f32,
     ) -> Vector3<f32> {
+        // Get the relative coordinates of x, y
+        // Express the point in quad space (reusing the texture coordinates)
         let x_coord = 1.0
             - (bary_coords.x * triangle[0].tex_coords[0]
                 + bary_coords.y * triangle[1].tex_coords[0]
                 + bary_coords.z * triangle[2].tex_coords[0]);
-        let y_coord = 1.0
-            - (bary_coords.x * triangle[0].tex_coords[1]
-                + bary_coords.y * triangle[1].tex_coords[1]
-                + bary_coords.z * triangle[2].tex_coords[1]);
+        // Not sure why, but this works?
+        let y_coord = (bary_coords.x * triangle[0].tex_coords[1]
+            + bary_coords.y * triangle[1].tex_coords[1]
+            + bary_coords.z * triangle[2].tex_coords[1]);
 
-        let x_f_pixel = x_coord * pixel_width;
-        let y_f_pixel = y_coord * pixel_height;
+        // Which pixel maps to these absolute coordinates?
+        let x_f_pixel = x_coord * number_of_pixels_width;
+        let y_f_pixel = y_coord * number_of_pixels_height;
+
+        // Round down
         let x_pixel = x_f_pixel.floor();
         let y_pixel = y_f_pixel.floor();
 
-        let center_x_pixel = x_pixel + 0.5;
-        let center_y_pixel = y_pixel + 0.5;
+        // Get the pixel center.
+        let center_x_pixel = (x_pixel * pixel_size) + (pixel_size / 2.0);
+        let center_y_pixel = (y_pixel * pixel_size) + (pixel_size / 2.0);
 
-        // reverse linear interpolation?
-        let e1 = trig[1] - trig[0];
-        let e2 = trig[2] - trig[0];
+        // Get the outer two
+        let e1 = trig[0] - trig[1];
+        let e2 = trig[2] - trig[1];
 
-        let relative_x_pixel = center_x_pixel / pixel_width;
-        let x_vec = e1 * relative_x_pixel;
+        // multiply
+        let x_vec = e1 * center_x_pixel;
 
-        let relative_y_pixel = center_y_pixel / pixel_width;
-        let y_vec = e2 * relative_y_pixel;
+        let y_vec = e2 * center_y_pixel;
 
-        x_vec + y_vec + trig[0].to_vec()
+        x_vec + y_vec + trig[1].to_vec()
         // x and y coords are currently expressed in quad space
         // Need to: Get the pixel they intersect with, get that pixel center in quad space, and
         // then get that back view space (apply transoformation to this point?) Yes, should.
@@ -472,10 +483,11 @@ pub enum Lock {
     Size,
 }
 
+#[derive(Debug)]
 pub struct ShapeUI {
     pub title: String,
     pub distance: f32,
-    pub resolution: (f32, f32),
+    pub resolution: (u32, u32),
     pub pixel_size: f32,
     pub size: (f32, f32),
     pub position: Pos2,
@@ -578,7 +590,7 @@ impl ShapeUI {
         ShapeUI {
             title,
             distance: 10.0,
-            resolution: (1.0, 1.0),
+            resolution: (1, 1),
             pixel_size: 1.0,
             size: (1.0, 1.0),
             position,
@@ -592,30 +604,30 @@ impl ShapeUI {
                 match self.lock {
                     Lock::Resolution => {
                         // Change pixel size
-                        self.pixel_size = self.size.0 / self.resolution.0;
+                        self.pixel_size = self.size.0 / self.resolution.0 as f32;
                         // sanity check
-                        let pixel_other = self.size.1 / self.resolution.1;
+                        let pixel_other = self.size.1 / self.resolution.1 as f32;
                         if self.pixel_size != pixel_other {
                             println!("WARNING, pixel's are no longer square? Height is {} and width is {}", self.pixel_size, pixel_other);
                         }
                     }
                     Lock::Pixel => {
                         // Pixel size is locked, size is changed, resolution must change
-                        self.resolution.0 = self.size.0 / self.pixel_size;
-                        self.resolution.1 = self.size.1 / self.pixel_size;
+                        self.resolution.0 = (self.size.0 / self.pixel_size) as u32;
+                        self.resolution.1 = (self.size.1 / self.pixel_size) as u32;
                     }
                     _ => {}
                 }
             }
             LastChanged::Pixel => match self.lock {
                 Lock::Resolution => {
-                    self.size.0 = self.resolution.0 * self.pixel_size;
-                    self.size.1 = self.resolution.1 * self.pixel_size;
+                    self.size.0 = self.resolution.0 as f32 * self.pixel_size;
+                    self.size.1 = self.resolution.1 as f32 * self.pixel_size;
                 }
 
                 Lock::Size => {
-                    self.resolution.0 = self.size.0 / self.pixel_size;
-                    self.resolution.1 = self.size.1 / self.pixel_size;
+                    self.resolution.0 = (self.size.0 / self.pixel_size) as u32;
+                    self.resolution.1 = (self.size.1 / self.pixel_size) as u32;
                 }
                 _ => {}
             },
@@ -623,16 +635,16 @@ impl ShapeUI {
                 match self.lock {
                     Lock::Size => {
                         // Change pixel size
-                        self.pixel_size = self.size.0 / self.resolution.0;
+                        self.pixel_size = self.size.0 / self.resolution.0 as f32;
                         // sanity check
-                        let pixel_other = self.size.1 / self.resolution.1;
+                        let pixel_other = self.size.1 / self.resolution.1 as f32;
                         if self.pixel_size != pixel_other {
                             println!("WARNING, pixel's are no longer square? Height is {} and width is {}", self.pixel_size, pixel_other);
                         }
                     }
                     Lock::Pixel => {
-                        self.size.0 = self.resolution.0 * self.pixel_size;
-                        self.size.1 = self.resolution.1 * self.pixel_size;
+                        self.size.0 = self.resolution.0 as f32 * self.pixel_size;
+                        self.size.1 = self.resolution.1 as f32 * self.pixel_size;
                     }
                     _ => {}
                 }
@@ -672,8 +684,9 @@ mod test {
 
         let pixel_h = 1.0;
         let pixel_w = 1.0;
+        let pixel_size = 1.0;
         let pixel_center =
-            ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w);
+            ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w, pixel_size);
         let real_center = Vector3::new(0.5, 0.5, 0.0);
         assert_eq!(real_center, pixel_center);
         assert_ne!(intersection.to_vec(), real_center);
@@ -706,8 +719,9 @@ mod test {
 
         let pixel_h = 2.0;
         let pixel_w = 2.0;
+        let pixel_size = 0.5;
         let pixel_center =
-            ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w);
+            ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w, pixel_size);
         let real_center = Vector3::new(0.25, 0.25, 0.0);
         assert_eq!(real_center, pixel_center);
         assert_ne!(intersection.to_vec(), real_center);
