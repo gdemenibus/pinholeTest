@@ -87,3 +87,125 @@ How quad space looks:
 0,1-------1,1     
 
 
+## AP:
+
+Pixel disparity between rays as an image
+Save state
+Replay with inner script
+
+Kick off papers
+
+Write a proposal, "what is the problem, what is the motivation"
+What is the background (about 1 page)
+
+Make a plane of action, main thing: 
+
+What should be ready after 3 months?
+The simulation should be ready. Given a target, we should have the image
+decomposition ready
+
+What to expect to deliver at the end?
+We want results tested on real hardware
+
+
+Mare
+
+## Writing:
+Take notes for summary for related work. 
+
+Week 3 objectives:
+
+Proposal write up
+
+Get credits DONE!
+
+make targets for planning Mostly done
+
+
+
+work on template 
+
+
+## Pixel bug writing:
+Seems like the "find center of pixel" doesn't actually work!
+it is doing collisions with invisible geometry, and therefore needs to be
+revised!
+
+Proposal:
+Solve the problem on paper first, with tests
+Then, do it 
+
+
+
+
+
+## If FFT is necessary for analysis:
+Consider replaceing CG math with nalgebra glm 
+Means we can use nalgebra with fft for those features.
+
+
+Useful crates:
+Units of measerment, for the pixel sizes 
+2dfft, for doing image processing. 
+
+If needed, consider swapping to glm::nalgebra.
+Not the end of the world though, as we are able to do a lot 
+
+
+
+
+
+## For research proposal:
+More clear on what needs to be done by first stage review
+Where are you, what is missing?
+Document how close to schedule you are
+
+
+Ask Rafael how to handle the FFT
+
+How do we create this light field.
+
+Do we do it as a render?
+
+
+First stage:
+Given the two panels, compute what would be in the panels, and reproduce what
+the observer will be seen (what would a camera see)
+
+Have some model off in the distance, have the two screens. 
+Sample the light 
+
+What should be placed on the two monitors, to see the box
+
+Need to lay down and solve the "core problem"
+
+Do a simple implementation for now.
+
+**Action Points:**
+Need to rethink plan, as there is the deliverable
+
+
+First stage needs to be changed:
+Week of the 15th May. 
+
+Get to the simplest solution till the end. 
+
+First stage:
+I have a full pipeline. Very basic, but I have simple input and output.
+
+First: Sample the light field, this is where the outline of the object is
+Second: From that, make a function that solves for this
+
+Have a call with rafael to ask him how to turn data into action
+
+Rafael had some analysis
+
+How you choose to solve the matrix 
+
+For Rafael try to present your understanding
+
+
+
+
+## Sampling the light fied:
+Use billboards for text
