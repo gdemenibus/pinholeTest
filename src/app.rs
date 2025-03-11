@@ -148,15 +148,17 @@ impl App<'_> {
             let mut world = shape.world.write();
 
             let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
-                Vector4::new(world.ui_state.size.0, 0.0, 0.0, 0.0),
-                Vector4::new(0.0, world.ui_state.size.1, 0.0, 0.0),
+                Vector4::new(world.ui_state.size.0.value, 0.0, 0.0, 0.0),
+                Vector4::new(0.0, world.ui_state.size.1.value, 0.0, 0.0),
                 Vector4::new(0.0, 0.0, 1.0, 0.0),
                 Vector4::new(0.0, 0.0, 0.0, 1.0),
             );
-            let matrix =
-                Matrix4::<f32>::from_translation(Vector3::new(0.0, 0.0, world.ui_state.distance))
-                    * world.model_matrix
-                    * scale_matrix;
+            let matrix = Matrix4::<f32>::from_translation(Vector3::new(
+                0.0,
+                0.0,
+                world.ui_state.distance.value,
+            )) * world.model_matrix
+                * scale_matrix;
             world.placement_matrix = matrix;
 
             let uniforms = uniform! {

@@ -6,6 +6,8 @@ use egui_glium::egui_winit::egui::{self, Context, Pos2};
 use glium::{glutin::surface::WindowSurface, Display, Texture2d};
 use image::Rgba;
 use std::sync::Arc;
+use uom::si::f32::Length;
+use uom::si::length::{meter, millimeter};
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
 pub struct Vertex {
@@ -316,7 +318,7 @@ impl ShapeWorld {
                 trig_1,
                 pixel_count_height,
                 pixel_count_width,
-                pixel_size,
+                pixel_size.get::<meter>(),
             );
             let texture = self.sample_texture(
                 bary_point,
@@ -338,7 +340,7 @@ impl ShapeWorld {
                 trig_2,
                 pixel_count_height,
                 pixel_count_width,
-                pixel_size,
+                pixel_size.get::<meter>(),
             );
             let texture = self.sample_texture(
                 bary_point,
@@ -378,6 +380,7 @@ impl ShapeWorld {
         ]
     }
 
+    // Expect to get size in what unit?
     //0,0 ----- 1,0
     // |         |
     // |         |
@@ -482,18 +485,20 @@ pub enum Lock {
     Pixel,
     Size,
 }
+type Resolution = (u32, u32);
 
 #[derive(Debug)]
 pub struct ShapeUI {
     pub title: String,
-    pub distance: f32,
-    pub resolution: (u32, u32),
-    pub pixel_size: f32,
-    pub size: (f32, f32),
+    pub distance: Length,
+    pub resolution: Resolution,
+    pub pixel_size: Length,
+    pub size: (Length, Length),
     pub position: Pos2,
     pub lock: Lock,
     pub changed: LastChanged,
 }
+
 impl ShapeUI {
     pub fn define_ui(&mut self, ctx: &Context) {
         egui::Window::new(self.title.clone())
@@ -505,7 +510,8 @@ impl ShapeUI {
                     .striped(true)
                     .show(ui, |ui| {
                         ui.label("Distance:");
-                        ui.add(egui::Slider::new(&mut self.distance, -10.0..=10.0));
+                        ui.add(egui::Slider::new(&mut self.distance.value, -10.0..=10.0));
+                        ui.label("Meters");
                         ui.end_row();
                         ui.label("Resolution:");
                         let locked_res = Lock::Resolution == self.lock;
@@ -541,7 +547,7 @@ impl ShapeUI {
                         let check_pixel = ui
                             .add_enabled(
                                 !locked_res,
-                                egui::Slider::new(&mut self.pixel_size, -1000.0..=1000.0),
+                                egui::Slider::new(&mut self.pixel_size.value, -1000.0..=1000.0),
                             )
                             .changed();
                         if check_pixel {
@@ -553,6 +559,8 @@ impl ShapeUI {
                         } else if ui.button("🔓".to_string()).clicked() {
                             self.lock = Lock::Pixel;
                         }
+
+                        ui.label("Millimeters");
                         ui.end_row();
                         ui.label("Physical Size:");
 
@@ -561,13 +569,13 @@ impl ShapeUI {
                         let physical_check_h = ui
                             .add_enabled(
                                 !locked_res,
-                                egui::DragValue::new(&mut self.size.0).speed(1.0),
+                                egui::DragValue::new(&mut self.size.0.value).speed(1.0),
                             )
                             .changed();
                         let physical_check_w = ui
                             .add_enabled(
                                 !locked_res,
-                                egui::DragValue::new(&mut self.size.1).speed(1.0),
+                                egui::DragValue::new(&mut self.size.1.value).speed(1.0),
                             )
                             .changed();
 
@@ -580,6 +588,7 @@ impl ShapeUI {
                         } else if ui.button("🔓".to_string()).clicked() {
                             self.lock = Lock::Size;
                         }
+                        ui.label("Meters");
                         ui.label(format!("{:?}", self.changed));
                         ui.end_row();
                     });
@@ -589,10 +598,10 @@ impl ShapeUI {
     pub fn default(title: String, position: Pos2) -> ShapeUI {
         ShapeUI {
             title,
-            distance: 10.0,
-            resolution: (1, 1),
-            pixel_size: 1.0,
-            size: (1.0, 1.0),
+            distance: Length::new::<meter>(10.0),
+            resolution: (1000, 1000),
+            pixel_size: Length::new::<millimeter>(1.0),
+            size: (Length::new::<meter>(1.0), Length::new::<meter>(1.0)),
             position,
             changed: LastChanged::Resolution,
             lock: Lock::Pixel,
@@ -608,13 +617,13 @@ impl ShapeUI {
                         // sanity check
                         let pixel_other = self.size.1 / self.resolution.1 as f32;
                         if self.pixel_size != pixel_other {
-                            println!("WARNING, pixel's are no longer square? Height is {} and width is {}", self.pixel_size, pixel_other);
+                            println!("WARNING, pixel's are no longer square? Height is {:?} and width is {:?}", self.pixel_size.value, pixel_other);
                         }
                     }
                     Lock::Pixel => {
                         // Pixel size is locked, size is changed, resolution must change
-                        self.resolution.0 = (self.size.0 / self.pixel_size) as u32;
-                        self.resolution.1 = (self.size.1 / self.pixel_size) as u32;
+                        self.resolution.0 = (self.size.0 / self.pixel_size).value as u32;
+                        self.resolution.1 = (self.size.1 / self.pixel_size).value as u32;
                     }
                     _ => {}
                 }
@@ -626,8 +635,8 @@ impl ShapeUI {
                 }
 
                 Lock::Size => {
-                    self.resolution.0 = (self.size.0 / self.pixel_size) as u32;
-                    self.resolution.1 = (self.size.1 / self.pixel_size) as u32;
+                    self.resolution.0 = (self.size.0 / self.pixel_size).value as u32;
+                    self.resolution.1 = (self.size.1 / self.pixel_size).value as u32;
                 }
                 _ => {}
             },
@@ -639,7 +648,7 @@ impl ShapeUI {
                         // sanity check
                         let pixel_other = self.size.1 / self.resolution.1 as f32;
                         if self.pixel_size != pixel_other {
-                            println!("WARNING, pixel's are no longer square? Height is {} and width is {}", self.pixel_size, pixel_other);
+                            println!("WARNING, pixel's are no longer square? Height is {:?} and width is {:?}", self.pixel_size, pixel_other);
                         }
                     }
                     Lock::Pixel => {
