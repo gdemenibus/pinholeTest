@@ -1,11 +1,11 @@
 use cgmath::*;
-use glium::winit::event::KeyEvent;
-use std::time::Duration;
-use glium::winit::event::ElementState;
-use glium::winit::dpi::PhysicalPosition;
-use glium::winit::event::MouseScrollDelta;
-use glium::winit::keyboard::{PhysicalKey, KeyCode};
 use std::f32::consts::FRAC_PI_2;
+use std::time::Duration;
+use winit::dpi::PhysicalPosition;
+use winit::event::ElementState;
+use winit::event::KeyEvent;
+use winit::event::MouseScrollDelta;
+use winit::keyboard::{KeyCode, PhysicalKey};
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 pub struct Camera {
@@ -14,11 +14,7 @@ pub struct Camera {
     pitch: Rad<f32>,
 }
 impl Camera {
-    pub fn new<
-        V: Into<Point3<f32>>,
-        Y: Into<Rad<f32>>,
-        P: Into<Rad<f32>>,
-    >(
+    pub fn new<V: Into<Point3<f32>>, Y: Into<Rad<f32>>, P: Into<Rad<f32>>>(
         position: V,
         yaw: Y,
         pitch: P,
@@ -30,17 +26,11 @@ impl Camera {
         }
     }
     pub fn direction_vec(&self) -> Vector3<f32> {
-
         let (sin_pitch, cos_pitch) = self.pitch.0.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.0.sin_cos();
 
-            Vector3::new(
-                cos_pitch * cos_yaw,
-                sin_pitch,
-                cos_pitch * sin_yaw
-            ).normalize()
-
-}
+        Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize()
+    }
 
     pub fn calc_matrix(&self) -> Matrix4<f32> {
         let (sin_pitch, cos_pitch) = self.pitch.0.sin_cos();
@@ -48,16 +38,11 @@ impl Camera {
 
         Matrix4::look_to_rh(
             self.position,
-            Vector3::new(
-                cos_pitch * cos_yaw,
-                sin_pitch,
-                cos_pitch * sin_yaw
-            ).normalize(),
+            Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize(),
             Vector3::unit_y(),
         )
     }
 }
-
 
 pub struct Projection {
     aspect: f32,
@@ -67,13 +52,7 @@ pub struct Projection {
 }
 
 impl Projection {
-    pub fn new<F: Into<Rad<f32>>>(
-        width: u32,
-        height: u32,
-        fovy: F,
-        znear: f32,
-        zfar: f32,
-    ) -> Self {
+    pub fn new<F: Into<Rad<f32>>>(width: u32, height: u32, fovy: F, znear: f32, zfar: f32) -> Self {
         Self {
             aspect: width as f32 / height as f32,
             fovy: fovy.into(),
@@ -91,7 +70,6 @@ impl Projection {
         perspective(self.fovy, self.aspect, self.znear, self.zfar)
     }
 }
-
 
 #[derive(Debug)]
 pub struct CameraController {
@@ -125,22 +103,26 @@ impl CameraController {
         }
     }
 
-    pub fn process_keyboard(&mut self,event: KeyEvent ) -> bool{
-        let amount = if event.state == ElementState::Pressed { 1.0 } else { 0.0 };
+    pub fn process_keyboard(&mut self, event: KeyEvent) -> bool {
+        let amount = if event.state == ElementState::Pressed {
+            1.0
+        } else {
+            0.0
+        };
         match event.physical_key {
-            PhysicalKey::Code(KeyCode::KeyW)  => {
+            PhysicalKey::Code(KeyCode::KeyW) => {
                 self.amount_forward = amount;
                 true
             }
-            PhysicalKey::Code(KeyCode::KeyS)  => {
+            PhysicalKey::Code(KeyCode::KeyS) => {
                 self.amount_backward = amount;
                 true
             }
-            PhysicalKey::Code(KeyCode::KeyA)  => {
+            PhysicalKey::Code(KeyCode::KeyA) => {
                 self.amount_left = amount;
                 true
             }
-            PhysicalKey::Code(KeyCode::KeyD)  => {
+            PhysicalKey::Code(KeyCode::KeyD) => {
                 self.amount_right = amount;
                 true
             }
@@ -165,10 +147,7 @@ impl CameraController {
         self.scroll = -match delta {
             // I'm assuming a line is about 100 pixels
             MouseScrollDelta::LineDelta(_, scroll) => scroll * 100.0,
-            MouseScrollDelta::PixelDelta(PhysicalPosition {
-                y: scroll,
-                ..
-            }) => *scroll as f32,
+            MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => *scroll as f32,
         };
     }
 
@@ -187,7 +166,8 @@ impl CameraController {
         // changes when zooming. I've added this to make it easier
         // to get closer to an object you want to focus on.
         let (pitch_sin, pitch_cos) = camera.pitch.0.sin_cos();
-        let scrollward = Vector3::new(pitch_cos * yaw_cos, pitch_sin, pitch_cos * yaw_sin).normalize();
+        let scrollward =
+            Vector3::new(pitch_cos * yaw_cos, pitch_sin, pitch_cos * yaw_sin).normalize();
         camera.position += scrollward * self.scroll * self.speed * self.sensitivity * dt;
         self.scroll = 0.0;
 

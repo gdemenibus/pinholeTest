@@ -10,35 +10,25 @@ use crate::RAY_WIDTH;
 use crate::SAFE_FRAC_PI_2;
 use cgmath::EuclideanSpace;
 use cgmath::InnerSpace;
-use cgmath::Matrix4;
 use cgmath::Point3;
 use cgmath::Vector3;
 use cgmath::Vector4;
-use egui_glium::egui_winit::egui;
-use egui_glium::egui_winit::egui::ahash::HashMap;
-use egui_glium::egui_winit::egui::mutex::Mutex;
-use egui_glium::egui_winit::egui::mutex::RwLock;
-use egui_glium::egui_winit::egui::Align2;
-use egui_glium::egui_winit::egui::ColorImage;
-use egui_glium::egui_winit::egui::Context;
-use egui_glium::egui_winit::egui::TextureHandle;
-use egui_glium::egui_winit::egui::TextureOptions;
-use egui_glium::egui_winit::egui::Vec2;
+use egui_winit::egui;
+use egui_winit::egui::ahash::HashMap;
+use egui_winit::egui::mutex::Mutex;
+use egui_winit::egui::mutex::RwLock;
+use egui_winit::egui::Align2;
+use egui_winit::egui::ColorImage;
+use egui_winit::egui::Context;
+use egui_winit::egui::TextureHandle;
+use egui_winit::egui::TextureOptions;
+use egui_winit::egui::Vec2;
 use faer::linalg::solvers::SolveLstsqCore;
-use faer::mat;
 use faer::reborrow::ReborrowMut;
 use faer::sparse::SparseColMat;
 use faer::sparse::Triplet;
 use faer::Mat;
-use faer::MatMut;
-use glium::glutin::surface::WindowSurface;
-use glium::Display;
-use glium::DrawParameters;
-use glium::Frame;
-use glium::Program;
-use glium::Surface;
 use image::ImageBuffer;
-use image::Rgba;
 
 pub struct Raytracer {
     ray_trace_display: bool,
@@ -94,45 +84,6 @@ impl Raytracer {
                 .map(|(_, val)| val)
                 .flat_map(|x| x.vertices())
                 .collect()
-        }
-    }
-    pub fn rasterize_debug(
-        &self,
-        frame: &mut Frame,
-        draw_params: &DrawParameters,
-        program: &Program,
-        view_proj: Matrix4<f32>,
-        display: &Display<WindowSurface>,
-    ) {
-        if self.ui_debug_rays {
-            let indices = glium::index::NoIndices(glium::index::PrimitiveType::LinesList);
-            let uniforms = uniform! {
-                view_proj: view_proj.to_arr(),
-                color_in: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
-            };
-
-            let lines = self.debug_line_vertex();
-
-            let buffer = glium::VertexBuffer::new(display, &lines).unwrap();
-
-            frame
-                .draw(&buffer, indices, program, &uniforms, draw_params)
-                .unwrap();
-        }
-        if self.ui_debug_prime_rays {
-            let indices = glium::index::NoIndices(glium::index::PrimitiveType::LinesList);
-            let uniforms = uniform! {
-                view_proj: view_proj.to_arr(),
-                color_in: [1.0f32, 0.0f32, 0.0f32, 0.0f32],
-            };
-
-            let lines = self.debug_b_line_vertex();
-
-            let buffer = glium::VertexBuffer::new(display, &lines).unwrap();
-
-            frame
-                .draw(&buffer, indices, program, &uniforms, draw_params)
-                .unwrap();
         }
     }
 
