@@ -196,16 +196,19 @@ I have a full pipeline. Very basic, but I have simple input and output.
 First: Sample the light field, this is where the outline of the object is
 Second: From that, make a function that solves for this
 
-Have a call with rafael to ask him how to turn data into action
+## Rafael meeting:
 
-Rafael had some analysis
+Change the approach: don't sample the light field through snapshots, instead
+think of all possible rays that can be between both panels.
+We can describe this as a 4D (x, y, x^prime, y^prime)
 
-How you choose to solve the matrix 
+Look into how to change this to be WGPU? 
+Or hack the GLSL implementation to give us this?
 
-For Rafael try to present your understanding
+square of the pixel amount of possible light rays
+
+
+Ray trace the scene but replace the white rays with the red rays!
 
 
 
-
-## Sampling the light fied:
-Use billboards for text
