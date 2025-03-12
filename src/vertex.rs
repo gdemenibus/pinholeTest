@@ -1,9 +1,8 @@
 use crate::matrix::ToArr;
 use crate::texture;
 use cgmath::{EuclideanSpace, InnerSpace, Matrix4, Point3, Vector3, Vector4};
-use egui_glium::egui_winit::egui::mutex::RwLock;
-use egui_glium::egui_winit::egui::{self, Context, Pos2};
-use glium::{glutin::surface::WindowSurface, Display, Texture2d};
+use egui_winit::egui::mutex::RwLock;
+use egui_winit::egui::{self, Context, Pos2};
 use image::Rgba;
 use std::sync::Arc;
 use uom::si::f32::Length;
@@ -15,14 +14,10 @@ pub struct Vertex {
     tex_coords: [f32; 2],
 }
 
-implement_vertex!(Vertex, position, tex_coords);
-
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
 pub struct LineVertex {
     position: [f32; 3],
 }
-
-implement_vertex!(LineVertex, position);
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
 pub struct Line {
@@ -78,13 +73,11 @@ impl Vertex {
 
 pub struct Shape {
     pub world: Arc<RwLock<ShapeWorld>>,
-    pub texture: glium::Texture2d,
 }
 impl Shape {
     pub fn new(
         vertex_buffer: Vec<Vertex>,
         model_matrix: Matrix4<f32>,
-        texture: Texture2d,
         texture_path: String,
         ui_state: ShapeUI,
         opacity: f32,
@@ -103,11 +96,10 @@ impl Shape {
 
         Shape {
             world: Arc::new(RwLock::new(world)),
-            texture,
         }
     }
 
-    pub fn floor(display: &Display<WindowSurface>) -> Shape {
+    pub fn floor() -> Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, 0.0, -0.5],
@@ -138,12 +130,10 @@ impl Shape {
         let translate: Matrix4<f32> = Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0));
         let matrix: Matrix4<f32> = Matrix4::from_scale(10.0);
         let movement = translate * matrix;
-        let texture = texture::load_texture("./resources/textures/Gibbon.jpg".to_string(), display);
         let ui_state = ShapeUI::default("Floor".to_string(), Pos2::new(0.0, 500.0));
         Shape::new(
             shape,
             movement,
-            texture,
             "./resources/textures/Gibbon.jpg".to_string(),
             ui_state,
             1.0,
@@ -151,7 +141,7 @@ impl Shape {
         )
     }
 
-    pub fn f(display: &Display<WindowSurface>) -> Shape {
+    pub fn f() -> Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, -0.5, 0.5],
@@ -186,12 +176,11 @@ impl Shape {
         //let texture = texture::load_texture("./resources/textures/Planes_airport.jpeg".to_string(), display);
         let texture_path = "./resources/textures/Golden monkey.jpg".to_string();
 
-        let texture = texture::load_texture(texture_path.clone(), display);
         let ui_state = ShapeUI::default("Far plane".to_string(), Pos2::new(0.0, 200.0));
 
-        Shape::new(shape, movement, texture, texture_path, ui_state, 1.0, false)
+        Shape::new(shape, movement, texture_path, ui_state, 1.0, false)
     }
-    pub fn a(display: &Display<WindowSurface>) -> Shape {
+    pub fn a() -> Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, -0.5, 0.5],
@@ -224,13 +213,12 @@ impl Shape {
         let movement = translate * matrix;
         let texture_path = "./resources/textures/Mandril.jpg".to_string();
 
-        let texture = texture::load_texture(texture_path.clone(), display);
         let ui_state = ShapeUI::default("A".to_string(), Pos2::new(0.0, 150.0));
 
-        Shape::new(shape, movement, texture, texture_path, ui_state, 0.3, true)
+        Shape::new(shape, movement, texture_path, ui_state, 0.3, true)
     }
 
-    pub fn b(display: &Display<WindowSurface>) -> Shape {
+    pub fn b() -> Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, -0.5, 0.5],
@@ -263,9 +251,8 @@ impl Shape {
         let movement = translate * matrix;
         let texture_path = "./resources/textures/new-debrazza.jpg".to_string();
 
-        let texture = texture::load_texture(texture_path.clone(), display);
         let ui_state = ShapeUI::default("B".to_string(), Pos2::new(0.0, 0.0));
-        Shape::new(shape, movement, texture, texture_path, ui_state, 0.3, true)
+        Shape::new(shape, movement, texture_path, ui_state, 0.3, true)
     }
 }
 
