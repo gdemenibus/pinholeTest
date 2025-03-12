@@ -279,12 +279,23 @@ pub struct ShapeWorld {
     pub opacity: f32,
     pub is_transparent: bool,
 }
+
+type ReportedColour = [u8; 4];
+type IntersectionPoint = Point3<f32>;
+type PixelCenter = Vector3<f32>;
+type PixelRelativeCoordinates = (u32, u32);
+
 impl ShapeWorld {
     pub fn intersect(
         &self,
         vect_pos: Point3<f32>,
         vec_dir: Vector3<f32>,
-    ) -> Option<([u8; 4], Point3<f32>, Vector3<f32>)> {
+    ) -> Option<(
+        ReportedColour,
+        IntersectionPoint,
+        PixelCenter,
+        PixelRelativeCoordinates,
+    )> {
         let pixel_count_height = self.ui_state.resolution.1 as f32;
         let pixel_count_width = self.ui_state.resolution.0 as f32;
 
@@ -328,7 +339,7 @@ impl ShapeWorld {
                     self.vertex_buffer[2],
                 ],
             );
-            Some((texture, inter_point, contact_pixel))
+            Some((texture, inter_point, contact_pixel.0, contact_pixel.1))
         } else if let Some((inter_point, bary_point)) = inter_2 {
             let contact_pixel = Self::pixel_center_real_space(
                 bary_point,
@@ -350,13 +361,13 @@ impl ShapeWorld {
                     self.vertex_buffer[5],
                 ],
             );
-            Some((texture, inter_point, contact_pixel))
+            Some((texture, inter_point, contact_pixel.0, contact_pixel.1))
         } else {
             None
         }
     }
 
-    fn sample_texture(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3]) -> [u8; 4] {
+    fn sample_texture(&self, bary_coords: Point3<f32>, triangle: [Vertex; 3]) -> ReportedColour {
         let x_coord = (1.0
             - (bary_coords.x * triangle[0].tex_coords[0]
                 + bary_coords.y * triangle[1].tex_coords[0]
@@ -393,7 +404,7 @@ impl ShapeWorld {
         number_of_pixels_height: f32,
         number_of_pixels_width: f32,
         pixel_size: f32,
-    ) -> Vector3<f32> {
+    ) -> (PixelCenter, PixelRelativeCoordinates) {
         // Get the relative coordinates of x, y
         // Express the point in quad space (reusing the texture coordinates)
         let x_coord = 1.0
@@ -426,7 +437,10 @@ impl ShapeWorld {
 
         let y_vec = e2 * center_y_pixel;
 
-        x_vec + y_vec + trig[1].to_vec()
+        (
+            x_vec + y_vec + trig[1].to_vec(),
+            (x_pixel as u32, y_pixel as u32),
+        )
         // x and y coords are currently expressed in quad space
         // Need to: Get the pixel they intersect with, get that pixel center in quad space, and
         // then get that back view space (apply transoformation to this point?) Yes, should.
@@ -547,7 +561,12 @@ impl ShapeUI {
                         let check_pixel = ui
                             .add_enabled(
                                 !locked_res,
-                                egui::Slider::new(&mut self.pixel_size.value, -1000.0..=1000.0),
+                                egui::Slider::new(&mut self.pixel_size.value, 0.0..=1.0)
+                                    .custom_formatter(|n, _| {
+                                        let print = n * 1000.0;
+                                        format!("{print}")
+                                    })
+                                    .custom_parser(|s| s.parse::<f64>().map(|r| r / 1000.0).ok()),
                             )
                             .changed();
                         if check_pixel {
@@ -697,7 +716,7 @@ mod test {
         let pixel_center =
             ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w, pixel_size);
         let real_center = Vector3::new(0.5, 0.5, 0.0);
-        assert_eq!(real_center, pixel_center);
+        assert_eq!(real_center, pixel_center.0);
         assert_ne!(intersection.to_vec(), real_center);
     }
     #[test]
@@ -732,7 +751,7 @@ mod test {
         let pixel_center =
             ShapeWorld::pixel_center_real_space(bary, trig, triangle, pixel_h, pixel_w, pixel_size);
         let real_center = Vector3::new(0.25, 0.25, 0.0);
-        assert_eq!(real_center, pixel_center);
+        assert_eq!(real_center, pixel_center.0);
         assert_ne!(intersection.to_vec(), real_center);
     }
 }
