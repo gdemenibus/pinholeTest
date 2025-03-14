@@ -8,13 +8,15 @@ use std::sync::Arc;
 use uom::si::f32::Length;
 use uom::si::length::{meter, millimeter};
 
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[repr(C)] // Represent this in the way C does. For FFI with GPU
+#[derive(Copy, Clone, PartialEq, PartialOrd, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     position: [f32; 3],
     tex_coords: [f32; 2],
 }
 
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[repr(C)] // Represent this in the way C does. For FFI with GPU
+#[derive(Copy, Clone, PartialEq, PartialOrd, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LineVertex {
     position: [f32; 3],
 }
@@ -68,6 +70,17 @@ impl Vertex {
         let vector = Vector4::new(point.x, point.y, point.z, 1.0);
         let placement = model * vector;
         Point3::new(placement.x, placement.y, placement.z)
+    }
+    // Tell WGPU the order we want our vertex to come in
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
     }
 }
 

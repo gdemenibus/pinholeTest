@@ -1,7 +1,9 @@
 use crate::egui_tools::EguiRenderer;
+use crate::vertex;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use std::sync::Arc;
+use wgpu::util::DeviceExt;
 use wgpu::RenderPipeline;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -17,6 +19,7 @@ pub struct AppState {
     pub scale_factor: f32,
     pub egui_renderer: EguiRenderer,
     pub render_pipe: RenderPipeline,
+    pub vertex_buffer: wgpu::Buffer,
 }
 
 impl AppState {
@@ -94,7 +97,7 @@ impl AppState {
                 module: &shader,
                 entry_point: Some("vs_main"), // 1. Entry points to the shader, call the main
                 // function to make things easier!
-                buffers: &[], // 2. //Passing things to the shader
+                buffers: &[vertex::Vertex::desc()], // 2. //Passing things to the shader
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -130,6 +133,12 @@ impl AppState {
             multiview: None, // 5. === USEFUL FOR RENDERING TO ARRAY TEXTURES ====
             cache: None,     // 6.
         });
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Simple Buff"),
+            // SIMPLE DEBUG, Will build more sophisticated later
+            contents: bytemuck::cast_slice(&vertex::Shape::a().world.read().vertex_buffer),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
         Self {
             device,
@@ -139,6 +148,7 @@ impl AppState {
             egui_renderer,
             scale_factor,
             render_pipe,
+            vertex_buffer,
         }
     }
 
@@ -265,6 +275,8 @@ impl App {
                 timestamp_writes: None,
             });
             render_pass.set_pipeline(&state.render_pipe);
+            // Takes 2 params, as you might pass multiple vertex buffers
+            render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             render_pass.draw(0..3, 0..1);
         }
 
