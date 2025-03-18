@@ -12,6 +12,7 @@ use uom::si::length::{meter, millimeter};
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     position: [f32; 3],
+    padding: f32,
     tex_coords: [f32; 2],
 }
 
@@ -116,26 +117,32 @@ impl Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, 0.0, -0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
             Vertex {
                 position: [0.5, 0.0, -0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [0.5, 0.0, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [0.5, 0.0, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [-0.5, 0.0, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 1.0],
             },
             Vertex {
                 position: [-0.5, 0.0, -0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
         ];
@@ -158,26 +165,32 @@ impl Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
             Vertex {
                 position: [0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [-0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 1.0],
             },
             Vertex {
                 position: [-0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
         ];
@@ -197,26 +210,32 @@ impl Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
             Vertex {
                 position: [0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [-0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 1.0],
             },
             Vertex {
                 position: [-0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
         ];
@@ -235,26 +254,32 @@ impl Shape {
         let shape = vec![
             Vertex {
                 position: [-0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
             Vertex {
                 position: [0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [-0.5, 0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 1.0],
             },
             Vertex {
                 position: [-0.5, -0.5, 0.5],
+                padding: 0.0,
                 tex_coords: [0.0, 0.0],
             },
         ];

@@ -1,5 +1,5 @@
 use crate::egui_tools::EguiRenderer;
-use crate::vertex;
+use crate::{texture, vertex};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use std::sync::Arc;
@@ -74,6 +74,11 @@ impl AppState {
         };
 
         surface.configure(&device, &surface_config);
+
+        //
+        let texture_bytes = include_bytes!("../resources/textures/Mandril.jpg");
+
+        let texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
