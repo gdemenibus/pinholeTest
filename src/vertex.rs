@@ -79,27 +79,27 @@ impl Vertex {
 pub fn gross_method() -> Vec<Vertex> {
     vec![
         Vertex {
-            position: [-1.0, -1.0, 1.0],
+            position: [-1.0, -1.0, 0.1],
             tex_coords: [0.0, 0.0],
         },
         Vertex {
-            position: [1.0, -1.0, 1.0],
+            position: [1.0, -1.0, 0.1],
             tex_coords: [1.0, 0.0],
         },
         Vertex {
-            position: [1.0, 1.0, 1.0],
+            position: [1.0, 1.0, 0.1],
             tex_coords: [1.0, 1.0],
         },
         Vertex {
-            position: [1.0, 1.0, 1.0],
+            position: [1.0, 1.0, 0.1],
             tex_coords: [1.0, 1.0],
         },
         Vertex {
-            position: [-1.0, 1.0, 1.0],
+            position: [-1.0, 1.0, 0.1],
             tex_coords: [0.0, 1.0],
         },
         Vertex {
-            position: [-1.0, -1.0, 1.0],
+            position: [-1.0, -1.0, 0.1],
             tex_coords: [0.0, 0.0],
         },
     ]
@@ -319,15 +319,24 @@ impl ShapeWorld {
     /*
     6 vertices, each with 3 points
     */
-    pub fn to_uniform_buffer(&self, display: &Display<WindowSurface>) -> UniformBuffer<[f32; 24]> {
-        let vertices: [f32; 24] = self.vertex_buffer[0..6]
+    pub fn to_uniform_buffer(&self) -> [f32; 9] {
+        let vertices: [f32; 9] = self.vertex_buffer[0..3]
             .iter()
             .map(|x| x.place_vertex(&self.placement_matrix))
-            .flat_map(|x| vec![x.x, x.y, x.z, 0.0])
-            .collect::<Vec<f32>>()
+            .flat_map(|x| vec![x.x, x.y, x.z])
+            .collect::<Vec<_>>()
             .try_into()
             .unwrap();
-        UniformBuffer::new(display, vertices).unwrap()
+        vertices
+    }
+    pub fn first_triangle(&self) -> [Point3<f32>; 3] {
+        let vertices: [Point3<f32>; 3] = self.vertex_buffer[0..3]
+            .iter()
+            .map(|x| x.place_vertex(&self.placement_matrix))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        vertices
     }
 
     pub fn intersect(

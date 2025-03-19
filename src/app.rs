@@ -140,7 +140,7 @@ impl App<'_> {
 
     pub fn draw_debug(&mut self) {
         let mut frame = self.display.draw();
-        frame.clear_color_and_depth((0.0, 0.0, 1.0, 1.0), 1.0);
+        frame.clear_color_and_depth((0.0, 0.0, 0.0, 1.0), 1.0);
 
         let image_height: u32 = RAY_HEIGHT.try_into().unwrap();
         let image_width: u32 = RAY_WIDTH.try_into().unwrap();
@@ -164,7 +164,11 @@ impl App<'_> {
 
         let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
 
-        let ub = &self.shapes[2].world.read().to_uniform_buffer(&self.display);
+        //let ub = &self.shapes[2].world.read().to_uniform_buffer();
+        let triangle = &self.shapes[2].world.read().first_triangle();
+        let a: [f32; 3] = triangle[0].to_vec().to_arr();
+        let b: [f32; 3] = triangle[1].to_vec().to_arr();
+        let c: [f32; 3] = triangle[2].to_vec().to_arr();
         let vertex_buffer = vertex::gross_method();
         let buffer = glium::VertexBuffer::new(&self.display, &vertex_buffer).unwrap();
         let matrix = Matrix4::<f32>::identity();
@@ -178,7 +182,9 @@ impl App<'_> {
             q_y: q_y.to_arr(),
             tex: &shape.texture,
             view_proj: matrix.to_arr(),
-            world: ub,
+            a: a,
+            b: b,
+            c: c,
         };
 
         frame
@@ -191,52 +197,52 @@ impl App<'_> {
             )
             .unwrap();
 
-        //for shape in self.shapes.iter_mut() {
-        // lock shape:
-        //    let mut world = shape.world.write();
+        for shape in self.shapes.iter_mut() {
+            // lock shape:
+            let mut world = shape.world.write();
 
-        //    let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
-        //        Vector4::new(world.ui_state.size.0.value, 0.0, 0.0, 0.0),
-        //        Vector4::new(0.0, world.ui_state.size.1.value, 0.0, 0.0),
-        //        Vector4::new(0.0, 0.0, 1.0, 0.0),
-        //        Vector4::new(0.0, 0.0, 0.0, 1.0),
-        //    );
-        //    let mut matrix = Matrix4::<f32>::from_translation(Vector3::new(
-        //        0.0,
-        //        0.0,
-        //        world.ui_state.distance.value,
-        //    )) * world.model_matrix
-        //        * scale_matrix;
-        //    world.placement_matrix = matrix;
+            let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
+                Vector4::new(world.ui_state.size.0.value, 0.0, 0.0, 0.0),
+                Vector4::new(0.0, world.ui_state.size.1.value, 0.0, 0.0),
+                Vector4::new(0.0, 0.0, 1.0, 0.0),
+                Vector4::new(0.0, 0.0, 0.0, 1.0),
+            );
+            let matrix = Matrix4::<f32>::from_translation(Vector3::new(
+                0.0,
+                0.0,
+                world.ui_state.distance.value,
+            )) * world.model_matrix
+                * scale_matrix;
+            world.placement_matrix = matrix;
 
-        //    // Super gross
-        //    matrix = Matrix4::identity();
+            // Super gross
+            //matrix = Matrix4::identity();
 
-        //    let uniforms = uniform! {
-        //        model: matrix.to_arr(),
-        //        ray_origin: ray_origin.to_arr(),
-        //        p_1_m: p_1_m.to_arr(),
-        //        q_x: q_x.to_arr(),
-        //        q_y: q_y.to_arr(),
-        //        tex: &shape.texture,
-        //        view_proj: matrix.to_arr(),
-        //        world: ub,
-        //    };
-        //    // take up screen space!
-        //    let vertex_buffer = vertex::gross_method();
+            //  let uniforms = uniform! {
+            //      model: matrix.to_arr(),
+            //      ray_origin: ray_origin.to_arr(),
+            //      p_1_m: p_1_m.to_arr(),
+            //      q_x: q_x.to_arr(),
+            //      q_y: q_y.to_arr(),
+            //      tex: &shape.texture,
+            //      view_proj: matrix.to_arr(),
+            //      world: ub,
+            //  };
+            //  // take up screen space!
+            //  let vertex_buffer = vertex::gross_method();
 
-        //    let buffer = glium::VertexBuffer::new(&self.display, &vertex_buffer).unwrap();
+            //  let buffer = glium::VertexBuffer::new(&self.display, &vertex_buffer).unwrap();
 
-        //    frame
-        //        .draw(
-        //            &buffer,
-        //            self.indices,
-        //            self.programs.get(&Shaders::World).unwrap(),
-        //            &uniforms,
-        //            &self.draw_params,
-        //        )
-        //        .unwrap();
-        //}
+            //  frame
+            //      .draw(
+            //          &buffer,
+            //          self.indices,
+            //          self.programs.get(&Shaders::World).unwrap(),
+            //          &uniforms,
+            //          &self.draw_params,
+            //      )
+            //      .unwrap();
+        }
         // let program = self.programs.get(&Shaders::Lines).unwrap();
 
         // self.raytracer.rasterize_debug(
