@@ -2,9 +2,9 @@ use egui_glium::egui_winit::egui::ahash::HashMap;
 use egui_glium::egui_winit::egui::mutex::RwLock;
 use std::{sync::Arc, time::Instant};
 
-use crate::vertex::ShapeWorld;
+use crate::vertex::{self, ShapeWorld};
 use crate::{matrix::ToArr, shader, vertex::Shape};
-use cgmath::{Matrix4, Vector3, Vector4};
+use cgmath::{EuclideanSpace, InnerSpace, Matrix4, SquareMatrix, Vector3, Vector4};
 use egui_glium::egui_winit::egui::ImageData;
 use egui_glium::egui_winit::egui::{Color32, ColorImage, TextureOptions};
 use glium::winit::application::ApplicationHandler;
@@ -24,8 +24,8 @@ use glium::{
 use crate::camera::{Camera, CameraController, Projection};
 use crate::raytracer::Raytracer;
 
-use crate::RAY_HEIGHT;
 use crate::RAY_WIDTH;
+use crate::{RAY_HEIGHT, SAFE_FRAC_PI_2};
 
 // Deal with application State
 // RN, only does
@@ -142,51 +142,110 @@ impl App<'_> {
         let mut frame = self.display.draw();
         frame.clear_color_and_depth((0.0, 0.0, 1.0, 1.0), 1.0);
 
+        let image_height: u32 = RAY_HEIGHT.try_into().unwrap();
+        let image_width: u32 = RAY_WIDTH.try_into().unwrap();
+
+        // CAMERA MATH!
+
+        let d = 1.0;
+        let t_n = self.camera.direction_vec();
+        let b_n = t_n.cross(Vector3::new(0.0, 1.0, 0.0)).normalize();
+        let v_n = t_n.cross(b_n).normalize();
+        let g_x = (SAFE_FRAC_PI_2 / 2.0).tan() * d;
+        // IMPORTANT: Might have width and height confused?
+
+        // straight from the wikipedia article on raytracing
+        let g_y = g_x * ((image_height as f32 - 1.0) / (image_width as f32 - 1.0));
+        let q_x = (2.0 * g_x) / (image_height as f32 - 1.0) * b_n;
+        let q_y = (2.0 * g_y) / (image_width as f32 - 1.0) * v_n;
+        let p_1_m = t_n * d - g_x * b_n - g_y * v_n;
+
+        let ray_origin = self.camera.position.to_vec();
+
         let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
-        for shape in self.shapes.iter_mut() {
-            // lock shape:
-            let mut world = shape.world.write();
 
-            let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
-                Vector4::new(world.ui_state.size.0.value, 0.0, 0.0, 0.0),
-                Vector4::new(0.0, world.ui_state.size.1.value, 0.0, 0.0),
-                Vector4::new(0.0, 0.0, 1.0, 0.0),
-                Vector4::new(0.0, 0.0, 0.0, 1.0),
-            );
-            let matrix = Matrix4::<f32>::from_translation(Vector3::new(
-                0.0,
-                0.0,
-                world.ui_state.distance.value,
-            )) * world.model_matrix
-                * scale_matrix;
-            world.placement_matrix = matrix;
+        let ub = &self.shapes[2].world.read().to_uniform_buffer(&self.display);
+        let vertex_buffer = vertex::gross_method();
+        let buffer = glium::VertexBuffer::new(&self.display, &vertex_buffer).unwrap();
+        let matrix = Matrix4::<f32>::identity();
+        let shape = &self.shapes[0];
 
-            let uniforms = uniform! {
-                model: matrix.to_arr(),
-                tex: &shape.texture,
-                view_proj: view_proj.to_arr(),
-            };
-            let buffer = glium::VertexBuffer::new(&self.display, &world.vertex_buffer).unwrap();
+        let uniforms = uniform! {
+            model: matrix.to_arr(),
+            ray_origin: ray_origin.to_arr(),
+            p_1_m: p_1_m.to_arr(),
+            q_x: q_x.to_arr(),
+            q_y: q_y.to_arr(),
+            tex: &shape.texture,
+            view_proj: matrix.to_arr(),
+            world: ub,
+        };
 
-            frame
-                .draw(
-                    &buffer,
-                    self.indices,
-                    self.programs.get(&Shaders::World).unwrap(),
-                    &uniforms,
-                    &self.draw_params,
-                )
-                .unwrap();
-        }
-        let program = self.programs.get(&Shaders::Lines).unwrap();
+        frame
+            .draw(
+                &buffer,
+                self.indices,
+                self.programs.get(&Shaders::World).unwrap(),
+                &uniforms,
+                &self.draw_params,
+            )
+            .unwrap();
 
-        self.raytracer.rasterize_debug(
-            &mut frame,
-            &self.draw_params,
-            program,
-            view_proj,
-            &self.display,
-        );
+        //for shape in self.shapes.iter_mut() {
+        // lock shape:
+        //    let mut world = shape.world.write();
+
+        //    let scale_matrix: Matrix4<f32> = Matrix4::from_cols(
+        //        Vector4::new(world.ui_state.size.0.value, 0.0, 0.0, 0.0),
+        //        Vector4::new(0.0, world.ui_state.size.1.value, 0.0, 0.0),
+        //        Vector4::new(0.0, 0.0, 1.0, 0.0),
+        //        Vector4::new(0.0, 0.0, 0.0, 1.0),
+        //    );
+        //    let mut matrix = Matrix4::<f32>::from_translation(Vector3::new(
+        //        0.0,
+        //        0.0,
+        //        world.ui_state.distance.value,
+        //    )) * world.model_matrix
+        //        * scale_matrix;
+        //    world.placement_matrix = matrix;
+
+        //    // Super gross
+        //    matrix = Matrix4::identity();
+
+        //    let uniforms = uniform! {
+        //        model: matrix.to_arr(),
+        //        ray_origin: ray_origin.to_arr(),
+        //        p_1_m: p_1_m.to_arr(),
+        //        q_x: q_x.to_arr(),
+        //        q_y: q_y.to_arr(),
+        //        tex: &shape.texture,
+        //        view_proj: matrix.to_arr(),
+        //        world: ub,
+        //    };
+        //    // take up screen space!
+        //    let vertex_buffer = vertex::gross_method();
+
+        //    let buffer = glium::VertexBuffer::new(&self.display, &vertex_buffer).unwrap();
+
+        //    frame
+        //        .draw(
+        //            &buffer,
+        //            self.indices,
+        //            self.programs.get(&Shaders::World).unwrap(),
+        //            &uniforms,
+        //            &self.draw_params,
+        //        )
+        //        .unwrap();
+        //}
+        // let program = self.programs.get(&Shaders::Lines).unwrap();
+
+        // self.raytracer.rasterize_debug(
+        //     &mut frame,
+        //     &self.draw_params,
+        //     program,
+        //     view_proj,
+        //     &self.display,
+        // );
 
         // Testing out the floor before doing anything wacky with it
 

@@ -3,8 +3,9 @@ use crate::texture;
 use cgmath::{EuclideanSpace, InnerSpace, Matrix4, Point3, Vector3, Vector4};
 use egui_glium::egui_winit::egui::mutex::RwLock;
 use egui_glium::egui_winit::egui::{self, Context, Pos2};
+use glium::uniforms::UniformBuffer;
 use glium::{glutin::surface::WindowSurface, Display, Texture2d};
-use image::Rgba;
+use image::{DynamicImage, Rgba, RgbaImage};
 use std::sync::Arc;
 use uom::si::f32::Length;
 use uom::si::length::{meter, millimeter};
@@ -75,6 +76,34 @@ impl Vertex {
         Point3::new(placement.x, placement.y, placement.z)
     }
 }
+pub fn gross_method() -> Vec<Vertex> {
+    vec![
+        Vertex {
+            position: [-1.0, -1.0, 1.0],
+            tex_coords: [0.0, 0.0],
+        },
+        Vertex {
+            position: [1.0, -1.0, 1.0],
+            tex_coords: [1.0, 0.0],
+        },
+        Vertex {
+            position: [1.0, 1.0, 1.0],
+            tex_coords: [1.0, 1.0],
+        },
+        Vertex {
+            position: [1.0, 1.0, 1.0],
+            tex_coords: [1.0, 1.0],
+        },
+        Vertex {
+            position: [-1.0, 1.0, 1.0],
+            tex_coords: [0.0, 1.0],
+        },
+        Vertex {
+            position: [-1.0, -1.0, 1.0],
+            tex_coords: [0.0, 0.0],
+        },
+    ]
+}
 
 pub struct Shape {
     pub world: Arc<RwLock<ShapeWorld>>,
@@ -90,7 +119,8 @@ impl Shape {
         opacity: f32,
         is_transparent: bool,
     ) -> Shape {
-        let tex = image::open(texture_path).unwrap();
+        let default = DynamicImage::ImageRgba8(RgbaImage::new(10, 10));
+        let tex = image::open(texture_path).unwrap_or(default);
         let world = ShapeWorld {
             vertex_buffer,
             model_matrix,
@@ -286,6 +316,20 @@ type PixelCenter = Vector3<f32>;
 type PixelRelativeCoordinates = (u32, u32);
 
 impl ShapeWorld {
+    /*
+    6 vertices, each with 3 points
+    */
+    pub fn to_uniform_buffer(&self, display: &Display<WindowSurface>) -> UniformBuffer<[f32; 24]> {
+        let vertices: [f32; 24] = self.vertex_buffer[0..6]
+            .iter()
+            .map(|x| x.place_vertex(&self.placement_matrix))
+            .flat_map(|x| vec![x.x, x.y, x.z, 0.0])
+            .collect::<Vec<f32>>()
+            .try_into()
+            .unwrap();
+        UniformBuffer::new(display, vertices).unwrap()
+    }
+
     pub fn intersect(
         &self,
         vect_pos: Point3<f32>,

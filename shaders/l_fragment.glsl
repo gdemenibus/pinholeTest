@@ -1,4 +1,4 @@
-#version 140
+#version 460
 
 out vec4 color;
 uniform vec4 color_in;
