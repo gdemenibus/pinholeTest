@@ -147,7 +147,7 @@ impl App<'_> {
 
         // CAMERA MATH!
 
-        let d = 1.0;
+        let d = 2.0;
         let t_n = self.camera.direction_vec();
         let b_n = t_n.cross(Vector3::new(0.0, 1.0, 0.0)).normalize();
         let v_n = t_n.cross(b_n).normalize();
@@ -162,10 +162,10 @@ impl App<'_> {
 
         let ray_origin = self.camera.position.to_vec();
 
-        let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
+        //let view_proj = self.projection.calc_matrix() * self.camera.calc_matrix();
 
         //let ub = &self.shapes[2].world.read().to_uniform_buffer();
-        let triangle = &self.shapes[2].world.read().first_triangle();
+        let triangle = &self.shapes[3].world.read().first_triangle();
         let a: [f32; 3] = triangle[0].to_vec().to_arr();
         let b: [f32; 3] = triangle[1].to_vec().to_arr();
         let c: [f32; 3] = triangle[2].to_vec().to_arr();
@@ -252,8 +252,6 @@ impl App<'_> {
         //     view_proj,
         //     &self.display,
         // );
-
-        // Testing out the floor before doing anything wacky with it
 
         // Paint the UI
         self.ui.paint(&self.display, &mut frame);

@@ -1,5 +1,5 @@
 #version 460
-layout(origin_upper_left, pixel_center_integer) in vec4 gl_FragCoord;
+layout(origin_upper_left) in vec4 gl_FragCoord;
 in vec2 v_tex_coords;
 out vec4 color;
 
@@ -24,7 +24,7 @@ bool intersection(vec3 ray_dir, vec3 a, vec3 b, vec3 c) {
 
     float det = dot(ray_cross_e2, e1);
 
-    if (det > eps && det < eps) {
+    if (det > -eps && det < eps) {
         return false;
     }
     float inv_det = 1.0 / det;
@@ -50,8 +50,8 @@ bool intersection(vec3 ray_dir, vec3 a, vec3 b, vec3 c) {
 }
 
 void main() {
-    float f_x = float(gl_FragCoord.x);
-    float f_y = float(gl_FragCoord.y);
+    float f_x = float(gl_FragCoord.x) + 0.5;
+    float f_y = float(gl_FragCoord.y) + 0.5;
     vec3 ray_dir = p_1_m + q_x * (f_x - 1.0) + q_y * (f_y - 1.0);
 
     ray_dir = normalize(ray_dir);
