@@ -4,6 +4,7 @@ mod camera;
 mod egui_tools;
 mod matrix;
 mod raytracer;
+mod scene;
 mod shader;
 mod shape;
 mod texture;
