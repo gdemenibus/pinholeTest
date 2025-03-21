@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 bytemuck = {version = "1.22.0", features = ["derive"]}
-cgmath = "0.18.0"
+cgmath = { version = "0.18.0", features = ["swizzle"] }
+crevice = { version = "0.18.0", features = ["cgmath"] }
 egui = "0.31.1"
 egui-wgpu = "0.31.1"
 egui-winit = "0.31.1"

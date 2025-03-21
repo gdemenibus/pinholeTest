@@ -1,8 +1,14 @@
+use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
+use crate::shape::Quad;
+use crate::vertex::Vertex;
 use crate::{texture, vertex};
+use cgmath::Vector3;
+use crevice::std140::AsStd140;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use std::sync::Arc;
+use std::time::Instant;
 use wgpu::util::DeviceExt;
 use wgpu::RenderPipeline;
 use winit::application::ApplicationHandler;
@@ -11,6 +17,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 
+// Struct to deal with all the drawing. This is where all the setting live
 pub struct AppState {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -20,6 +27,9 @@ pub struct AppState {
     pub egui_renderer: EguiRenderer,
     pub render_pipe: RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub num_index: u32,
+    pub num_vertex: u32,
 }
 
 impl AppState {
@@ -78,7 +88,7 @@ impl AppState {
         //
         let texture_bytes = include_bytes!("../resources/textures/Mandril.jpg");
 
-        let texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
+        let _texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -121,7 +131,7 @@ impl AppState {
                 topology: wgpu::PrimitiveTopology::TriangleList, // Types of Primitives
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw, // Colling mode
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,
                 // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                 polygon_mode: wgpu::PolygonMode::Fill,
                 // Requires Features::DEPTH_CLIP_CONTROL
@@ -138,11 +148,21 @@ impl AppState {
             multiview: None, // 5. === USEFUL FOR RENDERING TO ARRAY TEXTURES ====
             cache: None,     // 6.
         });
+
+        // Surface quad:
+        let surface_quad = Quad::screen_quad();
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Simple Buff"),
-            // SIMPLE DEBUG, Will build more sophisticated later
-            contents: bytemuck::cast_slice(&vertex::Shape::a().world.read().vertex_buffer),
+            label: Some("Vertex Buffer"),
+            contents: surface_quad.as_std140().as_bytes(),
             usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index_list: [i16; 6] = [0, 1, 3, 1, 3, 2];
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&index_list),
+            usage: wgpu::BufferUsages::INDEX,
         });
 
         Self {
@@ -154,6 +174,9 @@ impl AppState {
             scale_factor,
             render_pipe,
             vertex_buffer,
+            index_buffer,
+            num_index: index_list.len() as u32,
+            num_vertex: 4,
         }
     }
 
@@ -164,10 +187,14 @@ impl AppState {
     }
 }
 
+// Handles the drawing and the app logic
 pub struct App {
     instance: wgpu::Instance,
     state: Option<AppState>,
     window: Option<Arc<Window>>,
+    camera: Camera,
+    camera_control: CameraController,
+    previous_draw: Instant,
 }
 
 impl App {
@@ -177,6 +204,9 @@ impl App {
             instance,
             state: None,
             window: None,
+            camera: Camera::new((0.0, 8.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0)),
+            camera_control: CameraController::new(4.0, 4.0),
+            previous_draw: Instant::now(),
         }
     }
 
@@ -282,7 +312,8 @@ impl App {
             render_pass.set_pipeline(&state.render_pipe);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..state.num_index, 0, 0..1);
         }
 
         // TODO: Make this slightly more elegant!
@@ -354,11 +385,22 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 self.handle_redraw();
+                let now = Instant::now();
+                let dt = now.duration_since(self.previous_draw);
+                self.camera_control.update_camera(&mut self.camera, dt);
+                self.previous_draw = now;
 
                 self.window.as_ref().unwrap().request_redraw();
             }
             WindowEvent::Resized(new_size) => {
                 self.handle_resized(new_size.width, new_size.height);
+            }
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                event,
+                is_synthetic: _,
+            } => {
+                self.camera_control.process_keyboard(event);
             }
             _ => (),
         }
