@@ -1,16 +1,17 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
+use crate::raytracer::RaytraceTest;
+use crate::scene::Scene;
 use crate::shape::Quad;
-use crate::vertex::Vertex;
 use crate::{texture, vertex};
-use cgmath::Vector3;
 use crevice::std140::AsStd140;
+use egui::ahash::{HashMap, HashMapExt};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-use wgpu::RenderPipeline;
+use wgpu::{BindGroup, Buffer, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
@@ -28,8 +29,9 @@ pub struct AppState {
     pub render_pipe: RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub bind_map: HashMap<usize, BindGroup>,
     pub num_index: u32,
-    pub num_vertex: u32,
+    pub rt_buffer: Buffer,
 }
 
 impl AppState {
@@ -39,6 +41,7 @@ impl AppState {
         window: &Window,
         width: u32,
         height: u32,
+        camera: &Camera,
     ) -> Self {
         let power_pref = wgpu::PowerPreference::HighPerformance;
         let adapter = instance
@@ -90,6 +93,68 @@ impl AppState {
 
         let _texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
 
+        // Buffers to pass info?
+        let scene = Scene::test();
+
+        let imag_height = surface_config.height;
+        let image_width = surface_config.width;
+        let rt_test = RaytraceTest::test(camera, imag_height, image_width);
+
+        let rt_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Buffer for Scene, contains all objects"),
+            contents: rt_test.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let scene_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Buffer for Scene, contains all objects"),
+            contents: scene.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let scene_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::all(),
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::all(),
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+            ],
+            label: Some("Binding group for Scene"),
+        });
+
+        let scene_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Scene Bind"),
+            layout: &scene_bind_group,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: scene_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: rt_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let mut bind_map = HashMap::new();
+        bind_map.insert(0, scene_bind);
+
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
         let scale_factor = 1.0;
@@ -101,7 +166,7 @@ impl AppState {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&scene_bind_group],
                 push_constant_ranges: &[],
             });
 
@@ -175,8 +240,9 @@ impl AppState {
             render_pipe,
             vertex_buffer,
             index_buffer,
+            bind_map,
             num_index: index_list.len() as u32,
-            num_vertex: 4,
+            rt_buffer,
         }
     }
 
@@ -228,6 +294,7 @@ impl App {
             &window,
             initial_width,
             initial_width,
+            &self.camera,
         )
         .await;
 
@@ -290,6 +357,14 @@ impl App {
         // Order of passes matters!
         // The render pass
         {
+            let rt_test = RaytraceTest::test(
+                &self.camera,
+                state.surface_config.height,
+                state.surface_config.width,
+            );
+            state
+                .queue
+                .write_buffer(&state.rt_buffer, 0, rt_test.as_std140().as_bytes());
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -310,6 +385,8 @@ impl App {
                 timestamp_writes: None,
             });
             render_pass.set_pipeline(&state.render_pipe);
+            // Pass uniform!
+            render_pass.set_bind_group(0, state.bind_map.get(&0), &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
