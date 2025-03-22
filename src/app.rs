@@ -1,7 +1,7 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::raytracer::RaytraceTest;
-use crate::scene::Scene;
+use crate::scene::{DrawUI, Scene};
 use crate::shape::{Quad, VWPanel};
 use crate::{texture, vertex};
 use crevice::std140::{AsStd140, Std140};
@@ -33,6 +33,8 @@ pub struct AppState {
     pub bind_map: HashMap<BindNumber, BindGroup>,
     pub num_index: u32,
     pub rt_buffer: Buffer,
+    pub scene_buffer: Buffer,
+    pub scene: Scene,
 }
 
 impl AppState {
@@ -200,7 +202,7 @@ impl AppState {
 
         let scene_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Buffer for Scene, contains all objects"),
-            contents: &scene.as_bytes(),
+            contents: &scene.as_bytes(camera),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -338,6 +340,8 @@ impl AppState {
             bind_map,
             num_index: index_list.len() as u32,
             rt_buffer,
+            scene_buffer,
+            scene,
         }
     }
 
@@ -464,6 +468,9 @@ impl App {
             state
                 .queue
                 .write_buffer(&state.rt_buffer, 0, rt_test.as_std140().as_bytes());
+            state
+                .queue
+                .write_buffer(&state.scene_buffer, 0, &state.scene.as_bytes(&self.camera));
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -525,6 +532,7 @@ impl App {
                         }
                     });
                 });
+            state.scene.draw_ui(state.egui_renderer.context());
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,
