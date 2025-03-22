@@ -184,7 +184,6 @@ impl CameraController {
         // when moving in a non-cardinal direction.
         self.rotate_horizontal = 0.0;
         self.rotate_vertical = 0.0;
-        println!("New Camera Position: {:?}", camera.position);
 
         // Keep the camera's angle from going too high/low.
         if camera.pitch < -Rad(SAFE_FRAC_PI_2) {
