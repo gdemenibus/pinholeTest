@@ -2,7 +2,7 @@ use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::raytracer::RaytraceTest;
 use crate::scene::Scene;
-use crate::shape::Quad;
+use crate::shape::{Quad, VWPanel};
 use crate::{texture, vertex};
 use crevice::std140::{AsStd140, Std140};
 use egui::ahash::{HashMap, HashMapExt};
@@ -18,6 +18,7 @@ use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 
+type BindNumber = usize;
 // Struct to deal with all the drawing. This is where all the setting live
 pub struct AppState {
     pub device: wgpu::Device,
@@ -29,7 +30,7 @@ pub struct AppState {
     pub render_pipe: RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub bind_map: HashMap<usize, BindGroup>,
+    pub bind_map: HashMap<BindNumber, BindGroup>,
     pub num_index: u32,
     pub rt_buffer: Buffer,
 }
@@ -153,6 +154,37 @@ impl AppState {
             label: Some("diffuse_bind_group"),
         });
 
+        // Panel group
+        let panel = VWPanel::demo_panel();
+        let panel_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Buffer for Panels"),
+            contents: panel.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let panel_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::all(),
+                count: None,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            }],
+            label: Some("Binding group for Scene"),
+        });
+
+        let panel_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Scene Bind"),
+            layout: &panel_bind_group,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: panel_buffer.as_entire_binding(),
+            }],
+        });
+
         // Buffers to pass info?
         let scene = Scene::test();
 
@@ -212,9 +244,11 @@ impl AppState {
                 },
             ],
         });
+
         let mut bind_map = HashMap::new();
         bind_map.insert(0, scene_bind);
         bind_map.insert(1, diffuse_bind_group);
+        bind_map.insert(2, panel_bind);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -453,6 +487,8 @@ impl App {
             // Pass uniform!
             render_pass.set_bind_group(0, state.bind_map.get(&0), &[]);
             render_pass.set_bind_group(1, state.bind_map.get(&1), &[]);
+
+            render_pass.set_bind_group(2, state.bind_map.get(&2), &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);

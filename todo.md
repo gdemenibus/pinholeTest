@@ -224,3 +224,4 @@ Bring in the textures of the monkeys
 
 
 
+Move Uniform binding out of main, break it up into much smaller things
