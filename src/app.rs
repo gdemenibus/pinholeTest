@@ -14,7 +14,7 @@ use wgpu::util::DeviceExt;
 use wgpu::{BindGroup, Buffer, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::WindowEvent;
+use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 
@@ -261,6 +261,8 @@ pub struct App {
     camera: Camera,
     camera_control: CameraController,
     previous_draw: Instant,
+    mouse_press: bool,
+    mouse_on_ui: bool,
 }
 
 impl App {
@@ -268,6 +270,8 @@ impl App {
         let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         Self {
             instance,
+            mouse_press: false,
+            mouse_on_ui: false,
             state: None,
             window: None,
             camera: Camera::new((0.0, 8.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0)),
@@ -479,7 +483,28 @@ impl ApplicationHandler for App {
             } => {
                 self.camera_control.process_keyboard(event);
             }
+            WindowEvent::MouseInput {
+                device_id,
+                state,
+                button: MouseButton::Right,
+            } => {
+                self.mouse_press = state == ElementState::Pressed;
+            }
             _ => (),
+        }
+    }
+
+    #[allow(unused_variables)]
+    fn device_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if self.mouse_press && !self.mouse_on_ui {
+                self.camera_control.process_mouse(delta.0, delta.1);
+            }
         }
     }
 }
