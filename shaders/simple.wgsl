@@ -4,11 +4,6 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
 }
 ;
-// Assumptions for texture, may be wrong:
-// a -> 0.0, 1.0
-// b -> 1.0, 1.0
-// c = 0.0, 0.0
-// d = 1.0, 0.0
 struct Quad {
     a: vec3<f32>,
     b: vec3<f32>,
@@ -102,10 +97,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 }
 
-// a -> 0.0, 1.0
-// b -> 1.0, 1.0
-// c = 0.0, 0.0
-// d = 1.0, 0.0
 fn intersection(ray_direction: vec3f, a: vec3f, b: vec3f, c: vec3f, abc: bool) -> vec4f {
     var e1 = b - a;
     var e2 = c - a;
@@ -135,18 +126,35 @@ fn intersection(ray_direction: vec3f, a: vec3f, b: vec3f, c: vec3f, abc: bool) -
     if (t > eps) {
         let bary_coords = vec3f(u, v, w);
 
-        //       v
-        // u === w
+        // Tex coordinates
+        // a -> 0.0, 1.0
+        // b -> 1.0, 1.0
+        // c = 0.0, 0.0
+        // d = 1.0, 0.0
+        // a ==== b
+        // |      |
+        // |      |
+        // c ==== d
+
+        // A, B, C
         if abc {
-            //return vec4f(u, v, w, 1.0);
-            // A, B, C
+
+            //
+            //       v
+            //     / |
+            //    /  |
+            //   /   |
+            //  /    |
+            // u === w
             return sample_texture(bary_coords, vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0), tex_size);
-        //v === u
-        //w
         } else {
             // B, C, D
-            //return vec4f(u, v, w, 1.0);
 
+            //v === u
+            //|   /
+            //|  /
+            //| /
+            //w
             return sample_texture(bary_coords, vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0), tex_size);
         }
 

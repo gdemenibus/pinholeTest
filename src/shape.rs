@@ -70,7 +70,7 @@ impl Quad {
 }
 // Struct Representing video window Panel
 #[derive(crevice::std140::AsStd140)]
-struct VWPanel {
+pub struct VWPanel {
     quad: Quad,
     pixel_count: Vector2<u32>,
     // TODO: Change this to UOM
@@ -81,7 +81,46 @@ impl Shape for VWPanel {
         self.quad.place(model_matrix);
     }
 }
-impl VWPanel {}
+impl VWPanel {
+    pub fn from_quad(quad: Quad, pixel_count: Vector2<u32>, size: Vector2<f32>) -> Self {
+        VWPanel {
+            quad,
+            pixel_count,
+            size,
+        }
+    }
+    pub fn demo_panel() -> Self {
+        let quad = Quad::new(
+            Vector3::new(1.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 1.0, 2.0),
+            Vector3::new(0.0, 1.0, 1.0),
+        );
+        let pixel_count = Vector2::new(800, 600);
+        let size = Vector2::new(1.3, 1.0);
+        VWPanel {
+            quad,
+            pixel_count,
+            size,
+        }
+    }
+    pub fn new(
+        a: Vector3<f32>,
+        b: Vector3<f32>,
+        c: Vector3<f32>,
+        d: Vector3<f32>,
+        pixel_count: Vector2<u32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let quad = Quad::new(a, b, c, d);
+
+        VWPanel {
+            quad,
+            pixel_count,
+            size,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ShapeWorld {
