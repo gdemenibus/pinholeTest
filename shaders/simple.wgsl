@@ -18,6 +18,10 @@ struct RayTraceInfo {
     q_y: vec3f,
     p_1_m: vec3f,
 }
+struct Ray {
+    origin: vec3f,
+    direction: vec3f,
+}
 
 const eps = 0.00001;
 const scene_size: u32 = 2;
@@ -45,6 +49,8 @@ struct Panel {
     pixel_count: vec2u,
     size: vec2f,
 }
+@group(2) @binding(0)
+var<uniform> panels: array<Panel, 1>;
 
 struct VertexOutput {
     // Like gl_position
@@ -77,15 +83,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var f_y = position.y;
     var ray_dir = rt.p_1_m + rt.q_x * (f_x - 1.0) + rt.q_y * (f_y - 1.0);
 
+    var ray = Ray(rt.ray_origin, ray_dir);
+
     ray_dir = normalize(ray_dir);
+    light_field_distortion(&ray);
+    // Check if you
+    //
+    //
+    //var panel = intersection(ray_dir, scene[index].a, scene[index].b, scene[index].c, true)
     // Loop through all the geometry in scene! (for now, very simple)
     // Rely on CPU to give us the correct order?
     for (var index = 0u; index < scene_size; index++) {
-        var color = intersection(ray_dir, scene[index].a, scene[index].b, scene[index].c, true);
+        var color = intersection(ray, scene[index].a, scene[index].b, scene[index].c, true);
         if (color.w != 0.0) {
             return color;
         }
-        color = intersection(ray_dir, scene[index].b, scene[index].c, scene[index].d, false);
+        color = intersection(ray, scene[index].b, scene[index].c, scene[index].d, false);
 
         if (color.w != 0.0) {
             return color;
@@ -97,24 +110,42 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 }
 
-fn intersection(ray_direction: vec3f, a: vec3f, b: vec3f, c: vec3f, abc: bool) -> vec4f {
+// Distortion of Ray caused by limits of the panel
+fn light_field_distortion(ray: ptr<function, Ray>) {
+// Intersection Panel 1
+// Intersection Panel 2
+// Build ray
+// edit ray
+}
+;
+//
+fn pixel_center_real_space(
+    bary_coords: vec3f,
+    triangle: array<vec3f, 3>,
+) {
+
+}
+;
+
+
+fn intersection(ray: Ray, a: vec3f, b: vec3f, c: vec3f, abc: bool) -> vec4f {
     var e1 = b - a;
     var e2 = c - a;
-    var rey_cross_e2 = cross(e2, ray_direction);
+    var rey_cross_e2 = cross(e2, ray.direction);
     var det = dot(rey_cross_e2, e1);
 
     if (det > -eps && det < eps) {
         return miss_color;
     }
     var inv_det = 1.0 / det;
-    var s = rt.ray_origin - a;
+    var s = ray.origin - a;
     var u = inv_det * dot(rey_cross_e2, s);
 
     if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
         return miss_color;
     }
     var s_cross_e1 = cross(e1, s);
-    var v = inv_det * dot(s_cross_e1, ray_direction);
+    var v = inv_det * dot(s_cross_e1, ray.direction);
     var w = 1.0 - v - u;
 
     if (v < 0.0 || u + v > 1.0) {
