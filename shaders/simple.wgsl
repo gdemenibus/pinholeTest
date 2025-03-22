@@ -19,6 +19,8 @@ struct RayTraceInfo {
     p_1_m: vec3f,
 }
 
+const eps = 0.00001;
+
 
 @group(0) @binding(0)
 var<uniform> scene: Scene;
@@ -59,30 +61,45 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var ray_dir = rt.p_1_m + rt.q_x * (f_x - 1.0) + rt.q_y * (f_y - 1.0);
 
     ray_dir = normalize(ray_dir);
-    if intersection(ray_dir) {
-        return vec4f(1.0, 1.0, 1.0, 1.0);
+    if intersection(ray_dir, scene.a, scene.b, scene.c) {
+        return vec4f(1.0, 0.0, 1.0, 1.0);
 
     } else {
 
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        return vec4<f32>(0.0, 1.0, 0.0, 1.0);
     }
 
 }
 
-fn intersection(ray_direction: vec3f) -> bool {
-    // Build the plane
-    // Make a the origin
-    var b_a = scene.b - scene.a;
-    var d_a = scene.d - scene.a;
-    var c_a = scene.c - scene.a;
-    var ray_origin_a = rt.ray_origin - scene.a;
-    // intersect plane:
-    var nor = cross(b_a, d_a);
-    var t = -dot(ray_origin_a, nor) / dot(ray_direction, nor);
-    if (t < 0.0) {
+
+fn intersection(ray_direction: vec3f, a: vec3f, b: vec3f, c: vec3f) -> bool {
+    var e1 = b - a;
+    var e2 = c - a;
+    var rey_cross_e2 = cross(e2, ray_direction);
+    var det = dot(rey_cross_e2, e1);
+
+    if (det > -eps && det < eps) {
         return false;
-    } else {
+    }
+    var inv_det = 1.0 / det;
+    var s = rt.ray_origin - a;
+    var u = inv_det * dot(rey_cross_e2, s);
+
+    if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
+        return false;
+    }
+    var s_cross_e1 = cross(e1, s);
+    var v = inv_det * dot(s_cross_e1, ray_direction);
+    var w = 1.0 - v - u;
+
+    if (v < 0.0 || u + v > 1.0) {
+        return false;
+    }
+    // At this stage we can compute t to find out where the intersection point is on the line.
+    var t = inv_det * dot(s_cross_e1, e2);
+    if (t > eps) {
         return true;
     }
+    return false;
 
 }
