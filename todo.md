@@ -210,5 +210,17 @@ square of the pixel amount of possible light rays
 
 Ray trace the scene but replace the white rays with the red rays!
 
+## WGPU Check point:
+Managed to rebuild progress on wgpu!
+What is missing? 
+System for changing uniforms. There are many uniforms that likely need to be recomputed and repased at redraw (Camera, movement)
+Passing textures
+Expand world!
+Bringing in panels 
+
+Move towards light distortion
+Bring in the textures of the monkeys
+
+
 
 

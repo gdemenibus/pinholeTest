@@ -1,5 +1,5 @@
 use crate::vertex::Vertex;
-use cgmath::{Matrix4, Point3, Vector3, Vector4};
+use cgmath::{Matrix4, Point3, Vector2, Vector3, Vector4};
 use crevice::std140::{self, AsStd140};
 use egui_winit::egui::{self, Context, Pos2};
 use image::Rgba;
@@ -68,6 +68,20 @@ impl Quad {
         buffer[..first_write + second_write].to_vec()
     }
 }
+// Struct Representing video window Panel
+#[derive(crevice::std140::AsStd140)]
+struct VWPanel {
+    quad: Quad,
+    pixel_count: Vector2<u32>,
+    // TODO: Change this to UOM
+    size: Vector2<f32>,
+}
+impl Shape for VWPanel {
+    fn place(&mut self, model_matrix: Matrix4<f32>) {
+        self.quad.place(model_matrix);
+    }
+}
+impl VWPanel {}
 
 #[derive(Debug)]
 pub struct ShapeWorld {

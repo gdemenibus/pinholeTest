@@ -1,3 +1,4 @@
+use cgmath::Vector2;
 // File in charge of handling texture loading and such
 //
 use image::GenericImageView;
@@ -7,6 +8,7 @@ pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
+    pub dimensions: Vector2<u32>,
 }
 
 impl Texture {
@@ -76,6 +78,7 @@ impl Texture {
             texture,
             view,
             sampler,
+            dimensions: Vector2::new(dimensions.0, dimensions.1),
         }
     }
 }

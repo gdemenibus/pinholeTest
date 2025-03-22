@@ -4,7 +4,7 @@ use crate::raytracer::RaytraceTest;
 use crate::scene::Scene;
 use crate::shape::Quad;
 use crate::{texture, vertex};
-use crevice::std140::AsStd140;
+use crevice::std140::{AsStd140, Std140};
 use egui::ahash::{HashMap, HashMapExt};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
@@ -91,7 +91,67 @@ impl AppState {
         //
         let texture_bytes = include_bytes!("../resources/textures/Mandril.jpg");
 
-        let _texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
+        let texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+        let text_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Size of texture being passed!"),
+            contents: texture.dimensions.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: text_size_buffer.as_entire_binding(),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
 
         // Buffers to pass info?
         let scene = Scene::test();
@@ -108,7 +168,7 @@ impl AppState {
 
         let scene_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Buffer for Scene, contains all objects"),
-            contents: scene.as_std140().as_bytes(),
+            contents: &scene.as_bytes(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -154,6 +214,7 @@ impl AppState {
         });
         let mut bind_map = HashMap::new();
         bind_map.insert(0, scene_bind);
+        bind_map.insert(1, diffuse_bind_group);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -166,7 +227,7 @@ impl AppState {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&scene_bind_group],
+                bind_group_layouts: &[&scene_bind_group, &texture_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -275,7 +336,7 @@ impl App {
             state: None,
             window: None,
             camera: Camera::new((0.0, 8.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0)),
-            camera_control: CameraController::new(4.0, 4.0),
+            camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
         }
     }
@@ -391,6 +452,7 @@ impl App {
             render_pass.set_pipeline(&state.render_pipe);
             // Pass uniform!
             render_pass.set_bind_group(0, state.bind_map.get(&0), &[]);
+            render_pass.set_bind_group(1, state.bind_map.get(&1), &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
