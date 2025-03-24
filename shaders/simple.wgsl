@@ -139,7 +139,7 @@ struct Pixel_Panel {
 ;
 
 // From the Barycentric coordinates, give us the pixel coordinates
-fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Panel, trig: array<vec3f, 3>) -> Pixel_Panel {
+fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Panel) -> Pixel_Panel {
 
     // Relative Coordinates
     let x_coord = (bary_coords.x * relative_tex_coords[0].x + bary_coords.y * relative_tex_coords[1].x + bary_coords.z * relative_tex_coords[2].x);
@@ -156,17 +156,17 @@ fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Pa
     let center_x_pixel = (f32(x_pixel) * pixel_size.x) + (pixel_size.x / 2.0);
     let center_y_pixel = (f32(y_pixel) * pixel_size.y) + (pixel_size.y / 2.0);
 
-    // Get the outer two
-    let e1 = trig[0] - trig[1];
-    let e2 = trig[2] - trig[1];
+    //
+    let x_comp = panel.quad.b - panel.quad.a;
+    let y_comp = panel.quad.c - panel.quad.a;
 
     //
-    let x_vec = e1 * center_x_pixel;
+    let x_vec = x_comp * center_x_pixel;
 
-    let y_vec = e2 * center_y_pixel;
+    let y_vec = y_comp * center_y_pixel;
 
     // Does this seem correct, I think
-    let new_position = x_vec + y_vec + trig[1];
+    let new_position = x_vec + y_vec + panel.quad.a;
     // Messy code, need to write this out on paper?
     let pixel = vec2u(x_pixel, y_pixel);
     return Pixel_Panel(pixel, new_position);
@@ -204,30 +204,25 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
     if (t > eps) {
         let bary_coords = vec3f(u, v, w);
 
-        // Tex coordinates
-        // a -> 0.0, 1.0
-        // b -> 1.0, 1.0
-        // c = 0.0, 0.0
-        // d = 1.0, 0.0
+        // Panel definition
         // a ==== b
         // |      |
         // |      |
         // c ==== d
+        // Two triangles
+        // ABC, BCD
 
         // A, B, C
         if abc {
-            let tex_coords = array(vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0));
-
-            let trig = array(a, b, c);
+            //w === u
+            //|   /
+            //|  /
+            //| /
+            //v
+            let tex_coords = array(vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
 
             //
-            //       v
-            //     / |
-            //    /  |
-            //   /   |
-            //  /    |
-            // u === w
-            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel, trig);
+            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel);
             let pixels = pixels_panel.pixel;
 
             if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
@@ -235,24 +230,24 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
             } else {
                 //Distort Camera!
                 light_field_distortion(ray, pixels_panel.model_coords,(*ray).direction);
-
                 return miss_color;
-
             //return vec4f(u, v, w, 1.0);
+
+            //return miss_color;
+
             }
         } else {
             // B, C, D
-            let tex_coords = array(vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
+            //       w
+            //     / |
+            //    /  |
+            //   /   |
+            //  /    |
+            // u === v
 
-            let trig = array(a, b, c);
+            let tex_coords = array(vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0));
 
-            //v === u
-            //|   /
-            //|  /
-            //| /
-            //w
-
-            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel, trig);
+            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel);
             let pixels = pixels_panel.pixel;
             //
             if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
@@ -261,6 +256,7 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
 
                 light_field_distortion(ray, pixels_panel.model_coords,(*ray).direction);
                 return miss_color;
+
             }
 
         }

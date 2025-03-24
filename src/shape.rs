@@ -1,3 +1,4 @@
+use crate::scene::DrawUI;
 use crate::vertex::Vertex;
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
 use crevice::std140;
@@ -107,12 +108,12 @@ impl VWPanel {
     }
     pub fn demo_panel() -> Self {
         let quad = Quad::new(
-            Vector3::new(0.0, 1.0, 2.0),
-            Vector3::new(1.0, 1.0, 1.0),
-            Vector3::new(0.0, 0.0, 2.0),
-            Vector3::new(1.0, 0.0, 1.0),
+            Vector3::new(-0.5, 0.5, 0.0),
+            Vector3::new(0.5, 0.5, 0.0),
+            Vector3::new(-0.5, -0.5, 0.0),
+            Vector3::new(0.5, -0.5, 0.0),
         );
-        let pixel_count = Vector2::new(3, 3);
+        let pixel_count = Vector2::new(30, 30);
         let size = Vector2::new(1.0, 1.0);
         VWPanel {
             quad,

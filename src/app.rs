@@ -1,7 +1,7 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::raytracer::RaytraceTest;
-use crate::scene::{DrawUI, Scene};
+use crate::scene::{DrawUI, Scene, ScenePanel};
 use crate::shape::{Quad, VWPanel};
 use crate::{texture, vertex};
 use crevice::std140::{AsStd140, Std140};
@@ -32,9 +32,9 @@ pub struct AppState {
     pub index_buffer: wgpu::Buffer,
     pub bind_map: HashMap<BindNumber, BindGroup>,
     pub num_index: u32,
-    pub rt_buffer: Buffer,
-    pub scene_buffer: Buffer,
+    pub buffer_map: HashMap<BindNumber, Buffer>,
     pub scene: Scene,
+    pub panels: ScenePanel,
 }
 
 impl AppState {
@@ -195,7 +195,7 @@ impl AppState {
         let rt_test = RaytraceTest::test(camera, imag_height, image_width);
 
         let rt_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Buffer for Scene, contains all objects"),
+            label: Some("Ray trace buffer, contains all objects"),
             contents: rt_test.as_std140().as_bytes(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -251,6 +251,12 @@ impl AppState {
         bind_map.insert(0, scene_bind);
         bind_map.insert(1, diffuse_bind_group);
         bind_map.insert(2, panel_bind);
+
+        // TODO: Might replace this with enums?
+        let mut buffer_map = HashMap::new();
+        buffer_map.insert(0, scene_buffer);
+        buffer_map.insert(1, rt_buffer);
+        buffer_map.insert(2, panel_buffer);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -343,8 +349,8 @@ impl AppState {
             index_buffer,
             bind_map,
             num_index: index_list.len() as u32,
-            rt_buffer,
-            scene_buffer,
+            buffer_map,
+            panels: ScenePanel::test(),
             scene,
         }
     }
@@ -377,7 +383,7 @@ impl App {
             mouse_on_ui: false,
             state: None,
             window: None,
-            camera: Camera::new((0.0, 8.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0)),
+            camera: Camera::new((0.0, 2.0, 4.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0)),
             camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
         }
@@ -469,12 +475,21 @@ impl App {
                 state.surface_config.height,
                 state.surface_config.width,
             );
-            state
-                .queue
-                .write_buffer(&state.rt_buffer, 0, rt_test.as_std140().as_bytes());
-            state
-                .queue
-                .write_buffer(&state.scene_buffer, 0, &state.scene.as_bytes(&self.camera));
+            state.queue.write_buffer(
+                state.buffer_map.get(&1).unwrap(),
+                0,
+                rt_test.as_std140().as_bytes(),
+            );
+            state.queue.write_buffer(
+                state.buffer_map.get(&0).unwrap(),
+                0,
+                &state.scene.as_bytes(&self.camera),
+            );
+            state.queue.write_buffer(
+                state.buffer_map.get(&2).unwrap(),
+                0,
+                state.panels.place_panel().as_std140().as_bytes(),
+            );
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -494,6 +509,7 @@ impl App {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
             render_pass.set_pipeline(&state.render_pipe);
             // Pass uniform!
             render_pass.set_bind_group(0, state.bind_map.get(&0), &[]);
@@ -510,34 +526,11 @@ impl App {
         // the ui pass
         {
             state.egui_renderer.begin_frame(window);
+            let context = state.egui_renderer.context();
 
-            egui_winit::egui::Window::new("winit + egui + wgpu says hello!")
-                .resizable(true)
-                .vscroll(true)
-                .default_open(false)
-                .show(state.egui_renderer.context(), |ui| {
-                    ui.label("Label!");
+            state.scene.draw_ui(context);
 
-                    if ui.button("Button!").clicked() {
-                        println!("boom!")
-                    }
-
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.label(format!(
-                            "Pixels per point: {}",
-                            state.egui_renderer.context().pixels_per_point()
-                        ));
-                        if ui.button("-").clicked() {
-                            state.scale_factor = (state.scale_factor - 0.1).max(0.3);
-                        }
-                        if ui.button("+").clicked() {
-                            state.scale_factor = (state.scale_factor + 0.1).min(3.0);
-                        }
-                    });
-                });
-
-            state.scene.draw_ui(state.egui_renderer.context());
+            state.panels.draw_ui(context);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,
