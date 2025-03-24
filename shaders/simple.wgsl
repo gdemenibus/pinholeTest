@@ -45,6 +45,7 @@ var<uniform> tex_size: vec2<u32>;
 
 // Panel group!
 struct Panel {
+    // Coordinates assume
     quad: Quad,
     pixel_count: vec2u,
     size: vec2f,
@@ -86,19 +87,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var ray = Ray(rt.ray_origin, ray_dir);
 
     ray_dir = normalize(ray_dir);
-    light_field_distortion(&ray);
     // Check if you
     //
     //
     //var panel = intersection(ray_dir, scene[index].a, scene[index].b, scene[index].c, true)
     // Loop through all the geometry in scene! (for now, very simple)
     // Rely on CPU to give us the correct order?
+    let panel = panels[0];
+
+    let color_panel = intersection_panel(&ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
+    let second_color = intersection_panel(&ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
+
+    if (color_panel.w != 0.0) {
+        return color_panel;
+    }
+
+    if (second_color.w != 0.0) {
+        return second_color;
+    }
+
     for (var index = 0u; index < scene_size; index++) {
-        var color = intersection(ray, scene[index].a, scene[index].b, scene[index].c, true);
+        var color = intersection(&ray, scene[index].a, scene[index].b, scene[index].c, true);
         if (color.w != 0.0) {
             return color;
         }
-        color = intersection(ray, scene[index].b, scene[index].c, scene[index].d, false);
+        color = intersection(&ray, scene[index].b, scene[index].c, scene[index].d, false);
 
         if (color.w != 0.0) {
             return color;
@@ -111,41 +124,173 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 // Distortion of Ray caused by limits of the panel
-fn light_field_distortion(ray: ptr<function, Ray>) {
-// Intersection Panel 1
-// Intersection Panel 2
-// Build ray
-// edit ray
-}
-;
-//
-fn pixel_center_real_space(
-    bary_coords: vec3f,
-    triangle: array<vec3f, 3>,
-) {
+// Change the Ray that will be used for other intersections
+fn light_field_distortion(ray: ptr<function, Ray>, new_origin: vec3f, new_direction: vec3f) {
+    (*ray).origin = new_origin;
+    (*ray).direction = new_direction;
 
 }
 ;
+struct Pixel_Panel {
+    pixel: vec2u,
+    model_coords: vec3f,
+
+}
+;
+
+// From the Barycentric coordinates, give us the pixel coordinates
+fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Panel, trig: array<vec3f, 3>) -> Pixel_Panel {
+
+    // Relative Coordinates
+    let x_coord = (bary_coords.x * relative_tex_coords[0].x + bary_coords.y * relative_tex_coords[1].x + bary_coords.z * relative_tex_coords[2].x);
+    let y_coord = (bary_coords.x * relative_tex_coords[0].y + bary_coords.y * relative_tex_coords[1].y + bary_coords.z * relative_tex_coords[2].y);
+    // From Relative coordinates to pixel
+    // Casting
+    // Cast pixel count into a f32 to multiply, then into u32 to round
+    let x_pixel = u32(x_coord * f32(panel.pixel_count.x));
+    let y_pixel = u32(y_coord * f32(panel.pixel_count.y));
+
+    let pixel_size = panel.size / vec2f(panel.pixel_count);
+
+    // Get the pixel center
+    let center_x_pixel = (f32(x_pixel) * pixel_size.x) + (pixel_size.x / 2.0);
+    let center_y_pixel = (f32(y_pixel) * pixel_size.y) + (pixel_size.y / 2.0);
+
+    // Get the outer two
+    let e1 = trig[0] - trig[1];
+    let e2 = trig[2] - trig[1];
+
+    //
+    let x_vec = e1 * center_x_pixel;
+
+    let y_vec = e2 * center_y_pixel;
+
+    // Does this seem correct, I think
+    let new_position = x_vec + y_vec + trig[1];
+    // Messy code, need to write this out on paper?
+    let pixel = vec2u(x_pixel, y_pixel);
+    return Pixel_Panel(pixel, new_position);
+}
+;
 
 
-fn intersection(ray: Ray, a: vec3f, b: vec3f, c: vec3f, abc: bool) -> vec4f {
+fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool, panel: Panel) -> vec4f {
+
     var e1 = b - a;
     var e2 = c - a;
-    var rey_cross_e2 = cross(e2, ray.direction);
+    var rey_cross_e2 = cross(e2,(*ray).direction);
     var det = dot(rey_cross_e2, e1);
 
     if (det > -eps && det < eps) {
         return miss_color;
     }
     var inv_det = 1.0 / det;
-    var s = ray.origin - a;
+    var s = (*ray).origin - a;
     var u = inv_det * dot(rey_cross_e2, s);
 
     if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
         return miss_color;
     }
     var s_cross_e1 = cross(e1, s);
-    var v = inv_det * dot(s_cross_e1, ray.direction);
+    var v = inv_det * dot(s_cross_e1,(*ray).direction);
+    var w = 1.0 - v - u;
+
+    if (v < 0.0 || u + v > 1.0) {
+        return miss_color;
+    }
+    // At this stage we can compute t to find out where the intersection point is on the line.
+    var t = inv_det * dot(s_cross_e1, e2);
+
+    if (t > eps) {
+        let bary_coords = vec3f(u, v, w);
+
+        // Tex coordinates
+        // a -> 0.0, 1.0
+        // b -> 1.0, 1.0
+        // c = 0.0, 0.0
+        // d = 1.0, 0.0
+        // a ==== b
+        // |      |
+        // |      |
+        // c ==== d
+
+        // A, B, C
+        if abc {
+            let tex_coords = array(vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0));
+
+            let trig = array(a, b, c);
+
+            //
+            //       v
+            //     / |
+            //    /  |
+            //   /   |
+            //  /    |
+            // u === w
+            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel, trig);
+            let pixels = pixels_panel.pixel;
+
+            if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            } else {
+                //Distort Camera!
+                light_field_distortion(ray, pixels_panel.model_coords,(*ray).direction);
+
+                return miss_color;
+
+            //return vec4f(u, v, w, 1.0);
+            }
+        } else {
+            // B, C, D
+            let tex_coords = array(vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
+
+            let trig = array(a, b, c);
+
+            //v === u
+            //|   /
+            //|  /
+            //| /
+            //w
+
+            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel, trig);
+            let pixels = pixels_panel.pixel;
+            //
+            if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            } else {
+
+                light_field_distortion(ray, pixels_panel.model_coords,(*ray).direction);
+                return miss_color;
+            }
+
+        }
+
+    //return vec4f(0.0, 0.5, 0.5, 1.0);
+    }
+
+    return miss_color;
+
+}
+;
+
+fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool) -> vec4f {
+    var e1 = b - a;
+    var e2 = c - a;
+    var rey_cross_e2 = cross(e2,(*ray).direction);
+    var det = dot(rey_cross_e2, e1);
+
+    if (det > -eps && det < eps) {
+        return miss_color;
+    }
+    var inv_det = 1.0 / det;
+    var s = (*ray).origin - a;
+    var u = inv_det * dot(rey_cross_e2, s);
+
+    if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
+        return miss_color;
+    }
+    var s_cross_e1 = cross(e1, s);
+    var v = inv_det * dot(s_cross_e1,(*ray).direction);
     var w = 1.0 - v - u;
 
     if (v < 0.0 || u + v > 1.0) {
