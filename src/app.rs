@@ -263,7 +263,11 @@ impl AppState {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&scene_bind_group, &texture_bind_group_layout],
+                bind_group_layouts: &[
+                    &scene_bind_group,
+                    &texture_bind_group_layout,
+                    &panel_bind_group,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -532,6 +536,7 @@ impl App {
                         }
                     });
                 });
+
             state.scene.draw_ui(state.egui_renderer.context());
 
             state.egui_renderer.end_frame_and_draw(

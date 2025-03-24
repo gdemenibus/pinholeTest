@@ -107,13 +107,13 @@ impl VWPanel {
     }
     pub fn demo_panel() -> Self {
         let quad = Quad::new(
-            Vector3::new(1.0, 0.0, 2.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 1.0, 2.0),
-            Vector3::new(0.0, 1.0, 1.0),
+            Vector3::new(0.0, 1.0, 2.0),
+            Vector3::new(1.0, 1.0, 1.0),
+            Vector3::new(0.0, 0.0, 2.0),
+            Vector3::new(1.0, 0.0, 1.0),
         );
-        let pixel_count = Vector2::new(800, 600);
-        let size = Vector2::new(1.3, 1.0);
+        let pixel_count = Vector2::new(3, 3);
+        let size = Vector2::new(1.0, 1.0);
         VWPanel {
             quad,
             pixel_count,

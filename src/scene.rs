@@ -24,7 +24,7 @@ pub trait DrawUI {
 }
 
 impl DrawUI for Scene {
-    /*
+    /**
     Draw the UI for this element
     We want a system to place quads in space
     Translation, take in three coords
@@ -51,7 +51,7 @@ impl DrawUI for Scene {
 }
 
 impl Scene {
-    // Make a quad with coordinates, but in scene space, not clip space
+    /// Make a quad with coordinates, but in scene space, not clip space
     pub fn test() -> Self {
         Scene {
             world: vec![
