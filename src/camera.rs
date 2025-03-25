@@ -12,17 +12,20 @@ pub struct Camera {
     pub position: Point3<f32>,
     yaw: Rad<f32>,
     pitch: Rad<f32>,
+    pub fov: Rad<f32>,
 }
 impl Camera {
-    pub fn new<V: Into<Point3<f32>>, Y: Into<Rad<f32>>, P: Into<Rad<f32>>>(
+    pub fn new<V: Into<Point3<f32>>, Y: Into<Rad<f32>>, P: Into<Rad<f32>>, FOV: Into<Rad<f32>>>(
         position: V,
         yaw: Y,
         pitch: P,
+        fov: FOV,
     ) -> Self {
         Self {
             position: position.into(),
             yaw: yaw.into(),
             pitch: pitch.into(),
+            fov: fov.into(),
         }
     }
     pub fn direction_vec(&self) -> Vector3<f32> {
@@ -103,8 +106,8 @@ impl CameraController {
         }
     }
 
-    pub fn process_keyboard(&mut self, event: KeyEvent) -> bool {
-        let amount = if event.state == ElementState::Pressed {
+    pub fn process_keyboard(&mut self, event: KeyEvent, disabled: bool) -> bool {
+        let amount = if event.state == ElementState::Pressed && !disabled {
             1.0
         } else {
             0.0
