@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::scene::DrawUI;
 use crate::vertex::Vertex;
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
@@ -136,6 +138,14 @@ impl VWPanel {
             pixel_count,
             size,
         }
+    }
+    pub fn distance_compar(&self, other: &VWPanel, point: Point3<f32>) -> Ordering {
+        self.quad
+            .distance_to(point)
+            .total_cmp(&other.distance_to(point))
+    }
+    pub fn distance_to(&self, point: Point3<f32>) -> f32 {
+        self.quad.distance_to(point)
     }
 }
 
