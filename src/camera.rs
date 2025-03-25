@@ -1,11 +1,16 @@
+use bytemuck::checked::from_bytes;
 use cgmath::*;
+use egui::Slider;
 use std::f32::consts::FRAC_PI_2;
+use std::fmt::format;
 use std::time::Duration;
 use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
 use winit::event::KeyEvent;
 use winit::event::MouseScrollDelta;
 use winit::keyboard::{KeyCode, PhysicalKey};
+
+use crate::scene::DrawUI;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 pub struct Camera {
@@ -44,6 +49,33 @@ impl Camera {
             Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize(),
             Vector3::unit_y(),
         )
+    }
+}
+impl DrawUI for Camera {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+        let title = title.unwrap_or("Camera Settings".to_string());
+
+        egui_winit::egui::Window::new(title)
+            .resizable(true)
+            .vscroll(true)
+            .default_open(false)
+            .default_size([150.0, 125.0])
+            .show(ctx, |ui| {
+                ui.label("FOV");
+                // Present in Degrees
+                ui.add(
+                    Slider::new(&mut self.fov.0, 0.1..=std::f32::consts::PI)
+                        .custom_formatter(|n, _| {
+                            let print = n * 180.0 / std::f64::consts::PI;
+                            format!("{print}")
+                        })
+                        .custom_parser(|s| {
+                            s.parse::<f64>()
+                                .map(|r| r * std::f64::consts::PI / 180.0)
+                                .ok()
+                        }),
+                );
+            });
     }
 }
 
