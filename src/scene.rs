@@ -37,7 +37,7 @@ impl ScenePanel {
         let pitch_matrix = Matrix4::from_angle_y(self.pitch);
         let roll_matrix = Matrix4::from_angle_z(self.roll);
         // will need to double check this ordering
-        let placement_matrix = yaw_matrix * pitch_matrix * roll_matrix * self.placement;
+        let placement_matrix = self.placement * yaw_matrix * pitch_matrix * roll_matrix;
         self.panel.place(&placement_matrix)
     }
     pub fn test() -> ScenePanel {
