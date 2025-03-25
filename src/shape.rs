@@ -86,9 +86,9 @@ impl Quad {
 #[derive(crevice::std140::AsStd140)]
 pub struct VWPanel {
     quad: Quad,
-    pixel_count: Vector2<u32>,
+    pub pixel_count: Vector2<u32>,
     // TODO: Change this to UOM
-    size: Vector2<f32>,
+    pub size: Vector2<f32>,
 }
 impl Shape for VWPanel {
     fn place(&self, model_matrix: &Matrix4<f32>) -> Self {
@@ -115,7 +115,7 @@ impl VWPanel {
             Vector3::new(-0.5, -0.5, 0.0),
             Vector3::new(0.5, -0.5, 0.0),
         );
-        let pixel_count = Vector2::new(300, 300);
+        let pixel_count = Vector2::new(30, 30);
         let size = Vector2::new(1.0, 1.0);
         VWPanel {
             quad,

@@ -1,8 +1,8 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
-use crate::raytracer::RaytraceTest;
+use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
-use crate::shape::{Quad, VWPanel};
+use crate::shape::Quad;
 use crate::{texture, vertex};
 use crevice::std140::{AsStd140, Std140};
 use egui::ahash::{HashMap, HashMapExt};
@@ -16,6 +16,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 type BindNumber = usize;
@@ -162,7 +163,7 @@ impl AppState {
 
         let imag_height = surface_config.height;
         let image_width = surface_config.width;
-        let rt_test = RaytraceTest::test(camera, imag_height, image_width);
+        let rt_test = RayTraceInfo::test(camera, imag_height, image_width);
 
         let rt_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Ray trace buffer, contains all objects"),
@@ -370,6 +371,7 @@ pub struct App {
     previous_draw: Instant,
     mouse_press: bool,
     mouse_on_ui: bool,
+    disable_controls: bool,
 }
 
 impl App {
@@ -379,9 +381,15 @@ impl App {
             instance,
             mouse_press: false,
             mouse_on_ui: false,
+            disable_controls: false,
             state: None,
             window: None,
-            camera: Camera::new((0.0, 2.0, 4.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0)),
+            camera: Camera::new(
+                (0.0, 2.0, 4.0),
+                cgmath::Deg(-90.0),
+                cgmath::Deg(-20.0),
+                cgmath::Deg(90.0),
+            ),
             camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
         }
@@ -468,7 +476,7 @@ impl App {
         // Order of passes matters!
         // The render pass
         {
-            let rt_test = RaytraceTest::test(
+            let rt_test = RayTraceInfo::test(
                 &self.camera,
                 state.surface_config.height,
                 state.surface_config.width,
@@ -581,10 +589,22 @@ impl ApplicationHandler for App {
                 event,
                 is_synthetic: _,
             } => {
-                self.camera_control.process_keyboard(event);
+                if let PhysicalKey::Code(KeyCode::Minus) = event.physical_key {
+                    if event.state.is_pressed() {
+                        self.disable_controls = !self.disable_controls;
+
+                        if self.disable_controls {
+                            println!("Controls Disabled!");
+                        } else {
+                            println!("Controls Enabled");
+                        }
+                    }
+                }
+                self.camera_control
+                    .process_keyboard(event, self.disable_controls);
             }
             WindowEvent::MouseInput {
-                device_id,
+                device_id: _,
                 state,
                 button: MouseButton::Right,
             } => {
