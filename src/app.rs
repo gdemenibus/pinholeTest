@@ -388,7 +388,7 @@ impl App {
                 (0.0, 2.0, 4.0),
                 cgmath::Deg(-90.0),
                 cgmath::Deg(-20.0),
-                cgmath::Deg(90.0),
+                cgmath::Deg(45.0),
             ),
             camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
@@ -535,6 +535,7 @@ impl App {
             let context = state.egui_renderer.context();
 
             state.scene.draw_ui(context, None);
+            self.camera.draw_ui(context, None);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,

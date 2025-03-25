@@ -78,11 +78,10 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Clip position tells us the fragment location
     var position: vec2<f32> = in.clip_position.xy;
-    var damn = scene[0].a;
-    var miss_color = miss_color;
-    var size = vec2<f32>(1000, 2000);
+
     var f_x = position.x;
     var f_y = position.y;
+
     var ray_dir = rt.p_1_m + rt.q_x * (f_x - 1.0) + rt.q_y * (f_y - 1.0);
 
     var ray = Ray(rt.ray_origin, ray_dir);

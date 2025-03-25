@@ -48,33 +48,13 @@ impl Quad {
     }
     pub fn screen_quad() -> Self {
         let a = Vector3::new(-1.0, -1.0, 0.1);
-        let b = Vector3::new(1.0, -1.0, 0.1);
-        let c = Vector3::new(1.0, 1.0, 0.1);
+        let b = Vector3::new(2.0, -1.0, 0.1);
+        let c = Vector3::new(2.0, 1.0, 0.1);
         let d = Vector3::new(-1.0, 1.0, 0.1);
         Quad { a, b, c, d }
     }
     // Convert Quad to vector of vertices, assumes clockwise rotation
     // Does not create an index list
-    pub fn create_vertex_buffer(&self) -> Vec<u8> {
-        let mut triangle_one = vec![
-            Vertex::new(self.a),
-            Vertex::new(self.b),
-            Vertex::new(self.c),
-        ];
-        let mut triangle_two = vec![
-            Vertex::new(self.b),
-            Vertex::new(self.d),
-            Vertex::new(self.c),
-        ];
-        triangle_two.append(&mut triangle_one);
-        //triangle_two.iter_mut().map(|x| x.as_std140()).collect()
-        let length = triangle_two.len() as u32;
-        let mut buffer = [0u8; 128];
-        let mut writer = std140::Writer::new(&mut buffer[..]);
-        let first_write = writer.write(&length).unwrap();
-        let second_write = writer.write(triangle_two.as_slice()).unwrap();
-        buffer[..first_write + second_write].to_vec()
-    }
     pub fn distance_to(&self, point: Point3<f32>) -> f32 {
         self.a.distance2(point.to_vec())
             + self.b.distance2(point.to_vec())
