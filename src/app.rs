@@ -1,7 +1,7 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::raytracer::RaytraceTest;
-use crate::scene::{DrawUI, Scene, ScenePanel};
+use crate::scene::{DrawUI, Scene};
 use crate::shape::{Quad, VWPanel};
 use crate::{texture, vertex};
 use crevice::std140::{AsStd140, Std140};
@@ -34,7 +34,6 @@ pub struct AppState {
     pub num_index: u32,
     pub buffer_map: HashMap<BindNumber, Buffer>,
     pub scene: Scene,
-    pub panels: ScenePanel,
 }
 
 impl AppState {
@@ -157,35 +156,6 @@ impl AppState {
         });
 
         // Panel group
-        let panel = VWPanel::demo_panel();
-        let panel_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Buffer for Panels"),
-            contents: panel.as_std140().as_bytes(),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let panel_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::all(),
-                count: None,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-            label: Some("Binding group for Scene"),
-        });
-
-        let panel_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Scene Bind"),
-            layout: &panel_bind_group,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: panel_buffer.as_entire_binding(),
-            }],
-        });
 
         // Buffers to pass info?
         let scene = Scene::test();
@@ -202,7 +172,7 @@ impl AppState {
 
         let scene_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Buffer for Scene, contains all objects"),
-            contents: &scene.as_bytes(camera),
+            contents: &scene.world_as_bytes(camera),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -245,6 +215,35 @@ impl AppState {
                     resource: rt_buffer.as_entire_binding(),
                 },
             ],
+        });
+
+        let panel_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Buffer for Panels"),
+            contents: &scene.panels_as_bytes(camera),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let panel_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::all(),
+                count: None,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            }],
+            label: Some("Binding group for Scene"),
+        });
+
+        let panel_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Scene Bind"),
+            layout: &panel_bind_group,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: panel_buffer.as_entire_binding(),
+            }],
         });
 
         let mut bind_map = HashMap::new();
@@ -350,7 +349,6 @@ impl AppState {
             bind_map,
             num_index: index_list.len() as u32,
             buffer_map,
-            panels: ScenePanel::test(),
             scene,
         }
     }
@@ -483,12 +481,12 @@ impl App {
             state.queue.write_buffer(
                 state.buffer_map.get(&0).unwrap(),
                 0,
-                &state.scene.as_bytes(&self.camera),
+                &state.scene.world_as_bytes(&self.camera),
             );
             state.queue.write_buffer(
                 state.buffer_map.get(&2).unwrap(),
                 0,
-                state.panels.place_panel().as_std140().as_bytes(),
+                &state.scene.panels_as_bytes(&self.camera),
             );
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -528,9 +526,7 @@ impl App {
             state.egui_renderer.begin_frame(window);
             let context = state.egui_renderer.context();
 
-            state.scene.draw_ui(context);
-
-            state.panels.draw_ui(context);
+            state.scene.draw_ui(context, None);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,
