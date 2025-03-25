@@ -115,7 +115,7 @@ impl VWPanel {
             Vector3::new(-0.5, -0.5, 0.0),
             Vector3::new(0.5, -0.5, 0.0),
         );
-        let pixel_count = Vector2::new(30, 30);
+        let pixel_count = Vector2::new(300, 300);
         let size = Vector2::new(1.0, 1.0);
         VWPanel {
             quad,

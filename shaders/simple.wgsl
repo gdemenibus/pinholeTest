@@ -153,6 +153,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // the new ray
         light_field_distortion(&ray, new_origin, new_direction);
 
+    } else if hit_first {
+        let new_direction = hit_first_location - ray.origin;
+        light_field_distortion(&ray, ray.origin, new_direction);
+    } else if hit_second {
+
+        let new_direction = hit_second_location - ray.origin;
+        light_field_distortion(&ray, ray.origin, new_direction);
+
     }
 
     for (var index = 0u; index < scene_size; index++) {
