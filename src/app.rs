@@ -1,17 +1,21 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
+use crate::file_picker::FilePicker;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
+use crate::texture::Texture;
 use crate::{texture, vertex};
 use crevice::std140::{AsStd140, Std140};
 use egui::ahash::{HashMap, HashMapExt};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
+use image::GenericImageView;
+use std::fs::File;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-use wgpu::{BindGroup, Buffer, RenderPipeline};
+use wgpu::{BindGroup, Buffer, RenderPipeline, TexelCopyBufferLayout};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
@@ -35,6 +39,7 @@ pub struct AppState {
     pub num_index: u32,
     pub buffer_map: HashMap<BindNumber, Buffer>,
     pub scene: Scene,
+    pub texture: Texture,
 }
 
 impl AppState {
@@ -62,8 +67,7 @@ impl AppState {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: features,
-                    required_limits: Default::default(),
-                    memory_hints: Default::default(),
+                    ..Default::default()
                 },
                 None,
             )
@@ -119,7 +123,7 @@ impl AppState {
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        // This should match the filterable field of the
+                        // This should match the filter﻿able field of the
                         // corresponding Texture entry above.
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -351,6 +355,7 @@ impl AppState {
             num_index: index_list.len() as u32,
             buffer_map,
             scene,
+            texture,
         }
     }
 
@@ -368,6 +373,8 @@ pub struct App {
     window: Option<Arc<Window>>,
     camera: Camera,
     camera_control: CameraController,
+    file_picker: FilePicker,
+
     previous_draw: Instant,
     mouse_press: bool,
     mouse_on_ui: bool,
@@ -377,6 +384,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let file_picker = FilePicker::new();
         Self {
             instance,
             mouse_press: false,
@@ -392,13 +400,48 @@ impl App {
             ),
             camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
+            file_picker,
+        }
+    }
+    // Take the new texture and queue an update
+    pub fn update_texture(&mut self) {
+        let state = self.state.as_mut().unwrap();
+        let path = self.file_picker.texture_file.clone();
+        let file = File::open(&path).unwrap();
+        if file.metadata().unwrap().is_file() {
+            //let reader = std::io::BufReader::new(file);
+            let img = image::ImageReader::open(path).unwrap().decode().unwrap();
+
+            // Ensure you are of the same size??
+            let img = img.resize_to_fill(
+                state.texture.dimensions.x - 1,
+                state.texture.dimensions.y - 1,
+                image::imageops::FilterType::Nearest,
+            );
+
+            let copy = state.texture.texture.as_image_copy();
+            let dimensions = img.dimensions();
+            state.queue.write_texture(
+                copy,
+                &img.to_rgba8(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * dimensions.0),
+                    rows_per_image: Some(dimensions.1),
+                },
+                wgpu::Extent3d {
+                    width: dimensions.0,
+                    height: dimensions.1,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
     }
 
     async fn set_window(&mut self, window: Window) {
         let window = Arc::new(window);
-        let initial_width = 1360;
-        let initial_height = 768;
+        let initial_width = 2000;
+        let initial_height = 2000;
 
         let _ = window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
 
@@ -436,6 +479,10 @@ impl App {
                     return;
                 }
             }
+        }
+        if self.file_picker.change_file {
+            self.update_texture();
+            self.file_picker.change_file = false;
         }
 
         let state = self.state.as_mut().unwrap();
@@ -496,6 +543,13 @@ impl App {
                 0,
                 &state.scene.panels_as_bytes(&self.camera),
             );
+            // Need to get: The texture being passed to wgpu, and the new data.
+            // Should not be called every time, that is ineffective. Instead, as response to
+            // Changes
+            // Change texture
+            //
+            //state.queue.write_texture(state.texture.texture.as_image_copy(), data, data_layout, size);
+
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -536,6 +590,7 @@ impl App {
 
             state.scene.draw_ui(context, None);
             self.camera.draw_ui(context, None);
+            self.file_picker.draw_ui(context, None);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,
@@ -591,7 +646,7 @@ impl ApplicationHandler for App {
                 is_synthetic: _,
             } => {
                 if let PhysicalKey::Code(KeyCode::Minus) = event.physical_key {
-                    if event.state.is_pressed() {
+                    if event.state.is_pressed() && !self.mouse_on_ui {
                         self.disable_controls = !self.disable_controls;
 
                         if self.disable_controls {

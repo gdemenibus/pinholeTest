@@ -2,6 +2,7 @@
 mod app;
 mod camera;
 mod egui_tools;
+mod file_picker;
 mod matrix;
 mod raytracer;
 mod scene;

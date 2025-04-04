@@ -143,11 +143,11 @@ impl DrawUI for Scene {
                 .default_size([150.0, 125.0])
                 .show(ctx, |ui| {
                     ui.label("Move x");
-                    ui.add(egui::Slider::new(&mut matrix.w.x, -10.0..=10.0));
+                    ui.add(egui::DragValue::new(&mut matrix.w.x).speed(1.0));
                     ui.label("Move y");
-                    ui.add(egui::Slider::new(&mut matrix.w.y, -10.0..=10.0));
+                    ui.add(egui::DragValue::new(&mut matrix.w.y).speed(1.0));
                     ui.label("Move z");
-                    ui.add(egui::Slider::new(&mut matrix.w.z, -10.0..=10.0));
+                    ui.add(egui::DragValue::new(&mut matrix.w.z).speed(1.0));
                 });
             count += 1;
         }

@@ -22,8 +22,8 @@ pub trait Shape: crevice::std140::AsStd140 {
 * |      |
 * |      |
 * C ==== D
-
 */
+
 #[derive(crevice::std140::AsStd140)]
 pub struct Quad {
     a: Vector3<f32>,
