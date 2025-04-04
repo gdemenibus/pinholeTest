@@ -1,9 +1,7 @@
 use std::cmp::Ordering;
 
-use crate::scene::DrawUI;
 use crate::vertex::Vertex;
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
-use crevice::std140;
 use egui_winit::egui::{self, Context, Pos2};
 use image::Rgba;
 use uom::si::f32::Length;

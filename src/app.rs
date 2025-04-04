@@ -15,7 +15,7 @@ use std::fs::File;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-use wgpu::{BindGroup, Buffer, RenderPipeline, TexelCopyBufferLayout};
+use wgpu::{BindGroup, Buffer, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
