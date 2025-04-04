@@ -225,3 +225,23 @@ Bring in the textures of the monkeys
 
 
 Move Uniform binding out of main, break it up into much smaller things
+
+
+QOL features:
+These two build on the same system
+Undo/redo (stack of app states?)
+save state (to file, read from file)
+Derive macro may be the way to go
+6 degrees of motion for world
+
+Other features:
+
+
+Split matrix across work group.
+Write to Buffer. Unpacking the buffer will be another job
+Build sample matrix
+sample the world as two vecs 
+
+
+
+

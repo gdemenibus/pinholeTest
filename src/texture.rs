@@ -4,7 +4,6 @@ use cgmath::Vector2;
 use image::GenericImageView;
 
 pub struct Texture {
-    #[allow(unused)]
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
