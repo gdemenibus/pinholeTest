@@ -1,5 +1,6 @@
 #[macro_use]
 mod app;
+mod als;
 mod camera;
 mod egui_tools;
 mod file_picker;

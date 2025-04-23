@@ -27,3 +27,4 @@ strip = false
 
 [profile.dev.package.faer]
 opt-level = 3
+
