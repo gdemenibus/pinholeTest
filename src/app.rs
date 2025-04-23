@@ -96,7 +96,7 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         //
-        let texture_bytes = include_bytes!("../resources/textures/Mandril.jpg");
+        let texture_bytes = include_bytes!("../resources/textures/High res text.png");
 
         let texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
         let texture_bind_group_layout =
