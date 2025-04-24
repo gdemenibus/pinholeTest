@@ -69,7 +69,9 @@ impl<T: BaseNum> FromArr for Vector4<T> {
 pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Test Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/matrix_mul.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(
+            include_str!("../shaders/matrix_mul_transpose.wgsl").into(),
+        ),
     });
     let element_wise_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Test Shader"),
@@ -132,24 +134,25 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         ],
     });
 
-    let mat_a = Mat::from_fn(8, 8, |x, y| (x + y) as f32);
-    let mat_b = Mat::from_fn(8, 8, |_x, _y| 0 as f32);
-    let mat_c = Mat::from_fn(8, 8, |x, y| (x - y) as f32);
+    // C = A ^T B
+    let mat_a = Mat::from_fn(8, 8, |x, y| (x + y * 8) as f32);
+    let mat_b = Mat::from_fn(8, 8, |x, y| (x - y) as f32);
+    let mat_c = Mat::from_fn(8, 8, |_x, _y| 0 as f32);
 
     let test_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test buffer"),
         contents: &matrix_to_buffer(&mat_a).unwrap(),
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     });
-    let test_c_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let test_b_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test buffer"),
-        contents: &matrix_to_buffer(&mat_c).unwrap(),
+        contents: &matrix_to_buffer(&mat_b).unwrap(),
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     });
 
     let test_rw_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test rw buffer"),
-        contents: &matrix_to_buffer(&mat_b).unwrap(),
+        contents: &matrix_to_buffer(&mat_c).unwrap(),
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::MAP_WRITE
             | wgpu::BufferUsages::MAP_READ
@@ -172,7 +175,7 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: test_c_buffer.as_entire_binding(),
+                resource: test_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
@@ -220,9 +223,9 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         compute_pass.set_bind_group(0, Some(&binding), &[]);
         compute_pass.dispatch_workgroups(8, 8, 1);
 
-        compute_pass.set_pipeline(&element_pass);
-        compute_pass.set_bind_group(0, Some(&binding), &[]);
-        compute_pass.dispatch_workgroups(64, 0, 0);
+        // compute_pass.set_pipeline(&element_pass);
+        // compute_pass.set_bind_group(0, Some(&binding), &[]);
+        // compute_pass.dispatch_workgroups(64, 0, 0);
     }
 
     queue.submit(Some(encoder.finish()));
@@ -241,9 +244,9 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
             .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
 
-        let mat = Mat::from_fn(8, 8, |x, y| data_filtered[x * 8 + y]);
+        let mat = Mat::from_fn(8, 8, |x, y| data_filtered[x + y * 8]);
         println!("Buffer: {:?}", mat);
-        let other_mat = &mat_a * &mat_a;
+        let other_mat = &mat_a * &mat_a.transpose();
         println!("Faer says: {:?}", other_mat);
     }
 }
@@ -251,7 +254,7 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
 // Create resources
 // Two shader passes that need to be done repeatedly
 
-pub fn matrix_to_buffer<T: crevice::std140::Std140>(
+pub fn matrix_to_buffer<T: crevice::std140::Std140 + std::fmt::Debug>(
     mat: &Mat<T, impl Shape, impl Shape>,
 ) -> Result<Box<[u8]>, std::io::Error> {
     // subject to change, matrix will get larger?
@@ -262,10 +265,12 @@ pub fn matrix_to_buffer<T: crevice::std140::Std140>(
 
     let mut writer = Writer::new(&mut buffer[..max_use]);
 
+    println!("{:?}", mat);
     // How should the gpu see the world?
     // Drop this into a vec first
     for x in mat.col_iter() {
         for y in x.iter() {
+            println!("{:?}", y);
             let _write = writer.write_std140(y)?;
         }
     }
