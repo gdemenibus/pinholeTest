@@ -5,7 +5,7 @@ use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
 use crate::texture::Texture;
-use crate::{texture, vertex};
+use crate::{matrix, texture, vertex};
 use crevice::std140::{AsStd140, Std140};
 use egui::ahash::{HashMap, HashMapExt};
 use egui_wgpu::wgpu::SurfaceError;
@@ -61,7 +61,8 @@ impl AppState {
             .await
             .expect("Failed to find an appropriate adapter");
 
-        let features = wgpu::Features::empty();
+        let features =
+            wgpu::Features::VERTEX_WRITABLE_STORAGE | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS;
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
@@ -648,6 +649,9 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(KeyCode::Minus) = event.physical_key {
                     if event.state.is_pressed() && !self.mouse_on_ui {
                         self.disable_controls = !self.disable_controls;
+                        let device_ref = &self.state.as_ref().unwrap().device;
+                        let queue = &self.state.as_ref().unwrap().queue;
+                        pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
 
                         if self.disable_controls {
                             println!("Controls Disabled!");
