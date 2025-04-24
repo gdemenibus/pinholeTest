@@ -265,12 +265,10 @@ pub fn matrix_to_buffer<T: crevice::std140::Std140 + std::fmt::Debug>(
 
     let mut writer = Writer::new(&mut buffer[..max_use]);
 
-    println!("{:?}", mat);
     // How should the gpu see the world?
     // Drop this into a vec first
     for x in mat.col_iter() {
         for y in x.iter() {
-            println!("{:?}", y);
             let _write = writer.write_std140(y)?;
         }
     }
