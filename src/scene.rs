@@ -1,4 +1,3 @@
-
 use crate::{
     camera::Camera,
     shape::{Quad, Shape, VWPanel},
