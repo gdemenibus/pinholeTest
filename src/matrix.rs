@@ -1,3 +1,4 @@
+use std::array::from_fn;
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -8,10 +9,10 @@ use cgmath::Vector4;
 use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
+use faer::linalg::matmul::matmul;
+use faer::mat;
 use faer::Mat;
 use faer::Shape;
-use wgpu::core::device;
-use wgpu::core::pipeline::ProgrammableStageDescriptor;
 use wgpu::util::DeviceExt;
 use wgpu::ComputePipelineDescriptor;
 use wgpu::Device;
@@ -67,7 +68,12 @@ impl<T: BaseNum> FromArr for Vector4<T> {
 //
 //
 pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    let matrix_mul = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Test Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/matrix_mul.wgsl").into()),
+    });
+
+    let matrix_mul_trans = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Test Shader"),
         source: wgpu::ShaderSource::Wgsl(
             include_str!("../shaders/matrix_mul_transpose.wgsl").into(),
@@ -134,17 +140,34 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         ],
     });
 
-    // C = A ^T B
-    let mat_a = Mat::from_fn(8, 8, |x, y| (x + y * 8) as f32);
-    let mat_b = Mat::from_fn(8, 8, |x, y| (x - y) as f32);
-    let mat_c = Mat::from_fn(8, 8, |_x, _y| 0 as f32);
+    // C = A * B
+    // TODO: Change this to take in arbiratry matrix
+    let m = 8;
+    let k = 4;
+    let n = 8;
 
-    let test_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let mat_a: Mat<f32> = Mat::from_fn(m, k, |x, y| (x + y * k) as f32);
+    let mat_b: Mat<f32> = Mat::from_fn(k, n, |x, y| (x + y * n) as f32);
+    println!("Matrix a: {:?}", mat_a);
+    let a_size = mat_a.shape();
+    let b_size = mat_b.shape();
+
+    assert_eq!(
+        b_size.0, a_size.1,
+        "Cannot multipluy, a of shape {:?} and b of shape {:?} ",
+        a_size, b_size
+    );
+
+    //let mat_a = Mat::from_fn(8, 8, |x, y| (x + y * 8) as f32);
+    //let mat_b = Mat::from_fn(8, 8, |x, y| (x - y) as f32);
+    let mat_c = Mat::from_fn(a_size.0, b_size.1, |_x, _y| 0 as f32);
+
+    let buffer_a = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test buffer"),
         contents: &matrix_to_buffer(&mat_a).unwrap(),
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     });
-    let test_b_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let buffer_b = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test buffer"),
         contents: &matrix_to_buffer(&mat_b).unwrap(),
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
@@ -171,11 +194,11 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: test_buffer.as_entire_binding(),
+                resource: buffer_a.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: test_buffer.as_entire_binding(),
+                resource: buffer_b.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
@@ -197,7 +220,7 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         label: Some("Matrix Multiply Pass"),
         layout: Some(&compute_pipe_layout),
         cache: None,
-        module: &shader,
+        module: &matrix_mul,
         entry_point: Some("main"),
         compilation_options: Default::default(),
     });
@@ -244,9 +267,22 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
             .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
 
-        let mat = Mat::from_fn(8, 8, |x, y| data_filtered[x + y * 8]);
+        let mat = Mat::from_fn(mat_c.shape().0, mat_c.shape().1, |x, y| {
+            data_filtered[x + y * mat_c.shape().1]
+        });
         println!("Buffer: {:?}", mat);
-        let other_mat = &mat_a * &mat_a.transpose();
+
+        let mut other_mat = Mat::<f32>::zeros(mat_c.shape().0, mat_c.shape().1);
+        matmul(
+            &mut other_mat,
+            faer::Accum::Replace,
+            &mat_a,
+            &mat_b,
+            1.0,
+            faer::Par::Seq,
+        );
+        let secone_test = &mat_a * &mat_b;
+        println!("Fear *: {:?}", secone_test);
         println!("Faer says: {:?}", other_mat);
     }
 }
@@ -263,7 +299,7 @@ pub fn matrix_to_buffer<T: crevice::std140::Std140 + std::fmt::Debug>(
     let max_use = 4 * mat.shape().0.unbound() * mat.shape().1.unbound();
     let mut buffer = vec![0u8; max_use];
 
-    let mut writer = Writer::new(&mut buffer[..max_use]);
+    let mut writer = Writer::new(&mut buffer[..]);
 
     // How should the gpu see the world?
     // Drop this into a vec first
