@@ -1,4 +1,4 @@
-const TILE_SIZE: u32 = 16;
+const TILE_SIZE: u32 = 8;
 
 // C = A * B
 @group(0) @binding(0) var<storage, read> A: array<f32>;
