@@ -146,9 +146,9 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
     let k = 4;
     let n = 8;
 
-    let mat_a: Mat<f32> = Mat::from_fn(m, k, |x, y| (x + y * k) as f32);
+    let mat_a: Mat<f32> = Mat::from_fn(m, k, |x, y| (x + y * m) as f32);
     let mat_b: Mat<f32> = Mat::from_fn(k, n, |x, y| (x + y * n) as f32);
-    println!("Matrix a: {:?}", mat_a);
+
     let a_size = mat_a.shape();
     let b_size = mat_b.shape();
 
@@ -160,7 +160,7 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
 
     //let mat_a = Mat::from_fn(8, 8, |x, y| (x + y * 8) as f32);
     //let mat_b = Mat::from_fn(8, 8, |x, y| (x - y) as f32);
-    let mat_c = Mat::from_fn(a_size.0, b_size.1, |_x, _y| 0 as f32);
+    let mat_c = Mat::from_fn(m, n, |_x, _y| 0 as f32);
 
     let buffer_a = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test buffer"),
@@ -184,7 +184,9 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
 
     let test_unifrom = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test uniform"),
-        contents: cgmath::vec3(8u32, 8u32, 8u32).as_std140().as_bytes(),
+        contents: cgmath::vec3(m as u32, n as u32, k as u32)
+            .as_std140()
+            .as_bytes(),
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     });
 
@@ -244,7 +246,7 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
         compute_pass.set_pipeline(&compute_pipe);
         compute_pass.set_bind_group(0, Some(&binding), &[]);
-        compute_pass.dispatch_workgroups(8, 8, 1);
+        compute_pass.dispatch_workgroups(2, 2, 1);
 
         // compute_pass.set_pipeline(&element_pass);
         // compute_pass.set_bind_group(0, Some(&binding), &[]);
@@ -266,10 +268,9 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
             .chunks(4)
             .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
+        println!("Size of buffer back: {}", data_filtered.len());
 
-        let mat = Mat::from_fn(mat_c.shape().0, mat_c.shape().1, |x, y| {
-            data_filtered[x + y * mat_c.shape().1]
-        });
+        let mat = Mat::from_fn(m, n, |x, y| data_filtered[x + y * m]);
         println!("Buffer: {:?}", mat);
 
         let mut other_mat = Mat::<f32>::zeros(mat_c.shape().0, mat_c.shape().1);
