@@ -180,14 +180,34 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     for (var index = 0u; index < scene_size; index++) {
         var color = intersection(&ray, scene[index].a, scene[index].b, scene[index].c, true);
         if (color.w != 0.0) {
+            if (hit_first || hit_second) {
 
-            record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, color);
+                let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
+                if (hit_first && hit_second) {
+
+                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, gray_scale);
+                }
+
+                return vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            }
+
             return color;
         }
         color = intersection(&ray, scene[index].b, scene[index].c, scene[index].d, false);
 
         if (color.w != 0.0) {
-            record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, color);
+
+            if (hit_first || hit_second) {
+
+                let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
+
+                if (hit_first && hit_second) {
+
+                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, gray_scale);
+                }
+
+                return vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            }
             return color;
         }
 
@@ -197,7 +217,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 }
 
-fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2u, sample: vec4f) {
+fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2u, sample: f32) {
     // First location
     //
     // (x + y * column) * 3
@@ -206,10 +226,9 @@ fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, pan
     let panel_1_entry = panel_1_coords.x + (panel_1_coords.y * panels[0].pixel_count.x);
     let panel_2_entry = panel_2_coords.x + (panel_2_coords.y * panels[1].pixel_count.x);
     //0.299 \u2219 Red + 0.587 \u2219 Green + 0.114 \u2219 Blue
-    let recorded = sample.r * 0.299 + 0.587 * sample.g + 0.114 * sample.b;
     Sampler_buffer[array_coordination] = f32(panel_1_entry);
     Sampler_buffer[array_coordination + 1] = f32(panel_2_entry);
-    Sampler_buffer[array_coordination + 2] = recorded;
+    Sampler_buffer[array_coordination + 2] = sample;
 
 }
 // Distortion of Ray caused by limits of the panel
