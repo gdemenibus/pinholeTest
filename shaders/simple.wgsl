@@ -54,6 +54,13 @@ struct Panel {
 @group(2) @binding(0)
 var<uniform> panels: array<Panel, 2>;
 
+// Array to keep recording the interestcions. Each thread in fragmanet shader will write to:
+// (x + y * column) * 3
+// we need to give every x 3 entries.
+// WARNING: This needs to be double tested!
+@group(3) @binding(0)
+var<storage, read_write> Sampler_buffer: array<f32>;
+
 struct VertexOutput {
     // Like gl_position
     // Gives us the pixel that we are drawing for
@@ -77,7 +84,7 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Clip position tells us the fragment location
-    var position: vec2<f32> = in.clip_position.xy;
+    let position: vec2<f32> = in.clip_position.xy;
 
     var f_x = position.x;
     var f_y = position.y;
@@ -103,8 +110,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Rely on CPU to give us the correct order?
     var hit_first = false;
     var hit_first_location = vec3f(0.0, 0.0, 0.0);
+    var coordinates_first_relative_pixel = vec2u(0, 0);
     var hit_second = false;
     var hit_second_location = vec3f(0.0, 0.0, 0.0);
+    var coordinates_second_relative_pixel = vec2u(0, 0);
 
     for (var index = 0u; index < 2; index++) {
 
@@ -112,13 +121,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let trig_1 = intersection_panel(&ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
         let trig_2 = intersection_panel(&ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
+
         if index == 0 {
             hit_first = trig_1.hit || trig_2.hit;
             if trig_1.hit {
                 hit_first_location = trig_1.pixel_center_model_space;
+                coordinates_first_relative_pixel = trig_1.pixel_coords;
             }
             if trig_2.hit {
                 hit_first_location = trig_2.pixel_center_model_space;
+                coordinates_first_relative_pixel = trig_2.pixel_coords;
+
             }
         }
         if index == 1 {
@@ -126,9 +139,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             if trig_1.hit {
                 hit_second_location = trig_1.pixel_center_model_space;
+                coordinates_second_relative_pixel = trig_1.pixel_coords;
             }
             if trig_2.hit {
                 hit_second_location = trig_2.pixel_center_model_space;
+                coordinates_second_relative_pixel = trig_2.pixel_coords;
             }
 
         }
@@ -165,11 +180,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     for (var index = 0u; index < scene_size; index++) {
         var color = intersection(&ray, scene[index].a, scene[index].b, scene[index].c, true);
         if (color.w != 0.0) {
+
+            record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, color);
             return color;
         }
         color = intersection(&ray, scene[index].b, scene[index].c, scene[index].d, false);
 
         if (color.w != 0.0) {
+            record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, color);
             return color;
         }
 
@@ -179,6 +197,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 }
 
+fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2u, sample: vec4f) {
+    // First location
+    //
+    // (x + y * column) * 3
+    //
+    let array_coordination = (u32(position.x * 2560.0) + u32(position.y * 1600) * 2560) * 3;
+    let panel_1_entry = panel_1_coords.x + (panel_1_coords.y * panels[0].pixel_count.x);
+    let panel_2_entry = panel_2_coords.x + (panel_2_coords.y * panels[1].pixel_count.x);
+    //0.299 \u2219 Red + 0.587 \u2219 Green + 0.114 \u2219 Blue
+    let recorded = sample.r * 0.299 + 0.587 * sample.g + 0.114 * sample.b;
+    Sampler_buffer[array_coordination] = f32(panel_1_entry);
+    Sampler_buffer[array_coordination + 1] = f32(panel_2_entry);
+    Sampler_buffer[array_coordination + 2] = recorded;
+
+}
 // Distortion of Ray caused by limits of the panel
 // Change the Ray that will be used for other intersections
 fn light_field_distortion(ray: ptr<function, Ray>, new_origin: vec3f, new_direction: vec3f) {
@@ -233,6 +266,7 @@ fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Pa
 struct PanelIntersection {
     hit: bool,
     border: bool,
+    pixel_coords: vec2u,
     pixel_center_model_space: vec3f,
 }
 ;
@@ -240,6 +274,7 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
     var hit = false;
     var border = false;
     var pixel_center_model_space = vec3f(0.0, 0.0, 0.0);
+    var pixel_coords = vec2u(0, 0);
 
     var e1 = b - a;
     var e2 = c - a;
@@ -247,21 +282,21 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
     var det = dot(rey_cross_e2, e1);
 
     if (det > -eps && det < eps) {
-        return PanelIntersection(hit, border, pixel_center_model_space);
+        return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
     }
     var inv_det = 1.0 / det;
     var s = (*ray).origin - a;
     var u = inv_det * dot(rey_cross_e2, s);
 
     if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
-        return PanelIntersection(hit, border, pixel_center_model_space);
+        return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
     }
     var s_cross_e1 = cross(e1, s);
     var v = inv_det * dot(s_cross_e1,(*ray).direction);
     var w = 1.0 - v - u;
 
     if (v < 0.0 || u + v > 1.0) {
-        return PanelIntersection(hit, border, pixel_center_model_space);
+        return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
     }
     // At this stage we can compute t to find out where the intersection point is on the line.
     var t = inv_det * dot(s_cross_e1, e2);
@@ -294,11 +329,11 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
 
             if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
                 border = true;
-                return PanelIntersection(hit, border, pixel_center_model_space);
+                return PanelIntersection(hit, border, pixels, pixel_center_model_space);
 
             } else {
                 //Distort Camera!
-                return PanelIntersection(hit, border, pixel_center_model_space);
+                return PanelIntersection(hit, border, pixels, pixel_center_model_space);
             //return vec4f(u, v, w, 1.0);
 
             //return miss_color;
@@ -321,10 +356,10 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
             if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
 
                 border = true;
-                return PanelIntersection(hit, border, pixel_center_model_space);
+                return PanelIntersection(hit, border, pixels, pixel_center_model_space);
             } else {
 
-                return PanelIntersection(hit, border, pixel_center_model_space);
+                return PanelIntersection(hit, border, pixels, pixel_center_model_space);
 
             }
 
@@ -333,7 +368,7 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
     //return vec4f(0.0, 0.5, 0.5, 1.0);
     }
 
-    return PanelIntersection(hit, border, pixel_center_model_space);
+    return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
 
 }
 ;

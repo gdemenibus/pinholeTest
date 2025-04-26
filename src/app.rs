@@ -18,7 +18,7 @@ use wgpu::util::DeviceExt;
 use wgpu::{BindGroup, Buffer, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -244,7 +244,7 @@ impl AppState {
         });
 
         let panel_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Scene Bind"),
+            label: Some("Binding For Panel group"),
             layout: &panel_bind_group,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -252,16 +252,66 @@ impl AppState {
             }],
         });
 
+        // Bind group for reading from
+        //
+        let sampler_bind_layout = wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::all(),
+            count: None,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        };
+
+        let sampler_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Bind group for Sampler"),
+                entries: &[sampler_bind_layout],
+            });
+        let sampler_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Buffer for sample"),
+            // Resolution times 4, as it's a floating 32 per entry, and 3 entries
+            contents: &[0u8; 2560 * 1600 * 4 * 3],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::MAP_WRITE
+                | wgpu::BufferUsages::MAP_READ
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
+        let sampler_double_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Second buffer for sampler. Only exists to be copied into"),
+            // Resolution times 4, as it's a floating 32 per entry, and 3 entries
+            contents: &[0u8; 2560 * 1600 * 4 * 3],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::MAP_WRITE
+                | wgpu::BufferUsages::MAP_READ
+                | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let sampler_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Bind group for Sampler"),
+            layout: &sampler_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sampler_buffer.as_entire_binding(),
+            }],
+        });
+
         let mut bind_map = HashMap::new();
         bind_map.insert(0, scene_bind);
         bind_map.insert(1, diffuse_bind_group);
         bind_map.insert(2, panel_bind);
+        bind_map.insert(3, sampler_bind);
 
         // TODO: Might replace this with enums?
         let mut buffer_map = HashMap::new();
         buffer_map.insert(0, scene_buffer);
         buffer_map.insert(1, rt_buffer);
         buffer_map.insert(2, panel_buffer);
+        buffer_map.insert(3, sampler_buffer);
+        buffer_map.insert(4, sampler_double_buffer);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -278,6 +328,7 @@ impl AppState {
                     &scene_bind_group,
                     &texture_bind_group_layout,
                     &panel_bind_group,
+                    &sampler_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -380,6 +431,7 @@ pub struct App {
     mouse_press: bool,
     mouse_on_ui: bool,
     disable_controls: bool,
+    sampling_light_field: bool,
 }
 
 impl App {
@@ -388,6 +440,8 @@ impl App {
         let file_picker = FilePicker::new();
         Self {
             instance,
+
+            sampling_light_field: false,
             mouse_press: false,
             mouse_on_ui: false,
             disable_controls: false,
@@ -403,6 +457,77 @@ impl App {
             previous_draw: Instant::now(),
             file_picker,
         }
+    }
+
+    pub fn process_keyboard(&mut self, event: &KeyEvent) {
+        if !(event.state == ElementState::Pressed) || self.mouse_on_ui {
+            return;
+        }
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Minus) => {
+                self.disable_controls = !self.disable_controls;
+
+                if self.disable_controls {
+                    println!("Controls Disabled!");
+                } else {
+                    println!("Controls Enabled");
+                }
+            }
+            PhysicalKey::Code(KeyCode::Slash) => {
+                println!("DEBUG KEY PRESSED");
+
+                let device_ref = &self.state.as_ref().unwrap().device;
+                let queue = &self.state.as_ref().unwrap().queue;
+                pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
+            }
+            PhysicalKey::Code(KeyCode::Comma) => {
+                pollster::block_on(self.get_sample_light_field()).unwrap();
+            }
+            _ => (),
+        }
+    }
+    pub async fn get_sample_light_field(&mut self) -> Result<(), String> {
+        self.sampling_light_field = true;
+        let state = self.state.as_ref().unwrap();
+        let sample_buffer = state.buffer_map.get(&4).unwrap();
+        //sample_buffer.unmap();
+        //let
+
+        let buffer_slice = sample_buffer.slice(..);
+        let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+        state.device.poll(wgpu::Maintain::Wait);
+        rx.receive().await.unwrap().unwrap();
+        // Scope to drop buffer view, ensuring we can unmap it
+        {
+            let data = buffer_slice.get_mapped_range();
+
+            let data_filtered: Vec<f32> = data
+                .chunks(4)
+                .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect();
+            let triplets = data_filtered
+                .chunks(3)
+                .filter_map(|chunk| {
+                    let x_coord = chunk[0];
+                    let y_coord = chunk[1];
+                    let sample = chunk[2];
+                    if x_coord == 0.0 && y_coord == 0.0 && sample == 0.0 {
+                        None
+                    } else {
+                        Some((x_coord, y_coord, sample))
+                    }
+                })
+                .collect::<Vec<(f32, f32, f32)>>();
+            println!("Triplet count: {}", triplets.len());
+        }
+        sample_buffer.unmap();
+
+        self.sampling_light_field = false;
+
+        Ok(())
     }
     // Take the new texture and queue an update
     pub fn update_texture(&mut self) {
@@ -577,6 +702,7 @@ impl App {
             render_pass.set_bind_group(1, state.bind_map.get(&1), &[]);
 
             render_pass.set_bind_group(2, state.bind_map.get(&2), &[]);
+            render_pass.set_bind_group(3, state.bind_map.get(&3), &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -601,6 +727,12 @@ impl App {
                 &surface_view,
                 screen_descriptor,
             );
+        }
+        if !self.sampling_light_field {
+            // Can copy
+            let source = state.buffer_map.get(&3).unwrap();
+            let destination = state.buffer_map.get(&4).unwrap();
+            encoder.copy_buffer_to_buffer(source, 0, destination, 0, 2560 * 1600 * 4 * 3);
         }
 
         state.queue.submit(Some(encoder.finish()));
@@ -646,20 +778,7 @@ impl ApplicationHandler for App {
                 event,
                 is_synthetic: _,
             } => {
-                if let PhysicalKey::Code(KeyCode::Minus) = event.physical_key {
-                    if event.state.is_pressed() && !self.mouse_on_ui {
-                        self.disable_controls = !self.disable_controls;
-                        let device_ref = &self.state.as_ref().unwrap().device;
-                        let queue = &self.state.as_ref().unwrap().queue;
-                        pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
-
-                        if self.disable_controls {
-                            println!("Controls Disabled!");
-                        } else {
-                            println!("Controls Enabled");
-                        }
-                    }
-                }
+                self.process_keyboard(&event);
                 self.camera_control
                     .process_keyboard(event, self.disable_controls);
             }

@@ -1,7 +1,3 @@
-use std::array::from_fn;
-use std::collections::HashMap;
-use std::error::Error;
-
 use cgmath::BaseNum;
 use cgmath::Matrix4;
 use cgmath::Vector3;
@@ -10,7 +6,8 @@ use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
 use faer::linalg::matmul::matmul;
-use faer::mat;
+use faer::unzip;
+use faer::zip;
 use faer::Mat;
 use faer::Shape;
 use wgpu::util::DeviceExt;
@@ -63,10 +60,20 @@ impl<T: BaseNum> FromArr for Vector4<T> {
         Vector4::new(array[0], array[1], array[2], array[3])
     }
 }
+// Possible imporvements:
+//https://www.bealto.com/gpu-gemv_v1.html
+// Possible idea of how to break this down:
+//         W^T V
+// H  = H --------
+//         (W^T W) H
+// Split across multiple entries:
+// W^T V ->          Numerator   --\
+// W^TW -> Temp --\                --> H
+//                 -> Denominator --/
+// H            --/
+// Minimize the amount of copying by reusing buffers
 
 // Functionality for doing matrix multiplication
-//
-//
 pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
     let matrix_mul = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Test Shader"),
@@ -143,11 +150,12 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
     // C = A * B
     // TODO: Change this to take in arbiratry matrix
     let m = 8;
-    let k = 4;
+    let k = 8;
     let n = 8;
 
     let mat_a: Mat<f32> = Mat::from_fn(m, k, |x, y| (x + y * m) as f32);
     let mat_b: Mat<f32> = Mat::from_fn(k, n, |x, y| (x + y * n) as f32);
+    let mat_d: Mat<f32> = Mat::from_fn(m, n, |_, _| 2f32);
 
     let a_size = mat_a.shape();
     let b_size = mat_b.shape();
@@ -172,6 +180,20 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         contents: &matrix_to_buffer(&mat_b).unwrap(),
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     });
+    let buffer_d = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Test buffer"),
+        contents: &matrix_to_buffer(&mat_d).unwrap(),
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+    });
+    let buffer_nominator = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Test buffer"),
+        contents: &matrix_to_buffer(&mat_d).unwrap(),
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+    });
 
     let test_rw_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Test rw buffer"),
@@ -179,7 +201,8 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::MAP_WRITE
             | wgpu::BufferUsages::MAP_READ
-            | wgpu::BufferUsages::COPY_DST,
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
     });
 
     let test_unifrom = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -201,6 +224,28 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: buffer_b.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: test_rw_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: test_unifrom.as_entire_binding(),
+            },
+        ],
+    });
+    let binding_element_wise_update = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Scene Bind"),
+        layout: &matrix_bind_group,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer_nominator.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: buffer_d.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
@@ -247,11 +292,20 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
         compute_pass.set_pipeline(&compute_pipe);
         compute_pass.set_bind_group(0, Some(&binding), &[]);
         compute_pass.dispatch_workgroups(2, 2, 1);
-
-        // compute_pass.set_pipeline(&element_pass);
-        // compute_pass.set_bind_group(0, Some(&binding), &[]);
-        // compute_pass.dispatch_workgroups(64, 0, 0);
     }
+
+    // encoder.copy_buffer_to_buffer(&test_rw_buffer, 0, &buffer_nominator, 0, (m * n * 4) as u64);
+    // {
+    //     let compute_pass_desc = wgpu::ComputePassDescriptor {
+    //         label: Some("Update innards pass"),
+    //         timestamp_writes: None,
+    //     };
+    //     let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
+
+    //     compute_pass.set_pipeline(&element_pass);
+    //     compute_pass.set_bind_group(0, Some(&binding_element_wise_update), &[]);
+    //     compute_pass.dispatch_workgroups(64, 1, 1);
+    // }
 
     queue.submit(Some(encoder.finish()));
     {
@@ -282,8 +336,9 @@ pub async fn nmf_pipeline(device: &Device, queue: &wgpu::Queue) {
             1.0,
             faer::Par::Seq,
         );
-        let secone_test = &mat_a * &mat_b;
-        println!("Fear *: {:?}", secone_test);
+
+        println!("Faer multiplicaiton: {:?}", other_mat);
+        zip!(&mut other_mat, &mat_d).for_each(|unzip!(o, b)| *o = *o / (*b + f32::EPSILON));
         println!("Faer says: {:?}", other_mat);
     }
 }
