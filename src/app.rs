@@ -1,6 +1,7 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
+use crate::matrix::{vector_to_image, NmfSolver};
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
@@ -426,8 +427,8 @@ pub struct App {
     camera: Camera,
     camera_control: CameraController,
     file_picker: FilePicker,
-
     previous_draw: Instant,
+    nmf_solver: NmfSolver,
     mouse_press: bool,
     mouse_on_ui: bool,
     disable_controls: bool,
@@ -440,7 +441,7 @@ impl App {
         let file_picker = FilePicker::new();
         Self {
             instance,
-
+            nmf_solver: NmfSolver::new(),
             sampling_light_field: false,
             mouse_press: false,
             mouse_on_ui: false,
@@ -483,6 +484,11 @@ impl App {
             PhysicalKey::Code(KeyCode::Comma) => {
                 pollster::block_on(self.get_sample_light_field()).unwrap();
             }
+            PhysicalKey::Code(KeyCode::KeyM) => {
+                let (panel_1, panel_2) = self.nmf_solver.nmf_cpu(300);
+                vector_to_image(&panel_1, 30, 30, "panel1.png".to_string());
+                vector_to_image(&panel_2, 30, 30, "panel2.png".to_string());
+            }
             _ => (),
         }
     }
@@ -514,14 +520,19 @@ impl App {
                     let x_coord = chunk[0];
                     let y_coord = chunk[1];
                     let sample = chunk[2];
-                    if x_coord == 0.0 && y_coord == 0.0 && sample == 0.0 {
+                    if (x_coord == 0.0 && y_coord == 0.0) || sample == 0.0 {
                         None
                     } else {
                         Some((x_coord, y_coord, sample))
                     }
                 })
                 .collect::<Vec<(f32, f32, f32)>>();
+            let max = triplets
+                .iter()
+                .fold(0.0f32, |acc, next| if acc > next.2 { acc } else { next.2 });
+            println!("Max Value is: {}", max);
             println!("Triplet count: {}", triplets.len());
+            self.nmf_solver.add_sample(triplets);
         }
         sample_buffer.unmap();
 

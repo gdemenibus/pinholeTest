@@ -222,7 +222,7 @@ fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, pan
     //
     // (x + y * column) * 3
     //
-    let array_coordination = (u32(position.x * 2560.0) + u32(position.y * 1600) * 2560) * 3;
+    let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
     let panel_1_entry = panel_1_coords.x + (panel_1_coords.y * panels[0].pixel_count.x);
     let panel_2_entry = panel_2_coords.x + (panel_2_coords.y * panels[1].pixel_count.x);
     //0.299 \u2219 Red + 0.587 \u2219 Green + 0.114 \u2219 Blue
