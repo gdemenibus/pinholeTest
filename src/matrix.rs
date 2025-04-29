@@ -6,10 +6,16 @@ use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
 use faer::linalg::matmul::matmul;
+use faer::sparse::SparseColMat;
+use faer::sparse::SymbolicSparseColMat;
+use faer::sparse::Triplet;
 use faer::unzip;
 use faer::zip;
 use faer::Mat;
 use faer::Shape;
+use image::ImageBuffer;
+use image::ImageError;
+use indicatif::ProgressBar;
 use wgpu::util::DeviceExt;
 use wgpu::ComputePipelineDescriptor;
 use wgpu::Device;
@@ -369,4 +375,86 @@ pub fn matrix_to_buffer<T: crevice::std140::Std140 + std::fmt::Debug>(
     Ok(buffer.into_boxed_slice())
     //
     // Need to take the matrix and produce a vec of numbers
+}
+/// Build an image from the provided vector
+pub fn vector_to_image(
+    mat: &Mat<f32, usize, usize>,
+    image_height: usize,
+    image_width: usize,
+    image_path: String,
+) -> Result<(), ImageError> {
+    let (_height, width) = mat.shape();
+    assert!(width == 1);
+
+    let image_buffer = ImageBuffer::from_fn(image_width as u32, image_height as u32, |x, y| {
+        let sample = mat[((x as usize + y as usize * image_width), 0)];
+        image::Rgba::<u8>([
+            (sample * 255.0) as u8,
+            (sample * 255.0) as u8,
+            (sample * 255.0) as u8,
+            (sample * 255.0) as u8,
+        ])
+    });
+    image_buffer.save_with_format(image_path, image::ImageFormat::Png)
+}
+
+pub struct NmfSolver {
+    target_matrix: Option<faer::sparse::SparseColMat<usize, f32>>,
+}
+
+impl NmfSolver {
+    pub fn new() -> Self {
+        NmfSolver {
+            target_matrix: None,
+        }
+    }
+    pub fn nmf_cpu(&self, iter_count: usize) -> (Mat<f32>, Mat<f32>) {
+        let v_sparse = self.target_matrix.as_ref().unwrap();
+        let (rows, columns) = v_sparse.shape();
+
+        let v = v_sparse;
+
+        let mut w = faer::Mat::from_fn(rows, 1, |_i, _j| 0.5_f32);
+        let mut h = faer::Mat::from_fn(1, columns, |_i, _j| 0.5_f32);
+
+        println!("Starting NMF!");
+        let bar = ProgressBar::new(iter_count as u64);
+        for _x in 0..iter_count {
+            bar.inc(1);
+
+            let num_h = w.transpose() * v;
+
+            let denom_h = (w.transpose() * &w) * &h;
+
+            zip!(&mut h, &num_h, &denom_h)
+                .for_each(|unzip!(h, a, b)| *h *= *a / (*b + f32::EPSILON));
+
+            let num_w = v * h.transpose();
+
+            let denom_w = &w * (&h * h.transpose());
+
+            zip!(&mut w, &num_w, &denom_w)
+                .for_each(|unzip!(w, a, b)| *w *= *a / (*b + f32::EPSILON));
+        }
+        // Get both to have same shape, one big column
+        (w, h.transpose().to_owned())
+    }
+    pub fn add_sample(&mut self, triplets: Vec<(f32, f32, f32)>) {
+        let size = 30 * 30 * 30 * 30;
+        let triplet_list: Vec<Triplet<usize, usize, f32>> = triplets
+            .iter()
+            .map(|(a, b, c)| Triplet::new(*a as usize, *b as usize, *c))
+            .collect();
+
+        let observations = SparseColMat::try_new_from_triplets(size, size, &triplet_list).unwrap();
+
+        if self.target_matrix.is_some() {
+            // Doesn't cover case where both observations overlap.
+            self.target_matrix = Some(observations + self.target_matrix.as_ref().unwrap());
+        } else {
+            self.target_matrix = Some(observations);
+        }
+
+        //
+    }
 }
