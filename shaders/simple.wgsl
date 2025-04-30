@@ -54,12 +54,24 @@ struct Panel {
 @group(2) @binding(0)
 var<uniform> panels: array<Panel, 2>;
 
+@group(2) @binding(1)
+// SUPER HACKY, can't pass bool. Treat 0 as false, rest as true??
+var<uniform> panels_use_texture: u32;
+// first entry maps to first texture
+@group(2) @binding(2)
+var texture_panel: texture_2d_array<f32>;
+@group(2) @binding(3)
+var sampler_panel: sampler;
+// WE ASSUME BOTH ARE THE SAME SIZE, THIS MIGHT BE WRONG?
+@group(2) @binding(4)
+var<uniform> panel_size: vec2<u32>;
 // Array to keep recording the interestcions. Each thread in fragmanet shader will write to:
 // (x + y * column) * 3
 // we need to give every x 3 entries.
 // WARNING: This needs to be double tested!
 @group(3) @binding(0)
 var<storage, read_write> Sampler_buffer: array<f32>;
+
 
 struct VertexOutput {
     // Like gl_position
@@ -94,6 +106,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var ray = Ray(rt.ray_origin, ray_dir);
 
     ray_dir = normalize(ray_dir);
+
+    // If panels are involved, means we are going to hit something
+    if(panels_use_texture != 0) {
+        let color = panels_texture_hit(&ray);
+        if color.a != 0.0 {
+            return color;
+        }
+
+    }
+
     // Check if first panel is hit
     // Check if second panel is hit
     // Update if so
@@ -216,6 +238,39 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4f(0.0, 0.0, 0.3, 1.0);
 
 }
+
+fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f{
+
+    for (var index = 0u; index < 2; index++) {
+
+        let panel = panels[index];
+
+        let trig_1 = intersection_panel(ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
+        if trig_1.hit {
+            let pixel_coords = trig_1.pixel_coords;
+            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_size.x), f32(pixel_coords.y) /f32(panel_size.y)); 
+
+            return textureSample(texture_panel, sampler_panel, coordinates, index);
+        }
+
+        let trig_2 = intersection_panel(ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
+
+
+        if trig_2.hit {
+            let pixel_coords = trig_2.pixel_coords;
+            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_size.x), f32(pixel_coords.y) / f32(panel_size.y));
+
+            return textureSample(texture_panel, sampler_panel, coordinates, index);
+
+        }
+
+
+    }
+    
+    return vec4f(0.0, 0.0, 0.3, 1.0);
+
+}
+
 
 fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2u, sample: f32) {
     // First location
