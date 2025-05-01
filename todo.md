@@ -249,7 +249,10 @@ sample the world as two vecs
 ## Before first stage review:
 Load textures of solving
 Stick to 30 by 30 for now?
+
 Yes
+
+And get writing
 
 Increase solver to be generic on scale!
 

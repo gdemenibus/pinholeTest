@@ -20,6 +20,8 @@ use wgpu::util::DeviceExt;
 use wgpu::ComputePipelineDescriptor;
 use wgpu::Device;
 
+use crate::scene::DrawUI;
+
 pub trait ToArr {
     type Output;
     fn to_arr(&self) -> Self::Output;
@@ -400,13 +402,21 @@ pub fn vector_to_image(
 
 pub struct NmfSolver {
     target_matrix: Option<faer::sparse::SparseColMat<usize, f32>>,
+
+    iter_count: usize,
+    show_steps: bool,
 }
 
 impl NmfSolver {
     pub fn new() -> Self {
         NmfSolver {
             target_matrix: None,
+            iter_count: 100,
+            show_steps: false,
         }
+    }
+    pub fn reset(&mut self) {
+        self.target_matrix = None;
     }
     pub fn nmf_cpu(&self, iter_count: usize) -> (Mat<f32>, Mat<f32>) {
         let v_sparse = self.target_matrix.as_ref().unwrap();
@@ -419,7 +429,19 @@ impl NmfSolver {
 
         println!("Starting NMF!");
         let bar = ProgressBar::new(iter_count as u64);
-        for _x in 0..iter_count {
+        for x in 0..iter_count {
+            if self.show_steps {
+                let path_1 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 1
+                );
+                let path_2 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 2
+                );
+                vector_to_image(&w, 30, 30, path_1);
+                vector_to_image(&h.transpose().to_owned(), 30, 30, path_2);
+            }
             bar.inc(1);
 
             let num_h = w.transpose() * v;
@@ -439,6 +461,7 @@ impl NmfSolver {
         // Get both to have same shape, one big column
         (w, h.transpose().to_owned())
     }
+
     pub fn add_sample(&mut self, triplets: Vec<(f32, f32, f32)>) {
         let size = 30 * 30 * 30 * 30;
         let triplet_list: Vec<Triplet<usize, usize, f32>> = triplets
@@ -456,5 +479,39 @@ impl NmfSolver {
         }
 
         //
+    }
+}
+impl DrawUI for NmfSolver {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+        let title = title.unwrap_or("Solver".to_string());
+
+        egui_winit::egui::Window::new(title)
+            .resizable(true)
+            .vscroll(true)
+            .default_size([150.0, 150.0])
+            .default_open(false)
+            .show(ctx, |ui| {
+                ui.label("Iteration count");
+                ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
+                ui.checkbox(&mut self.show_steps, "Print steps");
+                if ui.button("Solve").clicked() {
+                    let (panel_1, panel_2) = self.nmf_cpu(self.iter_count);
+
+                    vector_to_image(
+                        &panel_1,
+                        30,
+                        30,
+                        "./resources/panel_compute/panel_1.png".to_string(),
+                    )
+                    .unwrap();
+                    vector_to_image(
+                        &panel_2,
+                        30,
+                        30,
+                        "./resources/panel_compute/panel_2.png".to_string(),
+                    )
+                    .unwrap();
+                }
+            });
     }
 }
