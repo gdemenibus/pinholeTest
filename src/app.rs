@@ -578,24 +578,11 @@ impl App {
                 pollster::block_on(self.get_sample_light_field()).unwrap();
             }
             PhysicalKey::Code(KeyCode::KeyM) => {
-                let (panel_1, panel_2) = self.nmf_solver.nmf_cpu(10);
-                vector_to_image(
-                    &panel_1,
-                    30,
-                    30,
-                    "./resources/panel_compute/panel_1.png".to_string(),
-                )
-                .unwrap();
-                vector_to_image(
-                    &panel_2,
-                    30,
-                    30,
-                    "./resources/panel_compute/panel_2.png".to_string(),
-                )
-                .unwrap();
-                self.update_panel_texture();
+                self.update_panel_texture(true);
+                self.displaying_panel_textures = !self.displaying_panel_textures;
             }
             PhysicalKey::Code(KeyCode::KeyB) => {
+                self.update_panel_texture(false);
                 self.displaying_panel_textures = !self.displaying_panel_textures;
             }
             _ => (),
@@ -649,6 +636,7 @@ impl App {
 
         Ok(())
     }
+
     // Take the new texture and queue an update
     pub fn update_texture(&mut self) {
         let state = self.state.as_mut().unwrap();
@@ -657,6 +645,8 @@ impl App {
         if file.metadata().unwrap().is_file() {
             //let reader = std::io::BufReader::new(file);
             let img = image::ImageReader::open(path).unwrap().decode().unwrap();
+
+            self.nmf_solver.reset();
 
             // Ensure you are of the same size??
             let img = img.resize_to_fill(
@@ -684,11 +674,14 @@ impl App {
         }
     }
 
-    pub fn update_panel_texture(&mut self) {
+    pub fn update_panel_texture(&mut self, debug: bool) {
         let state = self.state.as_mut().unwrap();
         for x in 1..3 {
-            let path_string = format!("./resources/panel_compute/panel_{}.png", x);
-            println!("{}", path_string);
+            let path_string = format!(
+                "./resources/panel_compute/panel_{}{}.png",
+                x,
+                if debug { "_debug" } else { "" }
+            );
             let path = Path::new(path_string.as_str());
 
             let file = File::open(path).unwrap();
@@ -898,6 +891,7 @@ impl App {
             state.scene.draw_ui(context, None);
             self.camera.draw_ui(context, None);
             self.file_picker.draw_ui(context, None);
+            self.nmf_solver.draw_ui(context, None);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,

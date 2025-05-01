@@ -108,7 +108,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     ray_dir = normalize(ray_dir);
 
     // If panels are involved, means we are going to hit something
-    if(panels_use_texture != 0) {
+    //
+    if (panels_use_texture != 0) {
         let color = panels_texture_hit(&ray);
         if color.a != 0.0 {
             return color;
@@ -239,7 +240,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 }
 
-fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f{
+fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
+
+    var color = vec4f(1.0, 1.0, 1.0, 0.0);
 
     for (var index = 0u; index < 2; index++) {
 
@@ -248,26 +251,27 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f{
         let trig_1 = intersection_panel(ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
         if trig_1.hit {
             let pixel_coords = trig_1.pixel_coords;
-            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_size.x), f32(pixel_coords.y) /f32(panel_size.y)); 
+            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_size.x), f32(pixel_coords.y) / f32(panel_size.y));
 
-            return textureSample(texture_panel, sampler_panel, coordinates, index);
+            let sample = textureSample(texture_panel, sampler_panel, coordinates, index);
+            return sample;
+
         }
 
         let trig_2 = intersection_panel(ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
-
 
         if trig_2.hit {
             let pixel_coords = trig_2.pixel_coords;
             let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_size.x), f32(pixel_coords.y) / f32(panel_size.y));
 
-            return textureSample(texture_panel, sampler_panel, coordinates, index);
+            let sample = textureSample(texture_panel, sampler_panel, coordinates, index);
+            return sample;
 
         }
 
-
     }
-    
-    return vec4f(0.0, 0.0, 0.3, 1.0);
+
+    return color;
 
 }
 
