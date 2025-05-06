@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-use wgpu::{BindGroup, Buffer, RenderPipeline};
+use wgpu::{Backends, BindGroup, Buffer, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
@@ -528,7 +528,11 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        // Fore opengl backend?
+        let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: Backends::VULKAN,
+            ..Default::default()
+        });
         let file_picker = FilePicker::new("./resources/textures/".to_string());
         Self {
             instance,

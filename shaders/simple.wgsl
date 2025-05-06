@@ -301,10 +301,11 @@ fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, pan
     // (x + y * column) * 3
     //
     let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
-    // There is padding from the border, the actual coordinates are:
+    // There is padding from the border. The pixel count should be 2 less
+    // And remove one from pixel panel coordinates
 
-    let panel_1_entry = panel_1_coords.x - 1 + ((panel_1_coords.y - 1) * panels[0].pixel_count.x);
-    let panel_2_entry = panel_2_coords.x - 1 + ((panel_2_coords.y - 1) * panels[1].pixel_count.x);
+    let panel_1_entry = panel_1_coords.x - 1 + ((panel_1_coords.y - 1) * (panels[0].pixel_count.x - 2));
+    let panel_2_entry = panel_2_coords.x - 1 + ((panel_2_coords.y - 1) * (panels[1].pixel_count.x - 2));
 
     Sampler_buffer[array_coordination] = f32(panel_1_entry);
     Sampler_buffer[array_coordination + 1] = f32(panel_2_entry);
