@@ -8,6 +8,7 @@ use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
 use egui::ahash::HashMap;
+use egui::debug_text::print;
 use faer::linalg::matmul::matmul;
 use faer::sparse::SparseColMat;
 use faer::sparse::SymbolicSparseColMat;
@@ -394,8 +395,6 @@ pub fn vector_to_image(
     assert!(width == 1);
 
     let image_buffer = ImageBuffer::from_fn(image_width as u32, image_height as u32, |x, y| {
-        // 0 means opaque in equation and black in color space
-        // 1 means transpatent in equation and white in color space.
         // the color we record is the color, and the opacity is 1 minus the color
         let sample = mat[((x as usize + y as usize * image_width), 0)];
         // Values close to 1 will
@@ -417,6 +416,8 @@ pub struct NmfSolver {
     show_steps: bool,
     pub size: [u32; 4],
     pub progress: Option<f32>,
+    rng: bool,
+    starting_values: (f32, f32),
 }
 
 impl NmfSolver {
@@ -427,6 +428,8 @@ impl NmfSolver {
             show_steps: false,
             size: [30u32; 4],
             progress: None,
+            starting_values: (0.5, 0.5),
+            rng: false,
         }
     }
     pub fn reset(&mut self) {
@@ -438,8 +441,21 @@ impl NmfSolver {
 
         let v = v_sparse;
 
-        let mut w = faer::Mat::from_fn(rows, 1, |_i, _j| thread_rng().gen_range(0.0..1.0));
-        let mut h = faer::Mat::from_fn(1, columns, |_i, _j| thread_rng().gen_range(0.0..1.0));
+        let mut w = faer::Mat::from_fn(rows, 1, |_i, _j| {
+            if self.rng {
+                thread_rng().gen_range(0.0..1.0)
+            } else {
+                self.starting_values.0
+            }
+        });
+
+        let mut h = faer::Mat::from_fn(1, columns, |_i, _j| {
+            if self.rng {
+                thread_rng().gen_range(0.0..1.0)
+            } else {
+                self.starting_values.1
+            }
+        });
 
         println!("Starting NMF!");
         let pg = ProgressBar::new(iter_count as u64);
@@ -457,8 +473,8 @@ impl NmfSolver {
                     "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
                     x, 2
                 );
-                vector_to_image(&w, self.size[0] as usize, self.size[1] as usize, path_1);
-                vector_to_image(
+                let _ = vector_to_image(&w, self.size[0] as usize, self.size[1] as usize, path_1);
+                let _ = vector_to_image(
                     &h.transpose().to_owned(),
                     self.size[2] as usize,
                     self.size[3] as usize,
@@ -492,22 +508,29 @@ impl NmfSolver {
         (w, h.transpose().to_owned())
     }
 
-    pub fn add_sample(&mut self, triplets: Vec<(f32, f32, f32)>, size: [u32; 4]) {
+    pub fn add_sample(&mut self, triplets: Vec<(u32, u32, f32)>, size: [u32; 4]) {
+        if triplets.is_empty() {
+            return;
+        }
+        println!("Size is: {:?}", size);
         self.size = size;
-        let size = (size[0] * size[1] * size[2] * size[3]) as usize;
-        println!("Size is: {}", size);
         let mut entries = HashMap::default();
 
         for (row, column, entry) in triplets {
             entries.insert((row as usize, column as usize), entry);
         }
+        println!("Entries are: {:?}", entries);
 
-        if self.target_matrix.is_none() || self.target_matrix.as_ref().unwrap().shape().1 != size {
-            self.target_matrix = Some(Mat::from_fn(size, size, |x, y| {
+        let row = size[0] * size[1];
+        let column = size[2] * size[3];
+        if self.target_matrix.is_none()
+            || self.target_matrix.as_ref().unwrap().shape() != (row as usize, column as usize)
+        {
+            self.target_matrix = Some(Mat::from_fn(row as usize, column as usize, |x, y| {
                 if let Some(_entry) = entries.get(&(x, y)) {
-                    1.0
-                } else {
                     0.0
+                } else {
+                    1.0
                 }
             }));
         } else {
@@ -515,6 +538,7 @@ impl NmfSolver {
                 self.target_matrix.as_mut().unwrap()[(x, y)] = 0.0;
             }
         }
+        println!("Matrix is: {:?}", self.target_matrix);
 
         //println!("New matrix:{:?} ", self.target_matrix);
     }
@@ -559,6 +583,81 @@ impl DrawUI for NmfSolver {
                 if ui.button("Reset").clicked() {
                     self.reset();
                 }
+                ui.checkbox(&mut self.rng, "Random starting values");
+                ui.label("Initial guesses");
+                ui.add(egui::Slider::new(
+                    &mut self.starting_values.0,
+                    0.0f32..=1.0f32,
+                ));
+
+                ui.add(egui::Slider::new(
+                    &mut self.starting_values.1,
+                    0.0f32..=1.0f32,
+                ));
             });
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use faer::mat;
+
+    use super::*;
+    #[test]
+    fn small_test() {
+        let target_matrix = mat![[0.0, 0.5, 0.0, 1.0],];
+        let mut solver = NmfSolver {
+            target_matrix: Some(target_matrix),
+            iter_count: 100,
+            show_steps: true,
+            size: [1, 1, 2, 2],
+            progress: None,
+            rng: true,
+            starting_values: (0.5, 0.5),
+        };
+        let (w, h) = solver.nmf_cpu(100);
+        println!("W: {:?}", w);
+        println!("H: {:?}", h);
+        panic!("End");
+    }
+
+    #[test]
+    fn medium_test() {
+        // 2 rows, 4 columns
+        let target_matrix = mat![[0.0, 0.5, 0.0, 1.0], [0.0, 0.5, 0.0, 1.0]];
+        println!("Size is:{:?}", target_matrix.shape());
+        let mut solver = NmfSolver {
+            target_matrix: Some(target_matrix),
+            iter_count: 100,
+            show_steps: true,
+            size: [1, 2, 2, 2],
+            progress: None,
+            rng: true,
+            starting_values: (0.5, 0.5),
+        };
+        let (w, h) = solver.nmf_cpu(100);
+        println!("W: {:?}", w);
+        println!("H: {:?}", h);
+        panic!("End");
+    }
+
+    #[test]
+    fn medium_test_inversion() {
+        // 2 rows, 4 columns
+        let target_matrix = mat![[1.0, 0.5, 1.0, 0.0], [1.0, 0.5, 1.0, 0.0]];
+        println!("Size is:{:?}", target_matrix.shape());
+        let mut solver = NmfSolver {
+            target_matrix: Some(target_matrix),
+            iter_count: 100,
+            show_steps: true,
+            size: [1, 2, 2, 2],
+            progress: None,
+            rng: true,
+            starting_values: (0.5, 0.5),
+        };
+        let (w, h) = solver.nmf_cpu(100);
+        println!("W: {:?}", w);
+        println!("H: {:?}", h);
+        panic!("End");
     }
 }

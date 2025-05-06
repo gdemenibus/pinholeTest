@@ -64,7 +64,7 @@ var texture_panel: texture_2d_array<f32>;
 var sampler_panel: sampler;
 // WE ASSUME BOTH ARE THE SAME SIZE, THIS MIGHT BE WRONG?
 @group(2) @binding(4)
-var<uniform> panel_size: vec2<u32>;
+var<uniform> panel_texture_size: vec2<u32>;
 //@group(2) @binding(4)
 //var<uniform> panels_sample_world: u32;
 
@@ -175,10 +175,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
 
         if (trig_1.border) {
+            clean_up_record(position);
             return border_color;
         }
 
         if (trig_2.border) {
+
+            clean_up_record(position);
             return border_color;
         }
 
@@ -239,6 +242,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     }
 
+    clean_up_record(position);
     return vec4f(0.0, 0.0, 0.3, 1.0);
 
 }
@@ -255,11 +259,11 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
 
         let trig_1 = intersection_panel(ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
         if trig_1.border {
-            return vec4f(0.0, 0.0, 0.0, 1.0);
+            return border_color;
         }
         if trig_1.hit {
-            let pixel_coords = trig_1.pixel_coords;
-            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_size.x), f32(pixel_coords.y) / f32(panel_size.y));
+            let pixel_coords = trig_1.pixel_coords - vec2u(1, 1);
+            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_texture_size.x), f32(pixel_coords.y) / f32(panel_texture_size.y));
 
             let sample = textureSample(texture_panel, sampler_panel, coordinates, index);
             let opacity = 1.0 - sample.r;
@@ -270,11 +274,11 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
         let trig_2 = intersection_panel(ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
 
         if trig_2.border {
-            return vec4f(0.0, 0.0, 0.0, 1.0);
+            return border_color;
         }
         if trig_2.hit {
-            let pixel_coords = trig_2.pixel_coords;
-            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_size.x), f32(pixel_coords.y) / f32(panel_size.y));
+            let pixel_coords = trig_2.pixel_coords - vec2u(1, 1);
+            let coordinates = vec2f(f32(pixel_coords.x) / f32(panel_texture_size.x), f32(pixel_coords.y) / f32(panel_texture_size.y));
 
             let sample = textureSample(texture_panel, sampler_panel, coordinates, index);
 
@@ -291,19 +295,29 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
 }
 
 
-fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2u, sample: f32) {
+fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2<u32>, sample: f32) {
     // First location
     //
     // (x + y * column) * 3
     //
     let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
-    let panel_1_entry = panel_1_coords.x + (panel_1_coords.y * panels[0].pixel_count.x);
-    let panel_2_entry = panel_2_coords.x + (panel_2_coords.y * panels[1].pixel_count.x);
+    // There is padding from the border, the actual coordinates are:
+
+    let panel_1_entry = panel_1_coords.x - 1 + ((panel_1_coords.y - 1) * panels[0].pixel_count.x);
+    let panel_2_entry = panel_2_coords.x - 1 + ((panel_2_coords.y - 1) * panels[1].pixel_count.x);
+
     Sampler_buffer[array_coordination] = f32(panel_1_entry);
     Sampler_buffer[array_coordination + 1] = f32(panel_2_entry);
     //  1.0 means there was an intersection.
     //  0.0 means we didn't initialize
-    Sampler_buffer[array_coordination + 2] = sample;
+    Sampler_buffer[array_coordination + 2] = 1.0;
+
+}
+fn clean_up_record(position: vec2<f32>) {
+    let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
+    Sampler_buffer[array_coordination] = 0.0;
+    Sampler_buffer[array_coordination + 1] = 0.0;
+    Sampler_buffer[array_coordination + 2] = 0.0;
 
 }
 // Distortion of Ray caused by limits of the panel

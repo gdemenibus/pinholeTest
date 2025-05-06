@@ -22,7 +22,7 @@ pub trait Shape: crevice::std140::AsStd140 {
 * C ==== D
 */
 
-#[derive(crevice::std140::AsStd140)]
+#[derive(crevice::std140::AsStd140, Clone)]
 pub struct Quad {
     a: Vector3<f32>,
     b: Vector3<f32>,
@@ -84,6 +84,14 @@ impl VWPanel {
             quad,
             pixel_count,
             size,
+        }
+    }
+    pub fn border_correction(&self) -> Self {
+        let pixel_count = self.pixel_count + Vector2::new(2, 2);
+        VWPanel {
+            quad: self.quad.clone(),
+            pixel_count,
+            size: self.size,
         }
     }
     pub fn demo_panel() -> Self {

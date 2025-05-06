@@ -3,7 +3,7 @@ use crate::{
     file_picker::FilePicker,
     shape::{Quad, Shape, VWPanel},
 };
-use cgmath::{Matrix4, Rad, SquareMatrix, Vector3, Vector4};
+use cgmath::{Matrix4, Rad, SquareMatrix, Vector2, Vector3, Vector4};
 use crevice::std140::Writer;
 use egui::{Color32, RichText};
 use egui_winit::egui::{self, Context};
@@ -48,6 +48,7 @@ impl ScenePanel {
             self.placement * self.scale * yaw_matrix * pitch_matrix * roll_matrix;
         self.panel.place(&placement_matrix)
     }
+
     fn test(place_vec: Vector4<f32>) -> ScenePanel {
         let yaw = Rad(0.0);
 
@@ -218,12 +219,17 @@ impl Scene {
     pub fn panels_as_bytes(&self, camera: &Camera) -> [u8; 256] {
         let mut buffer = [0u8; 256];
         let mut writer = Writer::new(&mut buffer[..]);
-        let mut panels: Vec<VWPanel> = self.panels.iter().map(|x| x.place_panel()).collect();
+        let mut panels: Vec<VWPanel> = self
+            .panels
+            .iter()
+            .map(|x| x.place_panel())
+            .map(|x| x.border_correction())
+            .collect();
         panels.sort_by(|x, y| x.distance_compar(y, camera.position));
         let _count = writer.write(panels.as_slice()).unwrap();
         buffer
     }
-    pub fn panel_size(&self) -> [u32; 4] {
+    pub fn panels_pixel_count(&self) -> [u32; 4] {
         let mut output = [0; 4];
         for x in 0..2 {
             let panel = self.panels[x].panel.pixel_count;
