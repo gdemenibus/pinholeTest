@@ -7,13 +7,13 @@ use crate::scene::DrawUI;
 
 pub struct FilePicker {
     pub texture_file: PathBuf,
-    file_dialog: FileDialog,
+    pub file_dialog: FileDialog,
     pub change_file: bool,
 }
 
 impl FilePicker {
-    pub fn new() -> Self {
-        let path = Path::new("./resources/textures");
+    pub fn new(path: String) -> Self {
+        let path = Path::new(&path);
 
         let texture_file = PathBuf::from(path);
         let file_dialog = FileDialog::open_file(Some(texture_file.clone()));
@@ -21,6 +21,17 @@ impl FilePicker {
             texture_file,
             file_dialog,
             change_file: false,
+        }
+    }
+    pub fn button(&mut self, ctx: &Context, ui: &mut egui::Ui) {
+        if ui.button("Change Texture").clicked() {
+            self.file_dialog.open();
+        }
+        if self.file_dialog.show(ctx).selected() {
+            if let Some(file) = self.file_dialog.path() {
+                self.texture_file = file.to_path_buf();
+                self.change_file = true;
+            }
         }
     }
 }
