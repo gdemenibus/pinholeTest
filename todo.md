@@ -260,3 +260,14 @@ Scale correctly
 
 Writing should be done
 
+GO to example that can be written by hand
+
+4 by 1
+4 by 4
+
+Right now, there is a change the buffer is full of old readings. 
+
+There is something wrong at small sizes. I suspect the data coming back is somewhat compromised
+The borders are not good
+
+Go back and build.

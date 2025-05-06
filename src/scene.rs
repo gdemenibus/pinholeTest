@@ -33,7 +33,7 @@ struct ScenePanel {
     roll: Rad<f32>,
     placement: Matrix4<f32>,
     scale: Matrix4<f32>,
-    panel: VWPanel,
+    pub panel: VWPanel,
     lock_pixel: bool,
 }
 impl ScenePanel {
@@ -218,5 +218,14 @@ impl Scene {
         panels.sort_by(|x, y| x.distance_compar(y, camera.position));
         let _count = writer.write(panels.as_slice()).unwrap();
         buffer
+    }
+    pub fn panel_size(&self) -> [u32; 4] {
+        let mut output = [0; 4];
+        for x in 0..2 {
+            let panel = self.panels[x].panel.pixel_count;
+            output[x * 2] = panel.x;
+            output[x * 2 + 1] = panel.y;
+        }
+        output
     }
 }
