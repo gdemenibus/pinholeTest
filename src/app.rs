@@ -358,6 +358,7 @@ impl AppState {
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
         });
+
         let sampler_double_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Second buffer for sampler. Only exists to be copied into"),
             // Resolution times 4, as it's a floating 32 per entry, and 3 entries
@@ -575,9 +576,10 @@ impl App {
                 pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
             }
             PhysicalKey::Code(KeyCode::Comma) => {
-                pollster::block_on(self.get_sample_light_field()).unwrap();
+                self.get_sample_light_field();
             }
             PhysicalKey::Code(KeyCode::KeyM) => {
+                println!("DEBUGGING PANEL ON");
                 self.update_panel_texture(true);
                 self.displaying_panel_textures = !self.displaying_panel_textures;
             }
@@ -588,7 +590,7 @@ impl App {
             _ => (),
         }
     }
-    pub async fn get_sample_light_field(&mut self) -> Result<(), String> {
+    pub fn get_sample_light_field(&mut self) -> Result<(), String> {
         self.sampling_light_field = true;
         let state = self.state.as_ref().unwrap();
         let sample_buffer = state.buffer_map.get(&4).unwrap();
@@ -601,7 +603,7 @@ impl App {
             tx.send(result).unwrap();
         });
         state.device.poll(wgpu::Maintain::Wait);
-        rx.receive().await.unwrap().unwrap();
+        pollster::block_on(rx.receive()).unwrap().unwrap();
         // Scope to drop buffer view, ensuring we can unmap it
         {
             let data = buffer_slice.get_mapped_range();
@@ -616,10 +618,10 @@ impl App {
                     let x_coord = chunk[0];
                     let y_coord = chunk[1];
                     let sample = chunk[2];
-                    if (x_coord == 0.0 && y_coord == 0.0) || sample == 0.0 {
-                        None
-                    } else {
+                    if sample > 0.0 {
                         Some((x_coord, y_coord, sample))
+                    } else {
+                        None
                     }
                 })
                 .collect::<Vec<(f32, f32, f32)>>();
@@ -628,7 +630,8 @@ impl App {
                 .fold(0.0f32, |acc, next| if acc > next.2 { acc } else { next.2 });
             println!("Max Value is: {}", max);
             println!("Triplet count: {}", triplets.len());
-            self.nmf_solver.add_sample(triplets);
+            let size = self.state.as_ref().unwrap().scene.panel_size();
+            self.nmf_solver.add_sample(triplets, size);
         }
         sample_buffer.unmap();
 

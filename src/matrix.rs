@@ -1,3 +1,5 @@
+use std::thread::spawn;
+
 use cgmath::BaseNum;
 use cgmath::Matrix4;
 use cgmath::Vector3;
@@ -5,10 +7,13 @@ use cgmath::Vector4;
 use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
+use egui::ahash::HashMap;
 use faer::linalg::matmul::matmul;
 use faer::sparse::SparseColMat;
 use faer::sparse::SymbolicSparseColMat;
 use faer::sparse::Triplet;
+use faer::stats::prelude::thread_rng;
+use faer::stats::prelude::Rng;
 use faer::unzip;
 use faer::zip;
 use faer::Mat;
@@ -389,22 +394,29 @@ pub fn vector_to_image(
     assert!(width == 1);
 
     let image_buffer = ImageBuffer::from_fn(image_width as u32, image_height as u32, |x, y| {
+        // 0 means opaque in equation and black in color space
+        // 1 means transpatent in equation and white in color space.
+        // the color we record is the color, and the opacity is 1 minus the color
         let sample = mat[((x as usize + y as usize * image_width), 0)];
+        // Values close to 1 will
+        let _opacity = 1.0 - sample;
+
         image::Rgba::<u8>([
             (sample * 255.0) as u8,
             (sample * 255.0) as u8,
             (sample * 255.0) as u8,
-            (sample * 255.0) as u8,
+            (255.0) as u8,
         ])
     });
     image_buffer.save_with_format(image_path, image::ImageFormat::Png)
 }
 
 pub struct NmfSolver {
-    target_matrix: Option<faer::sparse::SparseColMat<usize, f32>>,
-
+    target_matrix: Option<Mat<f32>>,
     iter_count: usize,
     show_steps: bool,
+    pub size: [u32; 4],
+    pub progress: Option<f32>,
 }
 
 impl NmfSolver {
@@ -413,23 +425,29 @@ impl NmfSolver {
             target_matrix: None,
             iter_count: 100,
             show_steps: false,
+            size: [30u32; 4],
+            progress: None,
         }
     }
     pub fn reset(&mut self) {
         self.target_matrix = None;
     }
-    pub fn nmf_cpu(&self, iter_count: usize) -> (Mat<f32>, Mat<f32>) {
+    pub fn nmf_cpu(&mut self, iter_count: usize) -> (Mat<f32>, Mat<f32>) {
         let v_sparse = self.target_matrix.as_ref().unwrap();
         let (rows, columns) = v_sparse.shape();
 
         let v = v_sparse;
 
-        let mut w = faer::Mat::from_fn(rows, 1, |_i, _j| 0.5_f32);
-        let mut h = faer::Mat::from_fn(1, columns, |_i, _j| 0.5_f32);
+        let mut w = faer::Mat::from_fn(rows, 1, |_i, _j| thread_rng().gen_range(0.0..1.0));
+        let mut h = faer::Mat::from_fn(1, columns, |_i, _j| thread_rng().gen_range(0.0..1.0));
 
         println!("Starting NMF!");
-        let bar = ProgressBar::new(iter_count as u64);
+        let pg = ProgressBar::new(iter_count as u64);
         for x in 0..iter_count {
+            let progress = (x + 1) as f32 / iter_count as f32;
+            pg.inc(1);
+            self.progress = Some(progress);
+
             if self.show_steps {
                 let path_1 = format!(
                     "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
@@ -439,10 +457,14 @@ impl NmfSolver {
                     "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
                     x, 2
                 );
-                vector_to_image(&w, 30, 30, path_1);
-                vector_to_image(&h.transpose().to_owned(), 30, 30, path_2);
+                vector_to_image(&w, self.size[0] as usize, self.size[1] as usize, path_1);
+                vector_to_image(
+                    &h.transpose().to_owned(),
+                    self.size[2] as usize,
+                    self.size[3] as usize,
+                    path_2,
+                );
             }
-            bar.inc(1);
 
             let num_h = w.transpose() * v;
 
@@ -457,30 +479,47 @@ impl NmfSolver {
 
             zip!(&mut w, &num_w, &denom_w)
                 .for_each(|unzip!(w, a, b)| *w *= *a / (*b + f32::EPSILON));
+
+            // TODO: This is a stopgap, and might not work.
+            zip!(&mut w).for_each(|unzip!(w)| *w = f32::min(*w, 1.0));
+            zip!(&mut h).for_each(|unzip!(h)| *h = f32::min(*h, 1.0));
         }
+        self.progress = None;
+        // DROP THE OBSERVATION MATRIX
+        //self.reset();
+
         // Get both to have same shape, one big column
         (w, h.transpose().to_owned())
     }
 
-    pub fn add_sample(&mut self, triplets: Vec<(f32, f32, f32)>) {
-        let size = 30 * 30 * 30 * 30;
-        let triplet_list: Vec<Triplet<usize, usize, f32>> = triplets
-            .iter()
-            .map(|(a, b, c)| Triplet::new(*a as usize, *b as usize, *c))
-            .collect();
+    pub fn add_sample(&mut self, triplets: Vec<(f32, f32, f32)>, size: [u32; 4]) {
+        self.size = size;
+        let size = (size[0] * size[1] * size[2] * size[3]) as usize;
+        println!("Size is: {}", size);
+        let mut entries = HashMap::default();
 
-        let observations = SparseColMat::try_new_from_triplets(size, size, &triplet_list).unwrap();
-
-        if self.target_matrix.is_some() {
-            // Doesn't cover case where both observations overlap.
-            self.target_matrix = Some(observations + self.target_matrix.as_ref().unwrap());
-        } else {
-            self.target_matrix = Some(observations);
+        for (row, column, entry) in triplets {
+            entries.insert((row as usize, column as usize), entry);
         }
 
-        //
+        if self.target_matrix.is_none() || self.target_matrix.as_ref().unwrap().shape().1 != size {
+            self.target_matrix = Some(Mat::from_fn(size, size, |x, y| {
+                if let Some(_entry) = entries.get(&(x, y)) {
+                    1.0
+                } else {
+                    0.0
+                }
+            }));
+        } else {
+            for ((x, y), _sample) in entries {
+                self.target_matrix.as_mut().unwrap()[(x, y)] = 0.0;
+            }
+        }
+
+        //println!("New matrix:{:?} ", self.target_matrix);
     }
 }
+
 impl DrawUI for NmfSolver {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
         let title = title.unwrap_or("Solver".to_string());
@@ -499,18 +538,26 @@ impl DrawUI for NmfSolver {
 
                     vector_to_image(
                         &panel_1,
-                        30,
-                        30,
+                        self.size[0] as usize,
+                        self.size[1] as usize,
                         "./resources/panel_compute/panel_1.png".to_string(),
                     )
                     .unwrap();
                     vector_to_image(
                         &panel_2,
-                        30,
-                        30,
+                        self.size[2] as usize,
+                        self.size[3] as usize,
                         "./resources/panel_compute/panel_2.png".to_string(),
                     )
                     .unwrap();
+                }
+                if self.progress.is_some() {
+                    ui.add(egui::ProgressBar::new(self.progress.unwrap()));
+                } else {
+                    ui.label("Not solving");
+                }
+                if ui.button("Reset").clicked() {
+                    self.reset();
                 }
             });
     }
