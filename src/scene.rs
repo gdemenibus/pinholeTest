@@ -1,5 +1,6 @@
 use crate::{
     camera::Camera,
+    file_picker::FilePicker,
     shape::{Quad, Shape, VWPanel},
 };
 use cgmath::{Matrix4, Rad, SquareMatrix, Vector3, Vector4};
@@ -22,18 +23,19 @@ Scene struct. Encapsulates UI and handles access to the raw quads
 */
 pub struct Scene {
     world: Vec<(Matrix4<f32>, Quad)>,
-    panels: Vec<ScenePanel>,
+    pub panels: Vec<ScenePanel>,
 }
 
 /// Wrapper around panel that controls access to the UI, as well as their placement
 ///
-struct ScenePanel {
+pub struct ScenePanel {
     yaw: Rad<f32>,
     pitch: Rad<f32>,
     roll: Rad<f32>,
     placement: Matrix4<f32>,
     scale: Matrix4<f32>,
     pub panel: VWPanel,
+    pub texture: FilePicker,
     lock_pixel: bool,
 }
 impl ScenePanel {
@@ -62,6 +64,7 @@ impl ScenePanel {
             placement,
             panel,
             lock_pixel: false,
+            texture: FilePicker::new("./resources/panel_compute/".to_string()),
             scale,
         }
     }
@@ -119,6 +122,7 @@ impl DrawUI for ScenePanel {
 
                 ui.label("Scale y");
                 ui.add(egui::DragValue::new(&mut self.scale.y.y).speed(1.0));
+                self.texture.button(ctx, ui);
             });
     }
 }

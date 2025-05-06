@@ -500,11 +500,9 @@ impl AppState {
     }
 
     fn panel_textures_set_up(device: &wgpu::Device, queue: &wgpu::Queue) -> Texture {
-        let panel_1_texture_bytes = include_bytes!("../resources/panel_compute/panel_1.png");
-        let panel_2_texture_bytes = include_bytes!("../resources/panel_compute/panel_2.png");
-
-        let panel_1 = image::load_from_memory(panel_1_texture_bytes).unwrap();
-        let panel_2 = image::load_from_memory(panel_2_texture_bytes).unwrap();
+        // 1k by 1k, should be enough?
+        let panel_1 = image::DynamicImage::new_rgb8(1000, 1000);
+        let panel_2 = image::DynamicImage::new_rgb8(1000, 1000);
         let texture_vec = vec![panel_1, panel_2];
 
         texture::Texture::from_images(device, queue, &texture_vec, Some("2D Panel Array"))
@@ -531,7 +529,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let file_picker = FilePicker::new();
+        let file_picker = FilePicker::new("./resources/textures/".to_string());
         Self {
             instance,
             nmf_solver: NmfSolver::new(),
@@ -579,12 +577,7 @@ impl App {
                 self.get_sample_light_field();
             }
             PhysicalKey::Code(KeyCode::KeyM) => {
-                println!("DEBUGGING PANEL ON");
-                self.update_panel_texture(true);
-                self.displaying_panel_textures = !self.displaying_panel_textures;
-            }
-            PhysicalKey::Code(KeyCode::KeyB) => {
-                self.update_panel_texture(false);
+                self.update_panel_texture();
                 self.displaying_panel_textures = !self.displaying_panel_textures;
             }
             _ => (),
@@ -649,7 +642,7 @@ impl App {
             //let reader = std::io::BufReader::new(file);
             let img = image::ImageReader::open(path).unwrap().decode().unwrap();
 
-            self.nmf_solver.reset();
+            //self.nmf_solver.reset();
 
             // Ensure you are of the same size??
             let img = img.resize_to_fill(
@@ -660,6 +653,7 @@ impl App {
 
             let copy = state.texture.texture.as_image_copy();
             let dimensions = img.dimensions();
+
             state.queue.write_texture(
                 copy,
                 &img.to_rgba8(),
@@ -677,26 +671,31 @@ impl App {
         }
     }
 
-    pub fn update_panel_texture(&mut self, debug: bool) {
+    pub fn update_panel_texture(&mut self) {
         let state = self.state.as_mut().unwrap();
-        for x in 1..3 {
-            let path_string = format!(
-                "./resources/panel_compute/panel_{}{}.png",
-                x,
-                if debug { "_debug" } else { "" }
-            );
-            let path = Path::new(path_string.as_str());
+        for x in 0..=1 {
+            let path = &state.scene.panels[x].texture.texture_file;
 
             let file = File::open(path).unwrap();
             if file.metadata().unwrap().is_file() {
                 let img = image::ImageReader::open(path).unwrap().decode().unwrap();
 
+                let dimensions = img.dimensions();
+                let copy = &state.panel_textures.texture;
+                if dimensions.0 > copy.width() || dimensions.1 > copy.height() {
+                    println!(
+                        "Selected texture {:?} is larger than allocated buffer {:?}",
+                        dimensions,
+                        (copy.width(), copy.height())
+                    );
+                    return;
+                }
                 // Ensure you are of the same size??
-                let img = img.resize_to_fill(
-                    state.panel_textures.dimensions.x,
-                    state.panel_textures.dimensions.y,
-                    image::imageops::FilterType::Nearest,
-                );
+                // let img = img.resize_to_fill(
+                //     state.panel_textures.dimensions.x,
+                //     state.panel_textures.dimensions.y,
+                //     image::imageops::FilterType::Nearest,
+                // );
 
                 let dimensions = img.dimensions();
 
@@ -708,7 +707,7 @@ impl App {
                         origin: wgpu::Origin3d {
                             x: 0,
                             y: 0,
-                            z: x - 1,
+                            z: x as u32,
                         },
                     },
                     &img.to_rgba8(),
