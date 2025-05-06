@@ -8,7 +8,7 @@ use crate::shape::Quad;
 use crate::texture::Texture;
 use crate::{matrix, texture, vertex};
 use crevice::std140::{AsStd140, Std140};
-use egui::ahash::{HashMap, HashMapExt};
+use egui::ahash::{HashMap, HashMapExt, HashSet};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::GenericImageView;
@@ -605,11 +605,11 @@ impl App {
                 .chunks(4)
                 .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                 .collect();
-            let triplets = data_filtered
+            let mut triplets = data_filtered
                 .chunks(3)
                 .filter_map(|chunk| {
-                    let x_coord = chunk[0];
-                    let y_coord = chunk[1];
+                    let x_coord = chunk[0] as u32;
+                    let y_coord = chunk[1] as u32;
                     let sample = chunk[2];
                     if sample > 0.0 {
                         Some((x_coord, y_coord, sample))
@@ -617,13 +617,15 @@ impl App {
                         None
                     }
                 })
-                .collect::<Vec<(f32, f32, f32)>>();
+                .collect::<Vec<(u32, u32, f32)>>();
+            let mut seen = HashSet::default();
+            triplets.retain(|(x, y, _s)| seen.insert((*x, *y)));
             let max = triplets
                 .iter()
                 .fold(0.0f32, |acc, next| if acc > next.2 { acc } else { next.2 });
             println!("Max Value is: {}", max);
             println!("Triplet count: {}", triplets.len());
-            let size = self.state.as_ref().unwrap().scene.panel_size();
+            let size = self.state.as_ref().unwrap().scene.panels_pixel_count();
             self.nmf_solver.add_sample(triplets, size);
         }
         sample_buffer.unmap();
@@ -673,8 +675,13 @@ impl App {
 
     pub fn update_panel_texture(&mut self) {
         let state = self.state.as_mut().unwrap();
+
         for x in 0..=1 {
-            let path = &state.scene.panels[x].texture.texture_file;
+            let panel = &mut state.scene.panels[x];
+            if !panel.texture.change_file {
+                continue;
+            }
+            let path = &panel.texture.texture_file;
 
             let file = File::open(path).unwrap();
             if file.metadata().unwrap().is_file() {
@@ -723,6 +730,7 @@ impl App {
                     },
                 );
             }
+            panel.texture.change_file = false;
         }
     }
 
@@ -772,6 +780,7 @@ impl App {
             self.update_texture();
             self.file_picker.change_file = false;
         }
+        self.update_panel_texture();
 
         let state = self.state.as_mut().unwrap();
 
