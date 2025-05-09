@@ -1,6 +1,7 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
+use crate::light_factor::LFFactorizer;
 use crate::matrix::{vector_to_image, NmfSolver};
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
@@ -13,6 +14,7 @@ use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::GenericImageView;
 use std::fs::File;
+use std::os::unix::raw::dev_t;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -43,6 +45,7 @@ pub struct AppState {
     pub scene: Scene,
     pub texture: Texture,
     pub panel_textures: Texture,
+    pub factorizer: LFFactorizer,
 }
 
 impl AppState {
@@ -332,57 +335,12 @@ impl AppState {
 
         // Bind group for reading from
         //
-        let sampler_bind_layout = wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::all(),
-            count: None,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-        };
-
-        let sampler_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Bind group for Sampler"),
-                entries: &[sampler_bind_layout],
-            });
-        let sampler_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Buffer for sample"),
-            // Resolution times 4, as it's a floating 32 per entry, and 3 entries
-            contents: &[0u8; 2560 * 1600 * 4 * 3],
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::MAP_WRITE
-                | wgpu::BufferUsages::MAP_READ
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-        });
-
-        let sampler_double_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Second buffer for sampler. Only exists to be copied into"),
-            // Resolution times 4, as it's a floating 32 per entry, and 3 entries
-            contents: &[0u8; 2560 * 1600 * 4 * 3],
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::MAP_WRITE
-                | wgpu::BufferUsages::MAP_READ
-                | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let sampler_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Bind group for Sampler"),
-            layout: &sampler_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: sampler_buffer.as_entire_binding(),
-            }],
-        });
+        let factorizer = LFFactorizer::set_up(&device);
 
         let mut bind_map = HashMap::new();
         bind_map.insert(0, scene_bind);
         bind_map.insert(1, diffuse_bind_group);
         bind_map.insert(2, panel_bind);
-        bind_map.insert(3, sampler_bind);
 
         // TODO: Might replace this with enums?
         // Make a bind group struct, go for greater generality
@@ -390,8 +348,6 @@ impl AppState {
         buffer_map.insert(0, scene_buffer);
         buffer_map.insert(1, rt_buffer);
         buffer_map.insert(2, panel_buffer);
-        buffer_map.insert(3, sampler_buffer);
-        buffer_map.insert(4, sampler_double_buffer);
         buffer_map.insert(5, panel_bool_buffer);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
@@ -409,7 +365,7 @@ impl AppState {
                     &scene_bind_group,
                     &texture_bind_group_layout,
                     &panel_bind_group,
-                    &sampler_group_layout,
+                    &factorizer.bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -490,6 +446,7 @@ impl AppState {
             scene,
             texture,
             panel_textures,
+            factorizer,
         }
     }
 
@@ -590,49 +547,8 @@ impl App {
     pub fn get_sample_light_field(&mut self) -> Result<(), String> {
         self.sampling_light_field = true;
         let state = self.state.as_ref().unwrap();
-        let sample_buffer = state.buffer_map.get(&4).unwrap();
-        //sample_buffer.unmap();
-        //let
-
-        let buffer_slice = sample_buffer.slice(..);
-        let (tx, rx) = futures_intrusive::channel::shared::oneshot_channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
-        });
-        state.device.poll(wgpu::Maintain::Wait);
-        pollster::block_on(rx.receive()).unwrap().unwrap();
-        // Scope to drop buffer view, ensuring we can unmap it
-        {
-            let data = buffer_slice.get_mapped_range();
-
-            let data_filtered: Vec<f32> = data
-                .chunks(4)
-                .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                .collect();
-            let mut triplets = data_filtered
-                .chunks(3)
-                .filter_map(|chunk| {
-                    let x_coord = chunk[0] as u32;
-                    let y_coord = chunk[1] as u32;
-                    let sample = chunk[2];
-                    if sample > 0.0 {
-                        Some((x_coord, y_coord, sample))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<(u32, u32, f32)>>();
-            let mut seen = HashSet::default();
-            triplets.retain(|(x, y, _s)| seen.insert((*x, *y)));
-            let max = triplets
-                .iter()
-                .fold(0.0f32, |acc, next| if acc > next.2 { acc } else { next.2 });
-            println!("Max Value is: {}", max);
-            println!("Triplet count: {}", triplets.len());
-            let size = self.state.as_ref().unwrap().scene.panels_pixel_count();
-            self.nmf_solver.add_sample(triplets, size);
-        }
-        sample_buffer.unmap();
+        let device = &state.device;
+        state.factorizer.sample_buffer_a_y(device);
 
         self.sampling_light_field = false;
 
@@ -890,7 +806,7 @@ impl App {
             render_pass.set_bind_group(1, state.bind_map.get(&1), &[]);
 
             render_pass.set_bind_group(2, state.bind_map.get(&2), &[]);
-            render_pass.set_bind_group(3, state.bind_map.get(&3), &[]);
+            render_pass.set_bind_group(3, &state.factorizer.bind_group, &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -916,12 +832,6 @@ impl App {
                 &surface_view,
                 screen_descriptor,
             );
-        }
-        if !self.sampling_light_field {
-            // Can copy
-            let source = state.buffer_map.get(&3).unwrap();
-            let destination = state.buffer_map.get(&4).unwrap();
-            encoder.copy_buffer_to_buffer(source, 0, destination, 0, 2560 * 1600 * 4 * 3);
         }
 
         state.queue.submit(Some(encoder.finish()));

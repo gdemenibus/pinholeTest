@@ -412,6 +412,7 @@ pub fn vector_to_image(
 
 pub struct NmfSolver {
     target_matrix: Option<Mat<f32>>,
+    weight_matrix: Option<SparseColMat<usize, f32>>,
     iter_count: usize,
     show_steps: bool,
     pub size: [u32; 4],
@@ -430,11 +431,65 @@ impl NmfSolver {
             progress: None,
             starting_values: (0.5, 0.5),
             rng: false,
+            weight_matrix: None,
         }
     }
     pub fn reset(&mut self) {
         self.target_matrix = None;
+        self.weight_matrix = None;
     }
+    pub fn modified_nmf_cput(&mut self, iter_count: usize) -> (Mat<f32>, Mat<f32>) {
+        let v = self.target_matrix.as_ref().unwrap();
+        let (rows, columns) = v.shape();
+
+        let mut f = faer::Mat::from_fn(rows, 1, |_i, _j| {
+            if self.rng {
+                thread_rng().gen_range(0.0..1.0)
+            } else {
+                self.starting_values.0
+            }
+        });
+
+        let mut g = faer::Mat::from_fn(1, columns, |_i, _j| {
+            if self.rng {
+                thread_rng().gen_range(0.0..1.0)
+            } else {
+                self.starting_values.1
+            }
+        });
+
+        println!("Starting NMF Modified!");
+        let pg = ProgressBar::new(iter_count as u64);
+        for x in 0..iter_count {
+            let progress = (x + 1) as f32 / iter_count as f32;
+            pg.inc(1);
+            self.progress = Some(progress);
+
+            if self.show_steps {
+                let path_1 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 1
+                );
+                let path_2 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 2
+                );
+                let _ = vector_to_image(&f, self.size[0] as usize, self.size[1] as usize, path_1);
+                let _ = vector_to_image(
+                    &g.transpose().to_owned(),
+                    self.size[2] as usize,
+                    self.size[3] as usize,
+                    path_2,
+                );
+            }
+            // Update F
+            //
+        }
+        self.progress = None;
+
+        todo!("Not done")
+    }
+
     pub fn nmf_cpu(&mut self, iter_count: usize) -> (Mat<f32>, Mat<f32>) {
         let v_sparse = self.target_matrix.as_ref().unwrap();
         let (rows, columns) = v_sparse.shape();
@@ -516,8 +571,8 @@ impl NmfSolver {
         self.size = size;
         let mut entries = HashMap::default();
 
-        for (row, column, entry) in triplets {
-            entries.insert((row as usize, column as usize), entry);
+        for (row, column, entry) in triplets.iter() {
+            entries.insert((*row as usize, *column as usize), entry);
         }
         println!("Entries are: {:?}", entries);
 
@@ -538,7 +593,18 @@ impl NmfSolver {
                 self.target_matrix.as_mut().unwrap()[(x, y)] = 0.0;
             }
         }
-        println!("Matrix is: {:?}", self.target_matrix);
+        if self.weight_matrix.is_none() {
+            let weights: Vec<Triplet<usize, usize, f32>> = triplets
+                .iter()
+                .map(|(x, y, _entry)| Triplet::new(*x as usize, *y as usize, 1.0))
+                .collect();
+            self.weight_matrix = Some(
+                SparseColMat::try_new_from_triplets(row as usize, column as usize, &weights)
+                    .unwrap(),
+            )
+        }
+
+        //println!("Matrix is: {:?}", self.target_matrix);
 
         //println!("New matrix:{:?} ", self.target_matrix);
     }
@@ -608,6 +674,7 @@ mod test {
         let target_matrix = mat![[0.0, 0.5, 0.0, 1.0],];
         let mut solver = NmfSolver {
             target_matrix: Some(target_matrix),
+            weight_matrix: None,
             iter_count: 100,
             show_steps: true,
             size: [1, 1, 2, 2],
@@ -628,6 +695,8 @@ mod test {
         println!("Size is:{:?}", target_matrix.shape());
         let mut solver = NmfSolver {
             target_matrix: Some(target_matrix),
+
+            weight_matrix: None,
             iter_count: 100,
             show_steps: true,
             size: [1, 2, 2, 2],
@@ -648,6 +717,8 @@ mod test {
         println!("Size is:{:?}", target_matrix.shape());
         let mut solver = NmfSolver {
             target_matrix: Some(target_matrix),
+
+            weight_matrix: None,
             iter_count: 100,
             show_steps: true,
             size: [1, 2, 2, 2],
