@@ -75,7 +75,13 @@ var<uniform> panel_texture_size: vec2<u32>;
 @group(3) @binding(0)
 var<storage, read_write> Sampler_buffer: array<f32>;
 
+@group(3) @binding(1)
+var<storage, read_write> dummy_1: array<f32>;
 
+@group(3) @binding(2)
+var<storage, read_write> dummy_2: array<f32>;
+@group(3) @binding(3)
+var<storage, read_write> dummy_3: array<f32>;
 struct VertexOutput {
     // Like gl_position
     // Gives us the pixel that we are drawing for
@@ -152,12 +158,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             hit_first = trig_1.hit || trig_2.hit;
             if trig_1.hit {
                 hit_first_location = trig_1.pixel_center_model_space;
+
                 coordinates_first_relative_pixel = trig_1.pixel_coords;
             }
             if trig_2.hit {
                 hit_first_location = trig_2.pixel_center_model_space;
                 coordinates_first_relative_pixel = trig_2.pixel_coords;
 
+            }
+            if hit_first {
+                let new_direction = hit_first_location - ray.origin;
+                light_field_distortion(&ray, ray.origin, new_direction);
             }
         }
         if index == 1 {
