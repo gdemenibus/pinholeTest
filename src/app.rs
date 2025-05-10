@@ -1,21 +1,19 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
-use crate::light_factor::LFFactorizer;
-use crate::matrix::{vector_to_image, NmfSolver};
+use crate::light_factor::{factorize, image_to_matrix, matrix_to_image, LFBuffers};
+use crate::matrix::NmfSolver;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
 use crate::texture::Texture;
 use crate::{matrix, texture, vertex};
 use crevice::std140::{AsStd140, Std140};
-use egui::ahash::{HashMap, HashMapExt, HashSet};
+use egui::ahash::{HashMap, HashMapExt};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView};
 use std::fs::File;
-use std::os::unix::raw::dev_t;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
@@ -45,7 +43,7 @@ pub struct AppState {
     pub scene: Scene,
     pub texture: Texture,
     pub panel_textures: Texture,
-    pub factorizer: LFFactorizer,
+    pub factorizer: LFBuffers,
 }
 
 impl AppState {
@@ -335,7 +333,7 @@ impl AppState {
 
         // Bind group for reading from
         //
-        let factorizer = LFFactorizer::set_up(&device);
+        let factorizer = LFBuffers::set_up(&device);
 
         let mut bind_map = HashMap::new();
         bind_map.insert(0, scene_bind);
@@ -450,6 +448,34 @@ impl AppState {
         }
     }
 
+    fn sample_light_field(&self, ct_image: &DynamicImage) {
+        let target_size = (self.texture.dimensions.x, self.texture.dimensions.y);
+        let pixel_count_a = self.scene.panels[0].panel.pixel_count;
+        let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
+
+        let pixel_count_b = self.scene.panels[1].panel.pixel_count;
+        let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
+        let device = &self.device;
+        let (ma_x, ma_y) = self.factorizer.build_m_a(device, target_size, panel_a_size);
+        let (mb_x, mb_y) = self.factorizer.build_m_b(device, target_size, panel_b_size);
+
+        let c_t = image_to_matrix(ct_image);
+        let (a, b) = factorize(c_t, ma_y, ma_x, mb_y, mb_x, 10);
+
+        let image_a = matrix_to_image(&a);
+        image_a.save_with_format(
+            "./resources/panel_compute/panel_1.png",
+            image::ImageFormat::Png,
+        );
+
+        let image_b = matrix_to_image(&b);
+
+        image_b.save_with_format(
+            "./resources/panel_compute/panel_2.png",
+            image::ImageFormat::Png,
+        );
+    }
+
     fn resize_surface(&mut self, width: u32, height: u32) {
         self.surface_config.width = width;
         self.surface_config.height = height;
@@ -547,8 +573,18 @@ impl App {
     pub fn get_sample_light_field(&mut self) -> Result<(), String> {
         self.sampling_light_field = true;
         let state = self.state.as_ref().unwrap();
-        let device = &state.device;
-        state.factorizer.sample_buffer_a_y(device);
+        let c_t = image::ImageReader::open(self.file_picker.texture_file.clone())
+            .unwrap()
+            .decode()
+            .unwrap()
+            .resize_to_fill(
+                state.texture.dimensions.x,
+                state.texture.dimensions.y,
+                image::imageops::FilterType::Nearest,
+            );
+
+        state.sample_light_field(&c_t);
+        //state.factorizer.sample_buffer_a_y(device);
 
         self.sampling_light_field = false;
 
@@ -568,8 +604,8 @@ impl App {
 
             // Ensure you are of the same size??
             let img = img.resize_to_fill(
-                state.texture.dimensions.x - 1,
-                state.texture.dimensions.y - 1,
+                state.texture.dimensions.x,
+                state.texture.dimensions.y,
                 image::imageops::FilterType::Nearest,
             );
 
