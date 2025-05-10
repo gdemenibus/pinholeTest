@@ -1,5 +1,3 @@
-use std::thread::spawn;
-
 use cgmath::BaseNum;
 use cgmath::Matrix4;
 use cgmath::Vector3;
@@ -8,10 +6,8 @@ use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
 use egui::ahash::HashMap;
-use egui::debug_text::print;
 use faer::linalg::matmul::matmul;
 use faer::sparse::SparseColMat;
-use faer::sparse::SymbolicSparseColMat;
 use faer::sparse::Triplet;
 use faer::stats::prelude::thread_rng;
 use faer::stats::prelude::Rng;

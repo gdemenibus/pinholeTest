@@ -73,15 +73,14 @@ var<uniform> panel_texture_size: vec2<u32>;
 // we need to give every x 3 entries.
 // WARNING: This needs to be double tested!
 @group(3) @binding(0)
-var<storage, read_write> Sampler_buffer: array<f32>;
+var<storage, read_write> m_a_y_buffer: array<u32>;
 
 @group(3) @binding(1)
-var<storage, read_write> dummy_1: array<f32>;
-
+var<storage, read_write> m_a_x_buffer: array<u32>;
 @group(3) @binding(2)
-var<storage, read_write> dummy_2: array<f32>;
+var<storage, read_write> m_b_y_buffer: array<u32>;
 @group(3) @binding(3)
-var<storage, read_write> dummy_3: array<f32>;
+var<storage, read_write> m_b_x_buffer: array<u32>;
 struct VertexOutput {
     // Like gl_position
     // Gives us the pixel that we are drawing for
@@ -218,14 +217,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     for (var index = 0u; index < scene_size; index++) {
-        var color = intersection(&ray, scene[index].a, scene[index].b, scene[index].c, true);
+        var target_intersection = intersection(&ray, scene[index].a, scene[index].b, scene[index].c, true);
+        var color = target_intersection.color;
         if (color.w != 0.0) {
             if (hit_first || hit_second) {
 
                 let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
                 if (hit_first && hit_second) {
 
-                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, gray_scale);
+                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
                 }
 
                 return vec4f(gray_scale, gray_scale, gray_scale, color.a);
@@ -233,7 +233,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             return color;
         }
-        color = intersection(&ray, scene[index].b, scene[index].c, scene[index].d, false);
+        target_intersection = intersection(&ray, scene[index].b, scene[index].c, scene[index].d, false);
+        color = target_intersection.color;
 
         if (color.w != 0.0) {
 
@@ -243,7 +244,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
                 if (hit_first && hit_second) {
 
-                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, gray_scale);
+                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
                 }
 
                 return vec4f(gray_scale, gray_scale, gray_scale, color.a);
@@ -306,7 +307,7 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
 }
 
 
-fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2<u32>, sample: f32) {
+fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2<u32>, targets_coords: vec2<u32>, sample: f32) {
     // First location
     //
     // (x + y * column) * 3
@@ -315,22 +316,44 @@ fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, pan
     // There is padding from the border. The pixel count should be 2 less
     // And remove one from pixel panel coordinates
 
-    let panel_1_entry = panel_1_coords.x - 1 + ((panel_1_coords.y - 1) * (panels[0].pixel_count.x - 2));
-    let panel_2_entry = panel_2_coords.x - 1 + ((panel_2_coords.y - 1) * (panels[1].pixel_count.x - 2));
-
-    Sampler_buffer[array_coordination] = f32(panel_1_entry);
-    Sampler_buffer[array_coordination + 1] = f32(panel_2_entry);
     //  1.0 means there was an intersection.
-    //  0.0 means we didn't initialize
-    Sampler_buffer[array_coordination + 2] = 1.0;
+    //  0.0 means we didn't hit
+
+    // ROW, COLUMN, ENTRY
+    m_a_y_buffer[array_coordination] = targets_coords.y;
+    m_a_y_buffer[array_coordination + 1] = panel_1_coords.y;
+    m_a_y_buffer[array_coordination + 2] = 1;
+
+    m_a_x_buffer[array_coordination] = targets_coords.x;
+    m_a_x_buffer[array_coordination + 1] = panel_1_coords.x;
+    m_a_x_buffer[array_coordination + 2] = 1;
+
+    m_b_y_buffer[array_coordination] = targets_coords.y;
+    m_b_y_buffer[array_coordination + 1] = panel_2_coords.y;
+    m_b_y_buffer[array_coordination + 2] = 1;
+
+    m_b_x_buffer[array_coordination] = targets_coords.x;
+    m_b_x_buffer[array_coordination + 1] = panel_2_coords.x;
+    m_b_x_buffer[array_coordination + 2] = 1;
 
 }
 fn clean_up_record(position: vec2<f32>) {
     let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
-    Sampler_buffer[array_coordination] = 0.0;
-    Sampler_buffer[array_coordination + 1] = 0.0;
-    Sampler_buffer[array_coordination + 2] = 0.0;
+    m_a_y_buffer[array_coordination] = 0;
+    m_a_y_buffer[array_coordination + 1] = 0;
+    m_a_y_buffer[array_coordination + 2] = 0;
 
+    m_a_x_buffer[array_coordination] = 0;
+    m_a_x_buffer[array_coordination + 1] = 0;
+    m_a_x_buffer[array_coordination + 2] = 0;
+
+    m_b_y_buffer[array_coordination] = 0;
+    m_b_y_buffer[array_coordination + 1] = 0;
+    m_b_y_buffer[array_coordination + 2] = 0;
+
+    m_b_x_buffer[array_coordination] = 0;
+    m_b_x_buffer[array_coordination + 1] = 0;
+    m_b_x_buffer[array_coordination + 2] = 0;
 }
 // Distortion of Ray caused by limits of the panel
 // Change the Ray that will be used for other intersections
@@ -346,7 +369,6 @@ struct Pixel_Panel {
 
 }
 ;
-
 // From the Barycentric coordinates, give us the pixel coordinates
 fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Panel) -> Pixel_Panel {
 
@@ -381,6 +403,18 @@ fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Pa
     return Pixel_Panel(pixel, new_position);
 }
 ;
+// Use this to get the pixel that was hit, x/y coordinates. Then record!
+fn target_texel(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>) -> vec2u {
+
+    let x_coord = (bary_coords.x * relative_tex_coords[0].x + bary_coords.y * relative_tex_coords[1].x + bary_coords.z * relative_tex_coords[2].x);
+    let y_coord = (bary_coords.x * relative_tex_coords[0].y + bary_coords.y * relative_tex_coords[1].y + bary_coords.z * relative_tex_coords[2].y);
+    // From Relative coordinates to pixel
+    // Casting
+    // Cast pixel count into a f32 to multiply, then into u32 to round
+    let x_pixel = u32(x_coord * f32(tex_size.x));
+    let y_pixel = tex_size.y - u32(y_coord * f32(tex_size.y));
+    return vec2(x_pixel, y_pixel);
+}
 
 /// Struct to capture the possible hits
 struct PanelIntersection {
@@ -492,29 +526,42 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
 
 }
 ;
+struct TargetIntersection {
+    color: vec4<f32>,
+    texel: vec2<u32>,
+}
 
-fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool) -> vec4f {
+fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool) -> TargetIntersection {
     var e1 = b - a;
     var e2 = c - a;
     var rey_cross_e2 = cross(e2,(*ray).direction);
     var det = dot(rey_cross_e2, e1);
 
     if (det > -eps && det < eps) {
-        return miss_color;
+        return TargetIntersection(
+            miss_color,
+            vec2u(0, 0),
+        );
     }
     var inv_det = 1.0 / det;
     var s = (*ray).origin - a;
     var u = inv_det * dot(rey_cross_e2, s);
 
     if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
-        return miss_color;
+        return TargetIntersection(
+            miss_color,
+            vec2u(0, 0),
+        );
     }
     var s_cross_e1 = cross(e1, s);
     var v = inv_det * dot(s_cross_e1,(*ray).direction);
     var w = 1.0 - v - u;
 
     if (v < 0.0 || u + v > 1.0) {
-        return miss_color;
+        return TargetIntersection(
+            miss_color,
+            vec2u(0, 0),
+        );
     }
     // At this stage we can compute t to find out where the intersection point is on the line.
     var t = inv_det * dot(s_cross_e1, e2);
@@ -542,7 +589,12 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
             //   /   |
             //  /    |
             // u === w
-            return sample_texture(bary_coords, vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0), tex_size);
+            let color = sample_texture(bary_coords, vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0), tex_size);
+            let texel = target_texel(bary_coords, array(vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0)));
+            return TargetIntersection(
+                color,
+                texel,
+            );
         } else {
             // B, C, D
 
@@ -551,13 +603,21 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
             //|  /
             //| /
             //w
-            return sample_texture(bary_coords, vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0), tex_size);
+            let color = sample_texture(bary_coords, vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0), tex_size);
+            let texel = target_texel(bary_coords, array(vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0)));
+            return TargetIntersection(
+                color,
+                texel,
+            );
         }
 
     //return vec4f(0.0, 0.5, 0.5, 1.0);
     }
 
-    return miss_color;
+    return TargetIntersection(
+        miss_color,
+        vec2u(0, 0),
+    );
 
 }
 
