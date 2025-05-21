@@ -277,6 +277,48 @@ Go back and build.
 
 Change coloring
 Done!
+Still, some pixels are not mapped to anything, and default to zero. 
+We have the same problem as before, which is kind of annoying?
+
+Something to think about, perhaps will get better over time?
+Can we run a nearest neighbour filter to improve our ruslts?
+The nebulous blur is still there. 
+What if we default to 1?
+
+All this requires a good ui, and ideally turning things around.
+
+So to make experimentation easier:
+1) Launch the sampling from ui [X]
+2) Provide launch settings [X]
+3) Provide a load bar ~. Little hard to do, might need to ask for help
+4) Switch as soon as computation is done [X]
+
+Sparse matrix representations: [X]
+
+C_t should be kept in memory basically.
+
+But where does C_t live? How do we handle changes?
+Rn, we load C_t when solving, as the mapping is C_T agnostis. All C_t's have the same size when sampling
+
+
+Now we need to split collection and creation
+
+switch to sparse matrices, as we need easy representation. 
+
+Sum them, then divide them?
+Yep
+
+
+Need to add:
+A button for sampling
+Rexamine how to split the rest
+
+Sample
+
+
+Lock system for more things:
+
+k
 
 Experiment with average, max, different view points
 Introduce units
@@ -284,3 +326,4 @@ Introduce units
 Can you change the mapping?
 
 
+STRANGE BUG AT LOW ANGLES, THREATENS EVERYTHING?

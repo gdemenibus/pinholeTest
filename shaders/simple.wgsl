@@ -297,6 +297,7 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
             color = sample * color;
 
         }
+        ;
 
     }
 
@@ -411,8 +412,8 @@ fn target_texel(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>) -> vec
     // From Relative coordinates to pixel
     // Casting
     // Cast pixel count into a f32 to multiply, then into u32 to round
-    let x_pixel = u32(x_coord * f32(tex_size.x));
-    let y_pixel = tex_size.y - u32(y_coord * f32(tex_size.y));
+    let x_pixel = u32(floor(x_coord * f32(tex_size.x)));
+    let y_pixel = tex_size.y - u32(floor(y_coord * f32(tex_size.y)));
     return vec2(x_pixel, y_pixel);
 }
 

@@ -102,7 +102,7 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         //
-        let texture_bytes = include_bytes!("../resources/textures/High res text.png");
+        let texture_bytes = include_bytes!("../resources/textures/Aircraft_code.png");
 
         let texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
 
@@ -451,24 +451,28 @@ impl AppState {
     fn will_sample_light_field(&self) -> bool {
         self.factorizer.will_sample()
     }
+    fn will_solve_light_field(&self) -> bool {
+        self.factorizer.will_solve()
+    }
 
-    fn sample_light_field(&mut self, ct_image: &DynamicImage) {
+    fn sample_light_field(&mut self) {
         let target_size = (self.texture.dimensions.x, self.texture.dimensions.y);
         let pixel_count_a = self.scene.panels[0].panel.pixel_count;
 
         let pixel_count_b = self.scene.panels[1].panel.pixel_count;
         let device = &self.device;
-        let images = self.factorizer.sample_light_field(
-            ct_image,
-            device,
-            pixel_count_a,
-            pixel_count_b,
-            target_size,
-        );
-        if let Some((img_0, img_1)) = images {
-            self.update_panel(img_0, 0);
+        self.factorizer
+            .sample_light_field(device, pixel_count_a, pixel_count_b, target_size);
+    }
+    fn solver_light_field(&mut self, ct_image: &DynamicImage) {
+        if self.factorizer.will_solve() {
+            let images = self.factorizer.factorize(ct_image);
 
-            self.update_panel(img_1, 1);
+            if let Some((img_0, img_1)) = images {
+                self.update_panel(img_0, 0);
+
+                self.update_panel(img_1, 1);
+            }
         }
     }
     fn update_panel(&mut self, image: DynamicImage, panel_entry: usize) {
@@ -605,12 +609,26 @@ impl App {
             _ => (),
         }
     }
+
     /// Return true if we have sampled the light field, which means that we need to update the
     /// textures!
     pub fn get_sample_light_field(&mut self) -> Result<bool, String> {
         let state = self.state.as_mut().unwrap();
         if state.will_sample_light_field() {
             self.sampling_light_field = true;
+
+            state.sample_light_field();
+            //state.factorizer.sample_buffer_a_y(device);
+
+            self.sampling_light_field = false;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+    pub fn solve_light_field(&mut self) -> bool {
+        let state = self.state.as_mut().unwrap();
+        if state.will_solve_light_field() {
             let c_t = image::ImageReader::open({
                 if self.file_picker.texture_file.is_dir() {
                     self.file_picker.default_texture().clone()
@@ -626,15 +644,9 @@ impl App {
                 state.texture.dimensions.y,
                 image::imageops::FilterType::Nearest,
             );
-
-            state.sample_light_field(&c_t);
-            //state.factorizer.sample_buffer_a_y(device);
-
-            self.sampling_light_field = false;
-            Ok(true)
-        } else {
-            Ok(false)
+            state.solver_light_field(&c_t);
         }
+        state.will_solve_light_field()
     }
 
     // Take the new texture and queue an update
@@ -802,9 +814,12 @@ impl App {
             self.update_texture();
             self.file_picker.change_file = false;
         }
-        self.update_panel_texture();
-        if let Ok(true) = self.get_sample_light_field() {
-            self.default_panel();
+
+        //self.update_panel_texture();
+
+        self.get_sample_light_field().unwrap();
+
+        if self.solve_light_field() {
             self.displaying_panel_textures = true;
         }
 
