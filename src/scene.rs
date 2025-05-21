@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::{
     camera::Camera,
     file_picker::FilePicker,
@@ -49,7 +51,7 @@ impl ScenePanel {
         self.panel.place(&placement_matrix)
     }
 
-    fn test(place_vec: Vector4<f32>) -> ScenePanel {
+    fn new(place_vec: Vector4<f32>, position: usize) -> ScenePanel {
         let yaw = Rad(0.0);
 
         let pitch = Rad(0.0);
@@ -58,6 +60,8 @@ impl ScenePanel {
         placement.w = place_vec;
         let scale = Matrix4::identity();
         let panel = VWPanel::demo_panel();
+        let default_path =
+            PathBuf::from(format!("./resources/panel_compute/panel_{}.png", position));
         ScenePanel {
             pitch,
             yaw,
@@ -65,7 +69,7 @@ impl ScenePanel {
             placement,
             panel,
             lock_pixel: false,
-            texture: FilePicker::new("./resources/panel_compute/".to_string()),
+            texture: FilePicker::new("./resources/panel_compute/".to_string(), default_path),
             scale,
         }
     }
@@ -192,7 +196,7 @@ impl Scene {
                 ),
             ],
 
-            panels: vec![ScenePanel::test(place_1), ScenePanel::test(place_2)],
+            panels: vec![ScenePanel::new(place_1, 1), ScenePanel::new(place_2, 2)],
         }
     }
     /// Will always place the closest quad first

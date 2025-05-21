@@ -1,7 +1,7 @@
 use crate::camera::{Camera, CameraController};
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
-use crate::light_factor::{factorize, image_to_matrix, matrix_to_image, LFBuffers};
+use crate::light_factor::LFBuffers;
 use crate::matrix::NmfSolver;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
@@ -14,6 +14,7 @@ use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
 use std::fs::File;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
@@ -447,32 +448,22 @@ impl AppState {
             factorizer,
         }
     }
+    fn will_sample_light_field(&self) -> bool {
+        self.factorizer.will_sample()
+    }
 
-    fn sample_light_field(&self, ct_image: &DynamicImage) {
+    fn sample_light_field(&mut self, ct_image: &DynamicImage) {
         let target_size = (self.texture.dimensions.x, self.texture.dimensions.y);
         let pixel_count_a = self.scene.panels[0].panel.pixel_count;
-        let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
 
         let pixel_count_b = self.scene.panels[1].panel.pixel_count;
-        let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
         let device = &self.device;
-        let (ma_x, ma_y) = self.factorizer.build_m_a(device, target_size, panel_a_size);
-        let (mb_x, mb_y) = self.factorizer.build_m_b(device, target_size, panel_b_size);
-
-        let c_t = image_to_matrix(ct_image);
-        let (a, b) = factorize(c_t, ma_y, ma_x, mb_y, mb_x, 10);
-
-        let image_a = matrix_to_image(&a);
-        image_a.save_with_format(
-            "./resources/panel_compute/panel_1.png",
-            image::ImageFormat::Png,
-        );
-
-        let image_b = matrix_to_image(&b);
-
-        image_b.save_with_format(
-            "./resources/panel_compute/panel_2.png",
-            image::ImageFormat::Png,
+        self.factorizer.sample_light_field(
+            ct_image,
+            device,
+            pixel_count_a,
+            pixel_count_b,
+            target_size,
         );
     }
 
@@ -516,7 +507,10 @@ impl App {
             backends: Backends::VULKAN,
             ..Default::default()
         });
-        let file_picker = FilePicker::new("./resources/textures/".to_string());
+        let file_picker = FilePicker::new(
+            "./resources/textures/".to_string(),
+            PathBuf::from("./resources/textures/Aircraft_code.png"),
+        );
         Self {
             instance,
             nmf_solver: NmfSolver::new(),
@@ -560,9 +554,7 @@ impl App {
                 let queue = &self.state.as_ref().unwrap().queue;
                 pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
             }
-            PhysicalKey::Code(KeyCode::Comma) => {
-                self.get_sample_light_field();
-            }
+            PhysicalKey::Code(KeyCode::Comma) => {}
             PhysicalKey::Code(KeyCode::KeyM) => {
                 self.update_panel_texture();
                 self.displaying_panel_textures = !self.displaying_panel_textures;
@@ -570,10 +562,19 @@ impl App {
             _ => (),
         }
     }
-    pub fn get_sample_light_field(&mut self) -> Result<(), String> {
-        self.sampling_light_field = true;
-        let state = self.state.as_ref().unwrap();
-        let c_t = image::ImageReader::open(self.file_picker.texture_file.clone())
+    /// Return true if we have sampled the light field, which means that we need to update the
+    /// textures!
+    pub fn get_sample_light_field(&mut self) -> Result<bool, String> {
+        let state = self.state.as_mut().unwrap();
+        if state.will_sample_light_field() {
+            self.sampling_light_field = true;
+            let c_t = image::ImageReader::open({
+                if self.file_picker.texture_file.is_dir() {
+                    self.file_picker.default_texture().clone()
+                } else {
+                    self.file_picker.texture_file.clone()
+                }
+            })
             .unwrap()
             .decode()
             .unwrap()
@@ -583,12 +584,14 @@ impl App {
                 image::imageops::FilterType::Nearest,
             );
 
-        state.sample_light_field(&c_t);
-        //state.factorizer.sample_buffer_a_y(device);
+            state.sample_light_field(&c_t);
+            //state.factorizer.sample_buffer_a_y(device);
 
-        self.sampling_light_field = false;
-
-        Ok(())
+            self.sampling_light_field = false;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     // Take the new texture and queue an update
@@ -628,7 +631,69 @@ impl App {
             );
         }
     }
+    pub fn default_panel(&mut self) {
+        let state = self.state.as_mut().unwrap();
 
+        for x in 0..=1 {
+            let panel = &mut state.scene.panels[x];
+            if !panel.texture.change_file {
+                continue;
+            }
+            let path = &panel.texture.default_texture;
+
+            let file = File::open(path).unwrap();
+            if file.metadata().unwrap().is_file() {
+                let img = image::ImageReader::open(path).unwrap().decode().unwrap();
+
+                let dimensions = img.dimensions();
+                let copy = &state.panel_textures.texture;
+                if dimensions.0 > copy.width() || dimensions.1 > copy.height() {
+                    println!(
+                        "Selected texture {:?} is larger than allocated buffer {:?}",
+                        dimensions,
+                        (copy.width(), copy.height())
+                    );
+                    return;
+                }
+                // Ensure you are of the same size??
+                // let img = img.resize_to_fill(
+                //     state.panel_textures.dimensions.x,
+                //     state.panel_textures.dimensions.y,
+                //     image::imageops::FilterType::Nearest,
+                // );
+
+                let dimensions = img.dimensions();
+
+                state.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        aspect: wgpu::TextureAspect::All,
+                        texture: &state.panel_textures.texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: x as u32,
+                        },
+                    },
+                    &img.to_rgba8(),
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * dimensions.0),
+                        rows_per_image: Some(dimensions.1),
+                    },
+                    wgpu::Extent3d {
+                        width: dimensions.0,
+                        height: dimensions.1,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+            panel.texture.change_file = false;
+        }
+    }
+
+    /// This is highly inefficient, as it uses the os as the between layer. We can probably do
+    /// better, but will leave it be for now
     pub fn update_panel_texture(&mut self) {
         let state = self.state.as_mut().unwrap();
 
@@ -737,6 +802,10 @@ impl App {
             self.file_picker.change_file = false;
         }
         self.update_panel_texture();
+        if let Ok(true) = self.get_sample_light_field() {
+            self.default_panel();
+            self.displaying_panel_textures = true;
+        }
 
         let state = self.state.as_mut().unwrap();
 
@@ -858,7 +927,7 @@ impl App {
             state.scene.draw_ui(context, None);
             self.camera.draw_ui(context, None);
             self.file_picker.draw_ui(context, None);
-            self.nmf_solver.draw_ui(context, None);
+            state.factorizer.draw_ui(context, None);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,

@@ -9,10 +9,11 @@ pub struct FilePicker {
     pub texture_file: PathBuf,
     pub file_dialog: FileDialog,
     pub change_file: bool,
+    pub default_texture: PathBuf,
 }
 
 impl FilePicker {
-    pub fn new(path: String) -> Self {
+    pub fn new(path: String, default_texture: PathBuf) -> Self {
         let path = Path::new(&path);
 
         let texture_file = PathBuf::from(path);
@@ -21,6 +22,7 @@ impl FilePicker {
             texture_file,
             file_dialog,
             change_file: false,
+            default_texture,
         }
     }
     pub fn button(&mut self, ctx: &Context, ui: &mut egui::Ui) {
@@ -33,6 +35,9 @@ impl FilePicker {
                 self.change_file = true;
             }
         }
+    }
+    pub fn default_texture(&self) -> &PathBuf {
+        &self.default_texture
     }
 }
 impl DrawUI for FilePicker {

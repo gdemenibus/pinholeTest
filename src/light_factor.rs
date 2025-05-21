@@ -1,6 +1,7 @@
 use std::num::NonZero;
 
-use egui::ahash::HashSet;
+use cgmath::Vector2;
+use egui::{ahash::HashSet, mutex::RwLock};
 use faer::{
     stats::prelude::{thread_rng, Rng},
     unzip, zip, Mat,
@@ -8,7 +9,7 @@ use faer::{
 use image::{DynamicImage, GenericImageView, ImageBuffer};
 use wgpu::{util::DeviceExt, Buffer};
 
-use crate::utils;
+use crate::{scene::DrawUI, utils};
 
 /// Objective is to implement the write up
 pub fn image_to_matrix(image: &DynamicImage) -> Mat<f32> {
@@ -45,6 +46,12 @@ pub struct LFBuffers {
 
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
+    iter_count: usize,
+    show_steps: bool,
+    starting_values: (f32, f32),
+    rng: bool,
+    sample_next_redraw_flag: bool,
+    progress: Option<RwLock<f32>>,
 }
 impl LFBuffers {
     /// Sets up the light field factorizer step on the gpu, as well as creating the struct
@@ -152,6 +159,12 @@ impl LFBuffers {
             m_b_x_buffer,
             bind_group_layout,
             bind_group,
+            rng: false,
+            iter_count: 50,
+            show_steps: false,
+            starting_values: (0.5, 0.5),
+            sample_next_redraw_flag: false,
+            progress: None,
         }
     }
 
@@ -176,6 +189,9 @@ impl LFBuffers {
         // Remove duplicates!
         triplet_list.retain(|(x, y, _entry)| seen.insert((*x, *y)));
         seen
+    }
+    pub fn will_sample(&self) -> bool {
+        self.sample_next_redraw_flag
     }
 
     pub fn build_m_a(
@@ -233,91 +249,189 @@ impl LFBuffers {
 
         (matrix_m_b_x, matrix_m_b_y)
     }
-}
-
-pub fn factorize(
-    c_t: Mat<f32>,
-    m_a_y: Mat<f32>,
-    m_a_x: Mat<f32>,
-    m_b_y: Mat<f32>,
-    m_b_x: Mat<f32>,
-    iter_count: usize,
-) -> (Mat<f32>, Mat<f32>) {
-    // Give 10 threads
-    matrix_to_image(&c_t)
-        .save_with_format(
-            "./resources/panel_compute/intermediate/C_T.png",
-            image::ImageFormat::Png,
-        )
-        .unwrap();
-    faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
-    let h_a = m_a_y.shape().1;
-    let h_b = m_b_y.shape().1;
-
-    let w_a = m_a_x.shape().1;
-    let w_b = m_b_x.shape().1;
-
-    println!("w_a: {}", w_a);
-    println!("h_a: {}", h_a);
-    println!("h_b: {}", h_b);
-    println!("w_b: {}", w_b);
-    println!("w_t: {}", c_t.shape().1);
-    println!("h_t: {}", c_t.shape().0);
-
-    let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| thread_rng().gen_range(0f32..1.0f32));
-    let mut c_b = Mat::from_fn(h_b, w_b, |_x, _y| thread_rng().gen_range(0f32..1.0f32));
-
-    let mut upper = Mat::<f32>::zeros(c_t.shape().0, c_t.shape().1);
-
-    let mut lower = Mat::<f32>::zeros(c_t.shape().0, c_t.shape().1);
-    for x in 0..iter_count {
-        let path_1 = format!(
-            "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-            x, 1
-        );
-        let path_2 = format!(
-            "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-            x, 2
-        );
-        matrix_to_image(&c_a).save_with_format(path_1, image::ImageFormat::Png);
-        matrix_to_image(&c_b).save_with_format(path_2, image::ImageFormat::Png);
-        // CA update
-        //
-        {
-            let c_b_m_product = &m_b_y * &c_b * m_b_x.transpose();
-            let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
-
-            zip!(&mut upper, &c_b_m_product, &c_t).for_each(|unzip!(upper, c_b, c_t)| {
-                *upper = *c_b * *c_t;
-            });
-
-            zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(|unzip!(lower, c_b, c_a)| {
-                *lower = *c_a * *c_b * *c_b;
-            });
-            let numerator = m_a_y.transpose() * &upper * &m_a_x;
-            let denominator = m_a_y.transpose() * &lower * &m_a_x;
-            zip!(&mut c_a, &numerator, &denominator)
-                .for_each(|unzip!(c_a, n, d)| *c_a *= *n / (*d + 0.0000001f32));
+    pub fn sample_light_field(
+        &mut self,
+        ct_image: &DynamicImage,
+        device: &wgpu::Device,
+        pixel_count_a: Vector2<u32>,
+        pixel_count_b: Vector2<u32>,
+        target_size: (u32, u32),
+    ) {
+        // Flag has not been raised
+        if !self.sample_next_redraw_flag {
+            return;
         }
-        {
-            let c_b_m_product = &m_b_y * &c_b * m_b_x.transpose();
-            let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
+        let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
+        let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
+        let (ma_x, ma_y) = self.build_m_a(device, target_size, panel_a_size);
+        let (mb_x, mb_y) = self.build_m_b(device, target_size, panel_b_size);
 
-            zip!(&mut upper, &c_a_m_product, &c_t).for_each(|unzip!(upper, c_a, c_t)| {
-                *upper = *c_a * *c_t;
-            });
+        let c_t = image_to_matrix(ct_image);
 
-            zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(|unzip!(lower, c_b, c_a)| {
-                *lower = *c_b * *c_a * *c_a;
-            });
+        let (a, b) = self.factorize(c_t, ma_y, ma_x, mb_y, mb_x);
 
-            let numerator = m_b_y.transpose() * &upper * &m_b_x;
-            let denominator = m_b_y.transpose() * &lower * &m_b_x;
-            zip!(&mut c_b, &numerator, &denominator)
-                .for_each(|unzip!(c_b, n, d)| *c_b *= *n / (*d + 0.000000001f32));
-        }
+        let image_a = matrix_to_image(&a);
+        image_a
+            .save_with_format(
+                "./resources/panel_compute/panel_1.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let image_b = matrix_to_image(&b);
+
+        image_b
+            .save_with_format(
+                "./resources/panel_compute/panel_2.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        // We have already sampled, no need to sample again
+        self.sample_next_redraw_flag = false;
     }
-    (c_a, c_b)
+
+    pub fn factorize(
+        &self,
+        c_t: Mat<f32>,
+        m_a_y: Mat<f32>,
+        m_a_x: Mat<f32>,
+        m_b_y: Mat<f32>,
+        m_b_x: Mat<f32>,
+    ) -> (Mat<f32>, Mat<f32>) {
+        // Give 10 threads
+        matrix_to_image(&c_t)
+            .save_with_format(
+                "./resources/panel_compute/intermediate/C_T.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
+        let h_a = m_a_y.shape().1;
+        let h_b = m_b_y.shape().1;
+
+        let w_a = m_a_x.shape().1;
+        let w_b = m_b_x.shape().1;
+
+        println!("w_a: {}", w_a);
+        println!("h_a: {}", h_a);
+        println!("h_b: {}", h_b);
+        println!("w_b: {}", w_b);
+        println!("w_t: {}", c_t.shape().1);
+        println!("h_t: {}", c_t.shape().0);
+
+        let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
+            if self.rng {
+                thread_rng().gen_range(0f32..1.0f32)
+            } else {
+                self.starting_values.0
+            }
+        });
+        let mut c_b = Mat::from_fn(h_b, w_b, |_x, _y| {
+            if self.rng {
+                thread_rng().gen_range(0f32..1.0f32)
+            } else {
+                self.starting_values.1
+            }
+        });
+
+        let mut upper = Mat::<f32>::zeros(c_t.shape().0, c_t.shape().1);
+
+        let mut lower = Mat::<f32>::zeros(c_t.shape().0, c_t.shape().1);
+
+        for x in 0..self.iter_count {
+            if self.show_steps {
+                let path_1 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 1
+                );
+                let path_2 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 2
+                );
+                matrix_to_image(&c_a).save_with_format(path_1, image::ImageFormat::Png);
+                matrix_to_image(&c_b).save_with_format(path_2, image::ImageFormat::Png);
+            }
+            // CA update
+            //
+            {
+                let c_b_m_product = &m_b_y * &c_b * m_b_x.transpose();
+                let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
+
+                zip!(&mut upper, &c_b_m_product, &c_t).for_each(|unzip!(upper, c_b, c_t)| {
+                    *upper = *c_b * *c_t;
+                });
+
+                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                    |unzip!(lower, c_b, c_a)| {
+                        *lower = *c_a * *c_b * *c_b;
+                    },
+                );
+                let numerator = m_a_y.transpose() * &upper * &m_a_x;
+                let denominator = m_a_y.transpose() * &lower * &m_a_x;
+                zip!(&mut c_a, &numerator, &denominator)
+                    .for_each(|unzip!(c_a, n, d)| *c_a *= *n / (*d + 0.0000001f32));
+            }
+            {
+                let c_b_m_product = &m_b_y * &c_b * m_b_x.transpose();
+                let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
+
+                zip!(&mut upper, &c_a_m_product, &c_t).for_each(|unzip!(upper, c_a, c_t)| {
+                    *upper = *c_a * *c_t;
+                });
+
+                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                    |unzip!(lower, c_b, c_a)| {
+                        *lower = *c_b * *c_a * *c_a;
+                    },
+                );
+
+                let numerator = m_b_y.transpose() * &upper * &m_b_x;
+                let denominator = m_b_y.transpose() * &lower * &m_b_x;
+                zip!(&mut c_b, &numerator, &denominator)
+                    .for_each(|unzip!(c_b, n, d)| *c_b *= *n / (*d + 0.000000001f32));
+            }
+        }
+        (c_a, c_b)
+    }
+}
+impl DrawUI for LFBuffers {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+        let title = title.unwrap_or("Light Field Sampler".to_string());
+
+        egui_winit::egui::Window::new(title)
+            .resizable(true)
+            .vscroll(true)
+            .default_size([150.0, 150.0])
+            .default_open(false)
+            .show(ctx, |ui| {
+                ui.label("Iteration count");
+                ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
+                ui.checkbox(&mut self.show_steps, "Print steps");
+                if ui.button("Solve").clicked() {
+                    self.sample_next_redraw_flag = true;
+                }
+                if self.progress.is_some() {
+                    let progress = *self.progress.as_ref().unwrap().read();
+                    ui.add(egui::ProgressBar::new(progress));
+                } else {
+                    ui.label("Not solving");
+                }
+                if ui.button("Reset").clicked() {
+                    todo!("Reset functionality not implemented yet");
+                }
+                ui.checkbox(&mut self.rng, "Random starting values");
+                ui.label("Initial guesses");
+                ui.add(egui::Slider::new(
+                    &mut self.starting_values.0,
+                    0.0f32..=1.0f32,
+                ));
+
+                ui.add(egui::Slider::new(
+                    &mut self.starting_values.1,
+                    0.0f32..=1.0f32,
+                ));
+            });
+    }
 }
 
 #[cfg(test)]

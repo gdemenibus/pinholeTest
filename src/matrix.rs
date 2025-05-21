@@ -725,6 +725,80 @@ mod test {
         let (w, h) = solver.nmf_cpu(100);
         println!("W: {:?}", w);
         println!("H: {:?}", h);
+        pub fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+            let title = title.unwrap_or("Solver".to_string());
+
+            egui_winit::egui::Window::new(title)
+                .resizable(true)
+                .vscroll(true)
+                .default_size([150.0, 150.0])
+                .default_open(false)
+                .show(ctx, |ui| {
+                    ui.label("Iteration count");
+                    ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
+                    ui.checkbox(&mut self.show_steps, "Print steps");
+                    if ui.button("Solve").clicked() {
+                        self
+                    }
+                    if self.progress.is_some() {
+                        ui.add(egui::ProgressBar::new(self.progress.unwrap()));
+                    } else {
+                        ui.label("Not solving");
+                    }
+                    if ui.button("Reset").clicked() {
+                        todo!("Haven't implemented yet");
+                    }
+                    ui.checkbox(&mut self.rng, "Random starting values");
+
+                    ui.label("Initial guesses");
+                    ui.add(egui::Slider::new(
+                        &mut self.starting_values.0,
+                        0.0f32..=1.0f32,
+                    ));
+
+                    ui.add(egui::Slider::new(
+                        &mut self.starting_values.1,
+                        0.0f32..=1.0f32,
+                    ));
+                });
+        }
+        pub fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+            let title = title.unwrap_or("Solver".to_string());
+
+            egui_winit::egui::Window::new(title)
+                .resizable(true)
+                .vscroll(true)
+                .default_size([150.0, 150.0])
+                .default_open(false)
+                .show(ctx, |ui| {
+                    ui.label("Iteration count");
+                    ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
+                    ui.checkbox(&mut self.show_steps, "Print steps");
+                    if ui.button("Solve").clicked() {
+                        self
+                    }
+                    if self.progress.is_some() {
+                        ui.add(egui::ProgressBar::new(self.progress.unwrap()));
+                    } else {
+                        ui.label("Not solving");
+                    }
+                    if ui.button("Reset").clicked() {
+                        todo!("Haven't implemented yet");
+                    }
+                    ui.checkbox(&mut self.rng, "Random starting values");
+
+                    ui.label("Initial guesses");
+                    ui.add(egui::Slider::new(
+                        &mut self.starting_values.0,
+                        0.0f32..=1.0f32,
+                    ));
+
+                    ui.add(egui::Slider::new(
+                        &mut self.starting_values.1,
+                        0.0f32..=1.0f32,
+                    ));
+                });
+        }
         panic!("End");
     }
 }
