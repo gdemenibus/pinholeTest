@@ -271,3 +271,16 @@ There is something wrong at small sizes. I suspect the data coming back is somew
 The borders are not good
 
 Go back and build.
+
+
+## After first stage
+
+Change coloring
+Done!
+
+Experiment with average, max, different view points
+Introduce units
+
+Can you change the mapping?
+
+
