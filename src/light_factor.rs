@@ -52,17 +52,20 @@ pub struct LFBuffers {
     starting_values: (f32, f32),
     rng: bool,
     sample_next_redraw_flag: bool,
+    solve_next_redraw_flag: bool,
     progress: Option<RwLock<f32>>,
     matrix_rep: Option<LFMatrices>,
 }
 
 /// Struct to hold the matrices that we will build.
 /// Observations will be
+#[derive(Clone)]
 pub struct LFMatrices {
     m_a_y_matrix: SparseColMat<u32, f32>,
     m_a_x_matrix: SparseColMat<u32, f32>,
     m_b_y_matrix: SparseColMat<u32, f32>,
     m_b_x_matrix: SparseColMat<u32, f32>,
+    sample_count: usize,
 }
 
 impl LFBuffers {
@@ -176,6 +179,7 @@ impl LFBuffers {
             show_steps: false,
             starting_values: (0.5, 0.5),
             sample_next_redraw_flag: false,
+            solve_next_redraw_flag: false,
             progress: None,
             matrix_rep: None,
         }
@@ -201,10 +205,15 @@ impl LFBuffers {
             .collect();
         // Remove duplicates!
         triplet_list.retain(|(x, y, _entry)| seen.insert((*x, *y)));
+        let max_index = triplet_list.iter().max().unwrap();
+        println!("Max seen is: {:?}", max_index);
         seen
     }
     pub fn will_sample(&self) -> bool {
         self.sample_next_redraw_flag
+    }
+    pub fn will_solve(&self) -> bool {
+        self.solve_next_redraw_flag
     }
 
     pub fn build_m_a(
@@ -213,11 +222,15 @@ impl LFBuffers {
         target_size: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
+        println!("Target size: {:?}", target_size);
+        println!("Panel Size: {:?}", panel_size);
+
         let tripltets_m_a_x = Self::buffer_to_triplet(&self.m_a_x_buffer, device);
         let trplit_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_x
             .iter()
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
+
         // Height t times height a
         let matrix_m_a_x = SparseColMat::try_new_from_triplets(
             target_size.1 as usize,
@@ -248,6 +261,8 @@ impl LFBuffers {
         target_size: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
+        println!("Target size: {:?}", target_size);
+        println!("Panel Size: {:?}", panel_size);
         let tripltets_m_b_x = Self::buffer_to_triplet(&self.m_b_x_buffer, device);
 
         let triplit_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_b_x
@@ -280,65 +295,58 @@ impl LFBuffers {
     }
     pub fn sample_light_field(
         &mut self,
-        ct_image: &DynamicImage,
         device: &wgpu::Device,
         pixel_count_a: Vector2<u32>,
         pixel_count_b: Vector2<u32>,
         target_size: (u32, u32),
-    ) -> Option<(DynamicImage, DynamicImage)> {
+    ) {
         // Flag has not been raised
         if !self.sample_next_redraw_flag {
-            return None;
+            return;
         }
+
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
         let (ma_x, ma_y) = self.build_m_a(device, target_size, panel_a_size);
         let (mb_x, mb_y) = self.build_m_b(device, target_size, panel_b_size);
+        println!("Ma_x:{:?}", ma_x);
+        println!("Ma_y:{:?}", ma_y);
+        println!("Mb_x:{:?}", mb_x);
+        println!("Mb_y:{:?}", mb_y);
 
         let matrices = LFMatrices {
             m_a_y_matrix: ma_y,
             m_a_x_matrix: ma_x,
             m_b_y_matrix: mb_y,
             m_b_x_matrix: mb_x,
+            sample_count: 1,
         };
-        self.matrix_rep = Some(matrices);
+        if self.matrix_rep.is_none() {
+            self.matrix_rep = Some(matrices);
+        } else {
+            self.matrix_rep.as_mut().unwrap().join(matrices);
+        }
 
-        let c_t = image_to_matrix(ct_image);
-
-        let (a, b) = self.factorize(c_t);
-
-        let image_a = matrix_to_image(&a);
-        image_a
-            .save_with_format(
-                "./resources/panel_compute/panel_1.png",
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-
-        let image_b = matrix_to_image(&b);
-
-        image_b
-            .save_with_format(
-                "./resources/panel_compute/panel_2.png",
-                image::ImageFormat::Png,
-            )
-            .unwrap();
         // We have already sampled, no need to sample again
         self.sample_next_redraw_flag = false;
-        Some((image_a, image_b))
     }
 
-    pub fn factorize(&self, c_t: Mat<f32>) -> (Mat<f32>, Mat<f32>) {
-        // Give 10 threads
+    pub fn factorize(&mut self, c_t: &DynamicImage) -> Option<(DynamicImage, DynamicImage)> {
+        let c_t = image_to_matrix(c_t);
         matrix_to_image(&c_t)
             .save_with_format(
                 "./resources/panel_compute/intermediate/C_T.png",
                 image::ImageFormat::Png,
             )
             .unwrap();
+
+        // Give 10 threads
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
 
-        let matrices = self.matrix_rep.as_ref().unwrap();
+        self.matrix_rep.as_ref()?;
+
+        let mut matrices = self.matrix_rep.as_ref().unwrap().clone();
+        matrices.average();
 
         let m_a_y = &matrices.m_a_y_matrix;
         let m_a_x = &matrices.m_a_x_matrix;
@@ -429,9 +437,45 @@ impl LFBuffers {
                     .for_each(|unzip!(c_b, n, d)| *c_b *= *n / (*d + 0.000000001f32));
             }
         }
-        (c_a, c_b)
+
+        let image_a = matrix_to_image(&c_a);
+        image_a
+            .save_with_format(
+                "./resources/panel_compute/panel_1.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let image_b = matrix_to_image(&c_b);
+
+        image_b
+            .save_with_format(
+                "./resources/panel_compute/panel_2.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        self.solve_next_redraw_flag = false;
+        Some((image_a, image_b))
     }
 }
+
+impl LFMatrices {
+    pub fn join(&mut self, other: Self) {
+        self.sample_count += other.sample_count;
+
+        self.m_b_x_matrix = &self.m_b_x_matrix + &other.m_b_x_matrix;
+        self.m_a_x_matrix = &self.m_a_x_matrix + &other.m_a_x_matrix;
+        self.m_b_y_matrix = &self.m_b_y_matrix + &other.m_b_y_matrix;
+        self.m_a_y_matrix = &self.m_a_y_matrix + &other.m_a_y_matrix;
+    }
+    pub fn average(&mut self) {
+        self.m_b_x_matrix /= faer::Scale(self.sample_count as f32);
+        self.m_a_x_matrix /= faer::Scale(self.sample_count as f32);
+        self.m_a_y_matrix /= faer::Scale(self.sample_count as f32);
+        self.m_b_y_matrix /= faer::Scale(self.sample_count as f32);
+    }
+}
+
 impl DrawUI for LFBuffers {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
         let title = title.unwrap_or("Light Field Sampler".to_string());
@@ -445,8 +489,12 @@ impl DrawUI for LFBuffers {
                 ui.label("Iteration count");
                 ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
                 ui.checkbox(&mut self.show_steps, "Print steps");
-                if ui.button("Solve").clicked() {
+
+                if ui.button("Sample").clicked() {
                     self.sample_next_redraw_flag = true;
+                }
+                if ui.button("Solve").clicked() {
+                    self.solve_next_redraw_flag = true;
                 }
                 if self.progress.is_some() {
                     let progress = *self.progress.as_ref().unwrap().read();
