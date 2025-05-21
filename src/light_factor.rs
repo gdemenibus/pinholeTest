@@ -256,10 +256,10 @@ impl LFBuffers {
         pixel_count_a: Vector2<u32>,
         pixel_count_b: Vector2<u32>,
         target_size: (u32, u32),
-    ) {
+    ) -> Option<(DynamicImage, DynamicImage)> {
         // Flag has not been raised
         if !self.sample_next_redraw_flag {
-            return;
+            return None;
         }
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
@@ -288,6 +288,7 @@ impl LFBuffers {
             .unwrap();
         // We have already sampled, no need to sample again
         self.sample_next_redraw_flag = false;
+        Some((image_a, image_b))
     }
 
     pub fn factorize(

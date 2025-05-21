@@ -458,12 +458,55 @@ impl AppState {
 
         let pixel_count_b = self.scene.panels[1].panel.pixel_count;
         let device = &self.device;
-        self.factorizer.sample_light_field(
+        let images = self.factorizer.sample_light_field(
             ct_image,
             device,
             pixel_count_a,
             pixel_count_b,
             target_size,
+        );
+        if let Some((img_0, img_1)) = images {
+            self.update_panel(img_0, 0);
+
+            self.update_panel(img_1, 1);
+        }
+    }
+    fn update_panel(&mut self, image: DynamicImage, panel_entry: usize) {
+        let dimensions = image.dimensions();
+        let copy = &self.panel_textures.texture;
+        if dimensions.0 > copy.width() || dimensions.1 > copy.height() {
+            println!(
+                "Selected texture {:?} is larger than allocated buffer {:?}",
+                dimensions,
+                (copy.width(), copy.height())
+            );
+            return;
+        }
+
+        let dimensions = image.dimensions();
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                aspect: wgpu::TextureAspect::All,
+                texture: &self.panel_textures.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: panel_entry as u32,
+                },
+            },
+            &image.to_rgba8(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * dimensions.0),
+                rows_per_image: Some(dimensions.1),
+            },
+            wgpu::Extent3d {
+                width: dimensions.0,
+                height: dimensions.1,
+                depth_or_array_layers: 1,
+            },
         );
     }
 
@@ -698,7 +741,7 @@ impl App {
         let state = self.state.as_mut().unwrap();
 
         for x in 0..=1 {
-            let panel = &mut state.scene.panels[x];
+            let panel = &state.scene.panels[x];
             if !panel.texture.change_file {
                 continue;
             }
@@ -707,51 +750,9 @@ impl App {
             let file = File::open(path).unwrap();
             if file.metadata().unwrap().is_file() {
                 let img = image::ImageReader::open(path).unwrap().decode().unwrap();
-
-                let dimensions = img.dimensions();
-                let copy = &state.panel_textures.texture;
-                if dimensions.0 > copy.width() || dimensions.1 > copy.height() {
-                    println!(
-                        "Selected texture {:?} is larger than allocated buffer {:?}",
-                        dimensions,
-                        (copy.width(), copy.height())
-                    );
-                    return;
-                }
-                // Ensure you are of the same size??
-                // let img = img.resize_to_fill(
-                //     state.panel_textures.dimensions.x,
-                //     state.panel_textures.dimensions.y,
-                //     image::imageops::FilterType::Nearest,
-                // );
-
-                let dimensions = img.dimensions();
-
-                state.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        aspect: wgpu::TextureAspect::All,
-                        texture: &state.panel_textures.texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: x as u32,
-                        },
-                    },
-                    &img.to_rgba8(),
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * dimensions.0),
-                        rows_per_image: Some(dimensions.1),
-                    },
-                    wgpu::Extent3d {
-                        width: dimensions.0,
-                        height: dimensions.1,
-                        depth_or_array_layers: 1,
-                    },
-                );
+                state.update_panel(img, x);
             }
-            panel.texture.change_file = false;
+            state.scene.panels[x].texture.change_file = false;
         }
     }
 
