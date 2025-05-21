@@ -3,6 +3,7 @@ use std::num::NonZero;
 use cgmath::Vector2;
 use egui::{ahash::HashSet, mutex::RwLock};
 use faer::{
+    sparse::{SparseColMat, Triplet},
     stats::prelude::{thread_rng, Rng},
     unzip, zip, Mat,
 };
@@ -52,7 +53,18 @@ pub struct LFBuffers {
     rng: bool,
     sample_next_redraw_flag: bool,
     progress: Option<RwLock<f32>>,
+    matrix_rep: Option<LFMatrices>,
 }
+
+/// Struct to hold the matrices that we will build.
+/// Observations will be
+pub struct LFMatrices {
+    m_a_y_matrix: SparseColMat<u32, f32>,
+    m_a_x_matrix: SparseColMat<u32, f32>,
+    m_b_y_matrix: SparseColMat<u32, f32>,
+    m_b_x_matrix: SparseColMat<u32, f32>,
+}
+
 impl LFBuffers {
     /// Sets up the light field factorizer step on the gpu, as well as creating the struct
     /// To be added to the pipeline layout
@@ -165,6 +177,7 @@ impl LFBuffers {
             starting_values: (0.5, 0.5),
             sample_next_redraw_flag: false,
             progress: None,
+            matrix_rep: None,
         }
     }
 
@@ -199,25 +212,32 @@ impl LFBuffers {
         device: &wgpu::Device,
         target_size: (u32, u32),
         panel_size: (u32, u32),
-    ) -> (Mat<f32>, Mat<f32>) {
+    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
         let tripltets_m_a_x = Self::buffer_to_triplet(&self.m_a_x_buffer, device);
+        let trplit_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_x
+            .iter()
+            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
+            .collect();
         // Height t times height a
-        let matrix_m_a_x = Mat::from_fn(target_size.1 as usize, panel_size.1 as usize, |x, y| {
-            if tripltets_m_a_x.contains(&(x as u32, y as u32)) {
-                1.0f32
-            } else {
-                0.0f32
-            }
-        });
-        let tripltes_m_a_y = Self::buffer_to_triplet(&self.m_a_y_buffer, device);
+        let matrix_m_a_x = SparseColMat::try_new_from_triplets(
+            target_size.1 as usize,
+            panel_size.1 as usize,
+            &trplit_list,
+        )
+        .unwrap();
 
-        let matrix_m_a_y = Mat::from_fn(target_size.0 as usize, panel_size.0 as usize, |x, y| {
-            if tripltes_m_a_y.contains(&(x as u32, y as u32)) {
-                1.0f32
-            } else {
-                0.0f32
-            }
-        });
+        let tripltets_m_a_y = Self::buffer_to_triplet(&self.m_a_y_buffer, device);
+        let triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_y
+            .iter()
+            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
+            .collect();
+        // Height t times height a
+        let matrix_m_a_y = SparseColMat::try_new_from_triplets(
+            target_size.0 as usize,
+            panel_size.0 as usize,
+            &triplet_list,
+        )
+        .unwrap();
 
         (matrix_m_a_x, matrix_m_a_y)
     }
@@ -227,25 +247,34 @@ impl LFBuffers {
         device: &wgpu::Device,
         target_size: (u32, u32),
         panel_size: (u32, u32),
-    ) -> (Mat<f32>, Mat<f32>) {
+    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
         let tripltets_m_b_x = Self::buffer_to_triplet(&self.m_b_x_buffer, device);
+
+        let triplit_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_b_x
+            .iter()
+            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
+            .collect();
         // Height t times height a
-        let matrix_m_b_x = Mat::from_fn(target_size.1 as usize, panel_size.1 as usize, |x, y| {
-            if tripltets_m_b_x.contains(&(x as u32, y as u32)) {
-                1.0f32
-            } else {
-                0.0f32
-            }
-        });
+        let matrix_m_b_x = SparseColMat::try_new_from_triplets(
+            target_size.1 as usize,
+            panel_size.1 as usize,
+            &triplit_list,
+        )
+        .unwrap();
+
         let tripltes_m_b_y = Self::buffer_to_triplet(&self.m_b_y_buffer, device);
 
-        let matrix_m_b_y = Mat::from_fn(target_size.0 as usize, panel_size.0 as usize, |x, y| {
-            if tripltes_m_b_y.contains(&(x as u32, y as u32)) {
-                1.0f32
-            } else {
-                0.0f32
-            }
-        });
+        let triplet_list: Vec<Triplet<u32, u32, f32>> = tripltes_m_b_y
+            .iter()
+            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
+            .collect();
+
+        let matrix_m_b_y = SparseColMat::try_new_from_triplets(
+            target_size.0 as usize,
+            panel_size.0 as usize,
+            &triplet_list,
+        )
+        .unwrap();
 
         (matrix_m_b_x, matrix_m_b_y)
     }
@@ -266,9 +295,17 @@ impl LFBuffers {
         let (ma_x, ma_y) = self.build_m_a(device, target_size, panel_a_size);
         let (mb_x, mb_y) = self.build_m_b(device, target_size, panel_b_size);
 
+        let matrices = LFMatrices {
+            m_a_y_matrix: ma_y,
+            m_a_x_matrix: ma_x,
+            m_b_y_matrix: mb_y,
+            m_b_x_matrix: mb_x,
+        };
+        self.matrix_rep = Some(matrices);
+
         let c_t = image_to_matrix(ct_image);
 
-        let (a, b) = self.factorize(c_t, ma_y, ma_x, mb_y, mb_x);
+        let (a, b) = self.factorize(c_t);
 
         let image_a = matrix_to_image(&a);
         image_a
@@ -291,14 +328,7 @@ impl LFBuffers {
         Some((image_a, image_b))
     }
 
-    pub fn factorize(
-        &self,
-        c_t: Mat<f32>,
-        m_a_y: Mat<f32>,
-        m_a_x: Mat<f32>,
-        m_b_y: Mat<f32>,
-        m_b_x: Mat<f32>,
-    ) -> (Mat<f32>, Mat<f32>) {
+    pub fn factorize(&self, c_t: Mat<f32>) -> (Mat<f32>, Mat<f32>) {
         // Give 10 threads
         matrix_to_image(&c_t)
             .save_with_format(
@@ -307,6 +337,13 @@ impl LFBuffers {
             )
             .unwrap();
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
+
+        let matrices = self.matrix_rep.as_ref().unwrap();
+
+        let m_a_y = &matrices.m_a_y_matrix;
+        let m_a_x = &matrices.m_a_x_matrix;
+        let m_b_y = &matrices.m_b_y_matrix;
+        let m_b_x = &matrices.m_b_x_matrix;
         let h_a = m_a_y.shape().1;
         let h_b = m_b_y.shape().1;
 
@@ -355,8 +392,8 @@ impl LFBuffers {
             // CA update
             //
             {
-                let c_b_m_product = &m_b_y * &c_b * m_b_x.transpose();
-                let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
+                let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
 
                 zip!(&mut upper, &c_b_m_product, &c_t).for_each(|unzip!(upper, c_b, c_t)| {
                     *upper = *c_b * *c_t;
@@ -367,14 +404,14 @@ impl LFBuffers {
                         *lower = *c_a * *c_b * *c_b;
                     },
                 );
-                let numerator = m_a_y.transpose() * &upper * &m_a_x;
-                let denominator = m_a_y.transpose() * &lower * &m_a_x;
+                let numerator = m_a_y.transpose() * &upper * m_a_x;
+                let denominator = m_a_y.transpose() * &lower * m_a_x;
                 zip!(&mut c_a, &numerator, &denominator)
                     .for_each(|unzip!(c_a, n, d)| *c_a *= *n / (*d + 0.0000001f32));
             }
             {
-                let c_b_m_product = &m_b_y * &c_b * m_b_x.transpose();
-                let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
+                let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
 
                 zip!(&mut upper, &c_a_m_product, &c_t).for_each(|unzip!(upper, c_a, c_t)| {
                     *upper = *c_a * *c_t;
@@ -386,8 +423,8 @@ impl LFBuffers {
                     },
                 );
 
-                let numerator = m_b_y.transpose() * &upper * &m_b_x;
-                let denominator = m_b_y.transpose() * &lower * &m_b_x;
+                let numerator = m_b_y.transpose() * &upper * m_b_x;
+                let denominator = m_b_y.transpose() * &lower * m_b_x;
                 zip!(&mut c_b, &numerator, &denominator)
                     .for_each(|unzip!(c_b, n, d)| *c_b *= *n / (*d + 0.000000001f32));
             }
