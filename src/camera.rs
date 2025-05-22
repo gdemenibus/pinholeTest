@@ -1,5 +1,6 @@
 use cgmath::*;
 use egui::Slider;
+use std::collections::VecDeque;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
 use winit::dpi::PhysicalPosition;
@@ -11,6 +12,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::scene::DrawUI;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
+#[derive(Clone)]
 pub struct Camera {
     pub position: Point3<f32>,
     yaw: Rad<f32>,
@@ -36,17 +38,6 @@ impl Camera {
         let (sin_yaw, cos_yaw) = self.yaw.0.sin_cos();
 
         Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize()
-    }
-
-    pub fn calc_matrix(&self) -> Matrix4<f32> {
-        let (sin_pitch, cos_pitch) = self.pitch.0.sin_cos();
-        let (sin_yaw, cos_yaw) = self.yaw.0.sin_cos();
-
-        Matrix4::look_to_rh(
-            self.position,
-            Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize(),
-            Vector3::unit_y(),
-        )
     }
 }
 impl DrawUI for Camera {
@@ -74,33 +65,6 @@ impl DrawUI for Camera {
                         }),
                 );
             });
-    }
-}
-
-pub struct Projection {
-    aspect: f32,
-    fovy: Rad<f32>,
-    znear: f32,
-    zfar: f32,
-}
-
-impl Projection {
-    pub fn new<F: Into<Rad<f32>>>(width: u32, height: u32, fovy: F, znear: f32, zfar: f32) -> Self {
-        Self {
-            aspect: width as f32 / height as f32,
-            fovy: fovy.into(),
-            znear,
-            zfar,
-        }
-    }
-
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.aspect = width as f32 / height as f32;
-    }
-
-    // Right handed projection matrix, so controls might get inverted!
-    pub fn calc_matrix(&self) -> Matrix4<f32> {
-        perspective(self.fovy, self.aspect, self.znear, self.zfar)
     }
 }
 
@@ -176,14 +140,6 @@ impl CameraController {
         self.rotate_vertical = mouse_dy as f32;
     }
 
-    pub fn process_scroll(&mut self, delta: &MouseScrollDelta) {
-        self.scroll = -match delta {
-            // I'm assuming a line is about 100 pixels
-            MouseScrollDelta::LineDelta(_, scroll) => scroll * 100.0,
-            MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => *scroll as f32,
-        };
-    }
-
     pub fn update_camera(&mut self, camera: &mut Camera, dt: Duration) {
         let dt = dt.as_secs_f32();
 
@@ -224,5 +180,47 @@ impl CameraController {
         } else if camera.pitch > Rad(SAFE_FRAC_PI_2) {
             camera.pitch = Rad(SAFE_FRAC_PI_2);
         }
+    }
+}
+
+// Struct to store camera positions, especially when sampling!
+pub struct CameraHistory {
+    history: VecDeque<Camera>,
+}
+impl CameraHistory {
+    pub fn new() -> Self {
+        CameraHistory {
+            history: VecDeque::new(),
+        }
+    }
+    pub fn save_point(&mut self, camera: &Camera) {
+        self.history.push_back(camera.clone());
+    }
+    pub fn next_save(&mut self) -> Option<&Camera> {
+        self.history.rotate_left(1);
+        let next = self.history.back();
+        next
+    }
+    pub fn previous_save(&mut self) -> Option<&Camera> {
+        self.history.rotate_right(1);
+        let next = self.history.back();
+        next
+    }
+}
+impl DrawUI for CameraHistory {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+        let title = title.unwrap_or("Camera Settings".to_string());
+
+        egui_winit::egui::Window::new(title)
+            .resizable(true)
+            .vscroll(true)
+            .default_open(false)
+            .default_size([150.0, 125.0])
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "Current camera positions saved:{}",
+                    self.history.len()
+                ))
+            });
     }
 }

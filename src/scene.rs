@@ -24,8 +24,85 @@ TODO: SCENE ONLY USES QUAD, MIGHT WANT MORE?
 Scene struct. Encapsulates UI and handles access to the raw quads
 */
 pub struct Scene {
-    world: Vec<(Matrix4<f32>, Quad)>,
+    world: Vec<Target>,
     pub panels: Vec<ScenePanel>,
+}
+
+pub struct Target {
+    yaw: Rad<f32>,
+    pitch: Rad<f32>,
+    roll: Rad<f32>,
+    placement: Matrix4<f32>,
+    scale: Matrix4<f32>,
+    quad: Quad,
+}
+
+impl Target {
+    fn new(place_vec: Vector4<f32>) -> Self {
+        let yaw = Rad(0.0);
+
+        let pitch = Rad(0.0);
+        let roll = Rad(0.0);
+        let mut placement = Matrix4::identity();
+        placement.w = place_vec;
+        let scale = Matrix4::identity();
+        let quad = Quad::new(
+            Vector3::new(-0.5, 0.5, 0.0),
+            Vector3::new(0.5, 0.5, 0.0),
+            Vector3::new(-0.5, -0.5, 0.0),
+            Vector3::new(0.5, -0.5, 0.0),
+        );
+
+        Target {
+            quad,
+            yaw,
+            pitch,
+            roll,
+            placement,
+            scale,
+        }
+    }
+
+    fn place_target(&self) -> Quad {
+        let yaw_matrix = Matrix4::from_angle_x(self.yaw);
+        let pitch_matrix = Matrix4::from_angle_y(self.pitch);
+        let roll_matrix = Matrix4::from_angle_z(self.roll);
+        // will need to double check this ordering
+        let placement_matrix =
+            self.placement * self.scale * yaw_matrix * pitch_matrix * roll_matrix;
+        self.quad.place(&placement_matrix)
+    }
+}
+
+impl DrawUI for Target {
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>) {
+        let title = title.unwrap_or("VW Panel".to_string());
+        egui_winit::egui::Window::new(title)
+            .resizable(true)
+            .vscroll(true)
+            .default_size([150.0, 175.0])
+            .default_open(false)
+            .show(ctx, |ui| {
+                ui.label(RichText::new("Move x").color(Color32::RED));
+                ui.add(egui::Slider::new(&mut self.placement.w.x, -10.0..=10.0));
+                ui.label(RichText::new("Move y").color(Color32::GREEN));
+                ui.add(egui::Slider::new(&mut self.placement.w.y, -10.0..=10.0));
+                ui.label(RichText::new("Move z").color(Color32::LIGHT_BLUE));
+                ui.add(egui::Slider::new(&mut self.placement.w.z, -10.0..=10.0));
+                ui.label(RichText::new("Yaw").color(Color32::RED));
+                ui.add(egui::Slider::new(&mut self.yaw.0, -1.0..=1.0));
+                ui.label(RichText::new("Pitch").color(Color32::GREEN));
+                ui.add(egui::Slider::new(&mut self.pitch.0, -1.0..=1.0));
+                ui.label(RichText::new("Roll").color(Color32::LIGHT_BLUE));
+                ui.add(egui::Slider::new(&mut self.roll.0, -1.0..=1.0));
+
+                ui.label("Scale x");
+                ui.add(egui::DragValue::new(&mut self.scale.x.x).speed(1.0));
+
+                ui.label("Scale y");
+                ui.add(egui::DragValue::new(&mut self.scale.y.y).speed(1.0));
+            });
+    }
 }
 
 /// Wrapper around panel that controls access to the UI, as well as their placement
@@ -142,21 +219,10 @@ impl DrawUI for Scene {
     fn draw_ui(&mut self, ctx: &Context, title: Option<String>) {
         let _title = title.unwrap_or("Scene".to_string());
         let mut count = 1;
-        for (matrix, _quad) in self.world.iter_mut() {
-            egui_winit::egui::Window::new(format!("Test quad {}", count))
-                .resizable(true)
-                .vscroll(true)
-                .default_open(false)
-                .default_size([150.0, 125.0])
-                .show(ctx, |ui| {
-                    ui.label("Move x");
-                    ui.add(egui::DragValue::new(&mut matrix.w.x).speed(1.0));
-                    ui.label("Move y");
-                    ui.add(egui::DragValue::new(&mut matrix.w.y).speed(1.0));
-                    ui.label("Move z");
-                    ui.add(egui::DragValue::new(&mut matrix.w.z).speed(1.0));
-                });
+        for target in self.world.iter_mut() {
+            let title = Some(format!("Target Quad {}", count));
             count += 1;
+            target.draw_ui(ctx, title);
         }
         count = 1;
         for panel in self.panels.iter_mut() {
@@ -174,27 +240,10 @@ impl Scene {
         let place_1 = Vector4::new(0.5, 1.5, 3.0, 1.0);
 
         let place_2 = Vector4::new(0.5, 1.5, 2.0, 1.0);
+        let target_1 = Vector4::new(0.5, 1.5, 0.0, 1.0);
+        let target_2 = Vector4::new(7.5, 1.5, 0.0, 1.0);
         Scene {
-            world: vec![
-                (
-                    Matrix4::identity(),
-                    Quad::new(
-                        Vector3::new(1.0, 0.0, 1.0),
-                        Vector3::new(0.0, 0.0, 0.0),
-                        Vector3::new(1.0, 1.0, 1.0),
-                        Vector3::new(0.0, 1.0, 0.0),
-                    ),
-                ),
-                (
-                    Matrix4::identity(),
-                    Quad::new(
-                        Vector3::new(1.0, 1.0, 1.0),
-                        Vector3::new(0.0, 1.0, 1.0),
-                        Vector3::new(1.0, 2.0, 1.0),
-                        Vector3::new(0.0, 2.0, 1.0),
-                    ),
-                ),
-            ],
+            world: vec![Target::new(target_1), Target::new(target_2)],
 
             panels: vec![ScenePanel::new(place_1, 1), ScenePanel::new(place_2, 2)],
         }
@@ -206,7 +255,7 @@ impl Scene {
         let mut shapes: Vec<Quad> = self
             .world
             .iter()
-            .map(|(matrix, shape)| shape.place(matrix))
+            .map(|target| target.place_target())
             .collect();
 
         shapes.sort_by(|x, y| {
