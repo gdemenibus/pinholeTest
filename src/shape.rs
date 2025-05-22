@@ -87,7 +87,7 @@ impl VWPanel {
         }
     }
     pub fn border_correction(&self) -> Self {
-        let pixel_count = self.pixel_count + Vector2::new(2, 2);
+        let pixel_count = self.pixel_count + Vector2::new(0, 0);
         VWPanel {
             quad: self.quad.clone(),
             pixel_count,

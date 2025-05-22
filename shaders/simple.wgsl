@@ -117,12 +117,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // If panels are involved, means we are going to hit something
     //
-    if (panels_use_texture != 0) {
+    if panels_use_texture != 0 {
         let color = panels_texture_hit(&ray);
         if color.a != 0.0 {
             return color;
         }
-
     }
 
     // Check if first panel is hit
@@ -163,7 +162,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             if trig_2.hit {
                 hit_first_location = trig_2.pixel_center_model_space;
                 coordinates_first_relative_pixel = trig_2.pixel_coords;
-
             }
             if hit_first {
                 let new_direction = hit_first_location - ray.origin;
@@ -181,20 +179,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 hit_second_location = trig_2.pixel_center_model_space;
                 coordinates_second_relative_pixel = trig_2.pixel_coords;
             }
-
         }
 
-        if (trig_1.border) {
+        if trig_1.border {
             clean_up_record(position);
             return border_color;
         }
 
-        if (trig_2.border) {
+        if trig_2.border {
 
             clean_up_record(position);
             return border_color;
         }
-
     }
 
     // We have hit both
@@ -205,7 +201,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let new_direction = hit_second_location - new_origin;
         // the new ray
         light_field_distortion(&ray, new_origin, new_direction);
-
     } else if hit_first {
         let new_direction = hit_first_location - ray.origin;
         light_field_distortion(&ray, ray.origin, new_direction);
@@ -213,17 +208,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let new_direction = hit_second_location - ray.origin;
         light_field_distortion(&ray, ray.origin, new_direction);
-
     }
 
     for (var index = 0u; index < scene_size; index++) {
         var target_intersection = intersection(&ray, scene[index].a, scene[index].b, scene[index].c, true);
         var color = target_intersection.color;
-        if (color.w != 0.0) {
-            if (hit_first || hit_second) {
+
+        if color.w != 0.0 {
+            if hit_first || hit_second {
 
                 let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
-                if (hit_first && hit_second) {
+                if hit_first && hit_second {
 
                     record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
                 }
@@ -236,13 +231,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         target_intersection = intersection(&ray, scene[index].b, scene[index].c, scene[index].d, false);
         color = target_intersection.color;
 
-        if (color.w != 0.0) {
+        if color.w != 0.0 {
 
-            if (hit_first || hit_second) {
+            if hit_first || hit_second {
 
                 let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
-                if (hit_first && hit_second) {
+                if hit_first && hit_second {
 
                     record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
                 }
@@ -251,12 +246,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             }
             return color;
         }
-
     }
 
     clean_up_record(position);
     return vec4f(0.0, 0.0, 0.3, 1.0);
-
 }
 
 fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
@@ -280,7 +273,6 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
             let sample = textureSample(texture_panel, sampler_panel, coordinates, index);
             let opacity = 1.0 - sample.r;
             color = sample * color;
-
         }
 
         let trig_2 = intersection_panel(ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
@@ -295,16 +287,13 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
             let sample = textureSample(texture_panel, sampler_panel, coordinates, index);
 
             color = sample * color;
-
         }
         ;
-
     }
 
     let opacity = 1.0 - color.r;
     color.a = opacity;
     return color;
-
 }
 
 
@@ -321,22 +310,22 @@ fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, pan
     //  0.0 means we didn't hit
 
     // ROW, COLUMN, ENTRY
-    m_a_y_buffer[array_coordination] = targets_coords.y;
-    m_a_y_buffer[array_coordination + 1] = panel_1_coords.y;
+    // There is an unusual problem, sometimes we record hits that are outside the panel?
+    m_a_y_buffer[array_coordination] = min(targets_coords.y, tex_size.y);
+    m_a_y_buffer[array_coordination + 1] = min(panel_1_coords.y, panels[0].pixel_count.y);
     m_a_y_buffer[array_coordination + 2] = 1;
 
-    m_a_x_buffer[array_coordination] = targets_coords.x;
-    m_a_x_buffer[array_coordination + 1] = panel_1_coords.x;
+    m_a_x_buffer[array_coordination] = min(targets_coords.x, tex_size.x);
+    m_a_x_buffer[array_coordination + 1] = min(panel_1_coords.x, panels[0].pixel_count.x);
     m_a_x_buffer[array_coordination + 2] = 1;
 
-    m_b_y_buffer[array_coordination] = targets_coords.y;
-    m_b_y_buffer[array_coordination + 1] = panel_2_coords.y;
+    m_b_y_buffer[array_coordination] = min(targets_coords.y, tex_size.y);
+    m_b_y_buffer[array_coordination + 1] = min(panel_2_coords.y, panels[1].pixel_count.y);
     m_b_y_buffer[array_coordination + 2] = 1;
 
-    m_b_x_buffer[array_coordination] = targets_coords.x;
-    m_b_x_buffer[array_coordination + 1] = panel_2_coords.x;
+    m_b_x_buffer[array_coordination] = min(targets_coords.x, tex_size.x);
+    m_b_x_buffer[array_coordination + 1] = min(panel_2_coords.x, panels[1].pixel_count.x);
     m_b_x_buffer[array_coordination + 2] = 1;
-
 }
 fn clean_up_record(position: vec2<f32>) {
     let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
@@ -361,7 +350,6 @@ fn clean_up_record(position: vec2<f32>) {
 fn light_field_distortion(ray: ptr<function, Ray>, new_origin: vec3f, new_direction: vec3f) {
     (*ray).origin = new_origin;
     (*ray).direction = new_direction;
-
 }
 ;
 struct Pixel_Panel {
@@ -436,27 +424,27 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
     var rey_cross_e2 = cross(e2,(*ray).direction);
     var det = dot(rey_cross_e2, e1);
 
-    if (det > -eps && det < eps) {
+    if det > -eps && det < eps {
         return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
     }
     var inv_det = 1.0 / det;
     var s = (*ray).origin - a;
     var u = inv_det * dot(rey_cross_e2, s);
 
-    if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
+    if (u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps) {
         return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
     }
     var s_cross_e1 = cross(e1, s);
     var v = inv_det * dot(s_cross_e1,(*ray).direction);
     var w = 1.0 - v - u;
 
-    if (v < 0.0 || u + v > 1.0) {
+    if v < 0.0 || u + v > 1.0 {
         return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
     }
     // At this stage we can compute t to find out where the intersection point is on the line.
     var t = inv_det * dot(s_cross_e1, e2);
 
-    if (t > eps) {
+    if t > eps {
         hit = true;
         let bary_coords = vec3f(u, v, w);
 
@@ -485,14 +473,12 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
             if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
                 border = true;
                 return PanelIntersection(hit, border, pixels, pixel_center_model_space);
-
             } else {
                 //Distort Camera!
                 return PanelIntersection(hit, border, pixels, pixel_center_model_space);
             //return vec4f(u, v, w, 1.0);
 
             //return miss_color;
-
             }
         } else {
             // B, C, D
@@ -515,16 +501,13 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
             } else {
 
                 return PanelIntersection(hit, border, pixels, pixel_center_model_space);
-
             }
-
         }
 
     //return vec4f(0.0, 0.5, 0.5, 1.0);
     }
 
     return PanelIntersection(hit, border, pixel_coords, pixel_center_model_space);
-
 }
 ;
 struct TargetIntersection {
@@ -538,7 +521,7 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
     var rey_cross_e2 = cross(e2,(*ray).direction);
     var det = dot(rey_cross_e2, e1);
 
-    if (det > -eps && det < eps) {
+    if det > -eps && det < eps {
         return TargetIntersection(
             miss_color,
             vec2u(0, 0),
@@ -548,7 +531,7 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
     var s = (*ray).origin - a;
     var u = inv_det * dot(rey_cross_e2, s);
 
-    if ((u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps)) {
+    if (u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps) {
         return TargetIntersection(
             miss_color,
             vec2u(0, 0),
@@ -558,7 +541,7 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
     var v = inv_det * dot(s_cross_e1,(*ray).direction);
     var w = 1.0 - v - u;
 
-    if (v < 0.0 || u + v > 1.0) {
+    if v < 0.0 || u + v > 1.0 {
         return TargetIntersection(
             miss_color,
             vec2u(0, 0),
@@ -567,7 +550,7 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
     // At this stage we can compute t to find out where the intersection point is on the line.
     var t = inv_det * dot(s_cross_e1, e2);
 
-    if (t > eps) {
+    if t > eps {
         let bary_coords = vec3f(u, v, w);
 
         // Tex coordinates
@@ -619,7 +602,6 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
         miss_color,
         vec2u(0, 0),
     );
-
 }
 
 // Texture is upside down for Shader? why?
@@ -631,7 +613,6 @@ fn sample_texture(bary_coords: vec3f, tex_coord_0: vec2f, tex_coord1: vec2f, tex
     let coordinates = vec2f(x_coord, y_coord);
 
     return textureSample(t_diffuse, s_diffuse, coordinates);
-
 }
 
 fn collapse(in: vec4<bool>) -> bool {
