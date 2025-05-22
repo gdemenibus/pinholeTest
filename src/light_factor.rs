@@ -215,6 +215,9 @@ impl LFBuffers {
     pub fn will_solve(&self) -> bool {
         self.solve_next_redraw_flag
     }
+    fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u32, f32>>) {
+        triplets.retain(|x| x.row < rows && x.col < columns);
+    }
 
     pub fn build_m_a(
         &self,
@@ -226,24 +229,27 @@ impl LFBuffers {
         println!("Panel Size: {:?}", panel_size);
 
         let tripltets_m_a_x = Self::buffer_to_triplet(&self.m_a_x_buffer, device);
-        let trplit_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_x
+        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_x
             .iter()
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
+        Self::check_triplets(target_size.1, panel_size.1, &mut triplet_list);
 
         // Height t times height a
         let matrix_m_a_x = SparseColMat::try_new_from_triplets(
             target_size.1 as usize,
             panel_size.1 as usize,
-            &trplit_list,
+            &triplet_list,
         )
         .unwrap();
 
         let tripltets_m_a_y = Self::buffer_to_triplet(&self.m_a_y_buffer, device);
-        let triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_y
+        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_y
             .iter()
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
+
+        Self::check_triplets(target_size.0, panel_size.0, &mut triplet_list);
         // Height t times height a
         let matrix_m_a_y = SparseColMat::try_new_from_triplets(
             target_size.0 as usize,
@@ -265,25 +271,28 @@ impl LFBuffers {
         println!("Panel Size: {:?}", panel_size);
         let tripltets_m_b_x = Self::buffer_to_triplet(&self.m_b_x_buffer, device);
 
-        let triplit_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_b_x
+        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_b_x
             .iter()
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
+
+        Self::check_triplets(target_size.1, panel_size.1, &mut triplet_list);
         // Height t times height a
         let matrix_m_b_x = SparseColMat::try_new_from_triplets(
             target_size.1 as usize,
             panel_size.1 as usize,
-            &triplit_list,
+            &triplet_list,
         )
         .unwrap();
 
         let tripltes_m_b_y = Self::buffer_to_triplet(&self.m_b_y_buffer, device);
 
-        let triplet_list: Vec<Triplet<u32, u32, f32>> = tripltes_m_b_y
+        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltes_m_b_y
             .iter()
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
 
+        Self::check_triplets(target_size.0, panel_size.0, &mut triplet_list);
         let matrix_m_b_y = SparseColMat::try_new_from_triplets(
             target_size.0 as usize,
             panel_size.0 as usize,
@@ -309,10 +318,6 @@ impl LFBuffers {
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
         let (ma_x, ma_y) = self.build_m_a(device, target_size, panel_a_size);
         let (mb_x, mb_y) = self.build_m_b(device, target_size, panel_b_size);
-        println!("Ma_x:{:?}", ma_x);
-        println!("Ma_y:{:?}", ma_y);
-        println!("Mb_x:{:?}", mb_x);
-        println!("Mb_y:{:?}", mb_y);
 
         let matrices = LFMatrices {
             m_a_y_matrix: ma_y,
@@ -346,7 +351,7 @@ impl LFBuffers {
         self.matrix_rep.as_ref()?;
 
         let mut matrices = self.matrix_rep.as_ref().unwrap().clone();
-        matrices.average();
+        //matrices.average();
 
         let m_a_y = &matrices.m_a_y_matrix;
         let m_a_x = &matrices.m_a_x_matrix;
@@ -474,6 +479,7 @@ impl LFMatrices {
         self.m_a_y_matrix /= faer::Scale(self.sample_count as f32);
         self.m_b_y_matrix /= faer::Scale(self.sample_count as f32);
     }
+    pub fn max(&mut self) {}
 }
 
 impl DrawUI for LFBuffers {
