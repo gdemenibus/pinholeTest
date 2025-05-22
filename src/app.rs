@@ -1,4 +1,4 @@
-use crate::camera::{Camera, CameraController};
+use crate::camera::{Camera, CameraController, CameraHistory};
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
 use crate::light_factor::LFBuffers;
@@ -537,6 +537,7 @@ pub struct App {
     window: Option<Arc<Window>>,
     camera: Camera,
     camera_control: CameraController,
+    camera_history: CameraHistory,
     file_picker: FilePicker,
     previous_draw: Instant,
     nmf_solver: NmfSolver,
@@ -576,6 +577,7 @@ impl App {
             ),
             camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
+            camera_history: CameraHistory::new(),
             file_picker,
         }
     }
@@ -601,13 +603,34 @@ impl App {
                 let queue = &self.state.as_ref().unwrap().queue;
                 pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
             }
-            PhysicalKey::Code(KeyCode::Comma) => {}
+            PhysicalKey::Code(KeyCode::Comma) => {
+                self.previous_camera();
+            }
+
+            PhysicalKey::Code(KeyCode::Period) => {
+                self.next_camera();
+            }
             PhysicalKey::Code(KeyCode::KeyM) => {
                 self.update_panel_texture();
                 self.displaying_panel_textures = !self.displaying_panel_textures;
             }
             _ => (),
         }
+    }
+
+    pub fn next_camera(&mut self) {
+        self.camera = self
+            .camera_history
+            .next_save()
+            .unwrap_or(&self.camera)
+            .clone();
+    }
+    pub fn previous_camera(&mut self) {
+        self.camera = self
+            .camera_history
+            .previous_save()
+            .unwrap_or(&self.camera)
+            .clone();
     }
 
     /// Return true if we have sampled the light field, which means that we need to update the
@@ -619,6 +642,7 @@ impl App {
 
             state.sample_light_field();
             //state.factorizer.sample_buffer_a_y(device);
+            self.camera_history.save_point(&self.camera);
 
             self.sampling_light_field = false;
             Ok(true)
