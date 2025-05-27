@@ -2,14 +2,12 @@ use crate::camera::{Camera, CameraController, CameraHistory};
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
 use crate::light_factor::LFBuffers;
-use crate::matrix::NmfSolver;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
 use crate::texture::Texture;
 use crate::{matrix, texture, vertex};
 use crevice::std140::{AsStd140, Std140};
-use egui::ahash::{HashMap, HashMapExt};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
@@ -18,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-use wgpu::{Backends, BindGroup, Buffer, RenderPipeline};
+use wgpu::{Backends, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
@@ -26,7 +24,6 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-type BindNumber = usize;
 // Struct to deal with all the drawing. This is where all the setting live
 pub struct AppState {
     pub device: wgpu::Device,
@@ -38,12 +35,8 @@ pub struct AppState {
     pub render_pipe: RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub bind_map: HashMap<BindNumber, BindGroup>,
     pub num_index: u32,
-    pub buffer_map: HashMap<BindNumber, Buffer>,
     pub scene: Scene,
-    pub texture: Texture,
-    pub panel_textures: Texture,
     pub factorizer: LFBuffers,
 }
 
@@ -102,252 +95,18 @@ impl AppState {
         surface.configure(&device, &surface_config);
 
         //
-        let texture_bytes = include_bytes!("../resources/textures/Aircraft_code.png");
-
-        let texture = texture::Texture::from_bytes(&device, &queue, texture_bytes, "Damn");
-
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        // This should match the filterable field of the
-                        // corresponding Texture entry above.
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        // This should match the filter﻿able field of the
-                        // corresponding Texture entry above.
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some("texture_bind_group_layout"),
-            });
-        let text_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Size of texture being passed!"),
-            contents: texture.dimensions.as_std140().as_bytes(),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: text_size_buffer.as_entire_binding(),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
-
         // Panel group
 
         // Buffers to pass info?
-        let scene = Scene::test();
-
+        //
         let imag_height = surface_config.height;
         let image_width = surface_config.width;
         let rt_test = RayTraceInfo::test(camera, imag_height, image_width);
-
-        let rt_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Ray trace buffer, contains all objects"),
-            contents: rt_test.as_std140().as_bytes(),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let scene_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Buffer for Scene, contains all objects"),
-            contents: &scene.world_as_bytes(camera),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let scene_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::all(),
-                    count: None,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::all(),
-                    count: None,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                },
-            ],
-            label: Some("Binding group for Scene"),
-        });
-
-        let scene_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Scene Bind"),
-            layout: &scene_bind_group,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: scene_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: rt_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        let panel_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Buffer for Panels"),
-            contents: &scene.panels_as_bytes(camera),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let panel_textures = Self::panel_textures_set_up(&device, &queue);
-
-        let panel_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::all(),
-                    count: None,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::all(),
-                    count: None,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This should match the filterable field of the
-                    // corresponding Texture entry above.
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    // This should match the filter﻿able field of the
-                    // corresponding Texture entry above.
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("Binding group for Scene"),
-        });
-
-        let panel_textures_size_buffer =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Size of texture being passed!"),
-                contents: panel_textures.dimensions.as_std140().as_bytes(),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
-        let panel_bool_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Boolean for panel textures"),
-            contents: 0u32.as_std140().as_bytes(),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let panel_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Binding For Panel group"),
-            layout: &panel_bind_group,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: panel_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: panel_bool_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&panel_textures.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&panel_textures.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: panel_textures_size_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let scene = Scene::new(rt_test, camera, &device, &queue);
 
         // Bind group for reading from
         //
         let factorizer = LFBuffers::set_up(&device);
-
-        let mut bind_map = HashMap::new();
-        bind_map.insert(0, scene_bind);
-        bind_map.insert(1, diffuse_bind_group);
-        bind_map.insert(2, panel_bind);
-
-        // TODO: Might replace this with enums?
-        // Make a bind group struct, go for greater generality
-        let mut buffer_map = HashMap::new();
-        buffer_map.insert(0, scene_buffer);
-        buffer_map.insert(1, rt_buffer);
-        buffer_map.insert(2, panel_buffer);
-        buffer_map.insert(5, panel_bool_buffer);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -361,9 +120,9 @@ impl AppState {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &scene_bind_group,
-                    &texture_bind_group_layout,
-                    &panel_bind_group,
+                    &scene.target_binds.bind_layout,
+                    &scene.texture_binds.bind_layout,
+                    &scene.panel_binds.bind_layout,
                     &factorizer.bind_group_layout,
                 ],
                 push_constant_ranges: &[],
@@ -439,12 +198,8 @@ impl AppState {
             render_pipe,
             vertex_buffer,
             index_buffer,
-            bind_map,
             num_index: index_list.len() as u32,
-            buffer_map,
             scene,
-            texture,
-            panel_textures,
             factorizer,
         }
     }
@@ -456,7 +211,8 @@ impl AppState {
     }
 
     fn sample_light_field(&mut self) {
-        let target_size = (self.texture.dimensions.x, self.texture.dimensions.y);
+        let texture = &self.scene.texture_binds.target_texture;
+        let target_size = (texture.dimensions.x, texture.dimensions.y);
         let pixel_count_a = self.scene.panels[0].panel.pixel_count;
 
         let pixel_count_b = self.scene.panels[1].panel.pixel_count;
@@ -477,7 +233,7 @@ impl AppState {
     }
     fn update_panel(&mut self, image: DynamicImage, panel_entry: usize) {
         let dimensions = image.dimensions();
-        let copy = &self.panel_textures.texture;
+        let copy = &self.scene.panel_binds.panel_texture.texture;
         if dimensions.0 > copy.width() || dimensions.1 > copy.height() {
             println!(
                 "Selected texture {:?} is larger than allocated buffer {:?}",
@@ -492,7 +248,7 @@ impl AppState {
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 aspect: wgpu::TextureAspect::All,
-                texture: &self.panel_textures.texture,
+                texture: copy,
                 mip_level: 0,
                 origin: wgpu::Origin3d {
                     x: 0,
@@ -540,7 +296,6 @@ pub struct App {
     camera_history: CameraHistory,
     file_picker: FilePicker,
     previous_draw: Instant,
-    nmf_solver: NmfSolver,
     mouse_press: bool,
     mouse_on_ui: bool,
     disable_controls: bool,
@@ -561,7 +316,6 @@ impl App {
         );
         Self {
             instance,
-            nmf_solver: NmfSolver::new(),
             sampling_light_field: false,
             mouse_press: false,
             mouse_on_ui: false,
@@ -664,8 +418,8 @@ impl App {
             .decode()
             .unwrap()
             .resize_to_fill(
-                state.texture.dimensions.x,
-                state.texture.dimensions.y,
+                state.scene.texture_binds.target_texture.dimensions.x,
+                state.scene.texture_binds.target_texture.dimensions.y,
                 image::imageops::FilterType::Nearest,
             );
             state.solver_light_field(&c_t);
@@ -686,12 +440,17 @@ impl App {
 
             // Ensure you are of the same size??
             let img = img.resize_to_fill(
-                state.texture.dimensions.x,
-                state.texture.dimensions.y,
+                state.scene.texture_binds.target_texture.dimensions.x,
+                state.scene.texture_binds.target_texture.dimensions.y,
                 image::imageops::FilterType::Nearest,
             );
 
-            let copy = state.texture.texture.as_image_copy();
+            let copy = state
+                .scene
+                .texture_binds
+                .target_texture
+                .texture
+                .as_image_copy();
             let dimensions = img.dimensions();
 
             state.queue.write_texture(
@@ -708,66 +467,6 @@ impl App {
                     depth_or_array_layers: 1,
                 },
             );
-        }
-    }
-    pub fn default_panel(&mut self) {
-        let state = self.state.as_mut().unwrap();
-
-        for x in 0..=1 {
-            let panel = &mut state.scene.panels[x];
-            if !panel.texture.change_file {
-                continue;
-            }
-            let path = &panel.texture.default_texture;
-
-            let file = File::open(path).unwrap();
-            if file.metadata().unwrap().is_file() {
-                let img = image::ImageReader::open(path).unwrap().decode().unwrap();
-
-                let dimensions = img.dimensions();
-                let copy = &state.panel_textures.texture;
-                if dimensions.0 > copy.width() || dimensions.1 > copy.height() {
-                    println!(
-                        "Selected texture {:?} is larger than allocated buffer {:?}",
-                        dimensions,
-                        (copy.width(), copy.height())
-                    );
-                    return;
-                }
-                // Ensure you are of the same size??
-                // let img = img.resize_to_fill(
-                //     state.panel_textures.dimensions.x,
-                //     state.panel_textures.dimensions.y,
-                //     image::imageops::FilterType::Nearest,
-                // );
-
-                let dimensions = img.dimensions();
-
-                state.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        aspect: wgpu::TextureAspect::All,
-                        texture: &state.panel_textures.texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: x as u32,
-                        },
-                    },
-                    &img.to_rgba8(),
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * dimensions.0),
-                        rows_per_image: Some(dimensions.1),
-                    },
-                    wgpu::Extent3d {
-                        width: dimensions.0,
-                        height: dimensions.1,
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
-            panel.texture.change_file = false;
         }
     }
 
@@ -885,39 +584,14 @@ impl App {
         // Order of passes matters!
         // The render pass
         {
-            let rt_test = RayTraceInfo::test(
+            state.scene.update_rt_info(
                 &self.camera,
                 state.surface_config.height,
                 state.surface_config.width,
             );
-            state.queue.write_buffer(
-                state.buffer_map.get(&1).unwrap(),
-                0,
-                rt_test.as_std140().as_bytes(),
-            );
-            state.queue.write_buffer(
-                state.buffer_map.get(&0).unwrap(),
-                0,
-                &state.scene.world_as_bytes(&self.camera),
-            );
-            state.queue.write_buffer(
-                state.buffer_map.get(&2).unwrap(),
-                0,
-                &state.scene.panels_as_bytes(&self.camera),
-            );
-            if self.displaying_panel_textures {
-                state.queue.write_buffer(
-                    state.buffer_map.get(&5).unwrap(),
-                    0,
-                    1.as_std140().as_bytes(),
-                );
-            } else {
-                state.queue.write_buffer(
-                    state.buffer_map.get(&5).unwrap(),
-                    0,
-                    0.as_std140().as_bytes(),
-                );
-            }
+            state
+                .scene
+                .update_draw(&state.queue, &self.camera, self.displaying_panel_textures);
             // Need to get: The texture being passed to wgpu, and the new data.
             // Should not be called every time, that is ineffective. Instead, as response to
             // Changes
@@ -947,10 +621,7 @@ impl App {
 
             render_pass.set_pipeline(&state.render_pipe);
             // Pass uniform!
-            render_pass.set_bind_group(0, state.bind_map.get(&0), &[]);
-            render_pass.set_bind_group(1, state.bind_map.get(&1), &[]);
-
-            render_pass.set_bind_group(2, state.bind_map.get(&2), &[]);
+            state.scene.render_pass(&mut render_pass);
             render_pass.set_bind_group(3, &state.factorizer.bind_group, &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));

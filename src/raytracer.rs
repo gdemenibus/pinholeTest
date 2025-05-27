@@ -8,9 +8,9 @@ pub struct RayTraceInfo {
     q_y: Vector3<f32>,
     p_1_m: Vector3<f32>,
 }
+
 impl RayTraceInfo {
     pub fn test(camera: &Camera, image_height: u32, image_width: u32) -> Self {
-        let aspect_ratio = image_width / image_height;
         let camera_dir = camera.direction_vec();
 
         let d = 0.1;
