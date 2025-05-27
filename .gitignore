@@ -25,4 +25,4 @@ Cargo.lock
 perf.data
 flamegraph.svg
 
-resources/panel_compute/intermediate/
+resources/panel_compute/
