@@ -401,7 +401,7 @@ fn target_texel(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>) -> vec
     // Casting
     // Cast pixel count into a f32 to multiply, then into u32 to round
     let x_pixel = u32(floor(x_coord * f32(tex_size.x)));
-    let y_pixel = tex_size.y - u32(floor(y_coord * f32(tex_size.y)));
+    let y_pixel = u32(floor(y_coord * f32(tex_size.y)));
     return vec2(x_pixel, y_pixel);
 }
 
@@ -554,10 +554,10 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
         let bary_coords = vec3f(u, v, w);
 
         // Tex coordinates
-        // a -> 0.0, 1.0
-        // b -> 1.0, 1.0
-        // c = 0.0, 0.0
-        // d = 1.0, 0.0
+        // a -> 0.0, 0.0
+        // b -> 1.0, 0.0
+        // c = 0.0, 1.0
+        // d = 1.0, 1.0
         // a ==== b
         // |      |
         // |      |
@@ -566,15 +566,15 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
         // A, B, C
         if abc {
 
-            //
-            //       v
-            //     / |
-            //    /  |
-            //   /   |
-            //  /    |
-            // u === w
-            let color = sample_texture(bary_coords, vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0), tex_size);
-            let texel = target_texel(bary_coords, array(vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0)));
+            //w === u
+            //|   /
+            //|  /
+            //| /
+            //v
+            let tex_coords = array(vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
+            let color = sample_texture(bary_coords, tex_coords[0], tex_coords[1], tex_coords[2], tex_size);
+            //let color = vec4f(u, v, w, 1.0);
+            let texel = target_texel(bary_coords, tex_coords);
             return TargetIntersection(
                 color,
                 texel,
@@ -582,13 +582,18 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
         } else {
             // B, C, D
 
-            //v === u
-            //|   /
-            //|  /
-            //| /
-            //w
-            let color = sample_texture(bary_coords, vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0), tex_size);
-            let texel = target_texel(bary_coords, array(vec2f(1.0, 1.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0)));
+            //
+            //       w
+            //     / |
+            //    /  |
+            //   /   |
+            //  /    |
+            // u === v
+            let tex_coords = array(vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0));
+            let color = sample_texture(bary_coords, tex_coords[0], tex_coords[1], tex_coords[2], tex_size);
+
+            //let color = vec4f(u, v, w, 1.0);
+            let texel = target_texel(bary_coords, tex_coords);
             return TargetIntersection(
                 color,
                 texel,
@@ -609,7 +614,7 @@ fn sample_texture(bary_coords: vec3f, tex_coord_0: vec2f, tex_coord1: vec2f, tex
     // sample expects between [0,0] and [1,1]
     let x_coord = (bary_coords.x * tex_coord_0.x + bary_coords.y * tex_coord1.x + bary_coords.z * tex_coord2.x);
     // 0,0 is bottom left, not top left. Flip the Y axis to get the right image
-    let y_coord = 1.0 - (bary_coords.x * tex_coord_0.y + bary_coords.y * tex_coord1.y + bary_coords.z * tex_coord2.y);
+    let y_coord = (bary_coords.x * tex_coord_0.y + bary_coords.y * tex_coord1.y + bary_coords.z * tex_coord2.y);
     let coordinates = vec2f(x_coord, y_coord);
 
     return textureSample(t_diffuse, s_diffuse, coordinates);
