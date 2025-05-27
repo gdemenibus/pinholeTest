@@ -26,7 +26,7 @@ struct Ray {
 const eps = 0.00001;
 const scene_size: u32 = 2;
 const miss_color: vec4f = vec4(0.0, 0.0, 0.0, 0.0);
-const border_color: vec4f = vec4(1.0, 0.0, 0.0, 1.0);
+const border_color: vec4f = vec4(1.0, 0.0, 1.0, 1.0);
 
 
 // Scene group
@@ -331,7 +331,7 @@ fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, pan
     m_a_x_buffer[array_coordination + 2] = 1;
 
     m_b_y_buffer[array_coordination] = targets_coords.y;
-    m_b_y_buffer[array_coordination + 1] =panel_2_coords.y;
+    m_b_y_buffer[array_coordination + 1] = panel_2_coords.y;
     m_b_y_buffer[array_coordination + 2] = 1;
 
     m_b_x_buffer[array_coordination] = targets_coords.x;

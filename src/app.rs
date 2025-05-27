@@ -5,13 +5,12 @@ use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
-use crate::texture::Texture;
-use crate::{matrix, texture, vertex};
-use crevice::std140::{AsStd140, Std140};
+use crate::{matrix, vertex, FileWatcher};
+use crevice::std140::AsStd140;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -94,28 +93,26 @@ impl AppState {
 
         surface.configure(&device, &surface_config);
 
-        //
-        // Panel group
-
-        // Buffers to pass info?
-        //
         let imag_height = surface_config.height;
         let image_width = surface_config.width;
         let rt_test = RayTraceInfo::test(camera, imag_height, image_width);
         let scene = Scene::new(rt_test, camera, &device, &queue);
 
-        // Bind group for reading from
-        //
         let factorizer = LFBuffers::set_up(&device);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
         let scale_factor = 1.0;
+
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Test Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/simple.wgsl").into()),
         });
-
+        if let Some(_error) = pollster::block_on(device.pop_error_scope()) {
+            println!("Could not validate shader!");
+            panic!()
+        }
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -203,6 +200,81 @@ impl AppState {
             factorizer,
         }
     }
+
+    fn build_pipeline(&mut self) {
+        let device = &self.device;
+        let scene = &self.scene;
+
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let Ok(shader_string) = fs::read_to_string("./shaders/simple.wgsl") else {
+            return;
+        };
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Test Shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_string.into()),
+        });
+        if let Some(error) = pollster::block_on(device.pop_error_scope()) {
+            println!("Could not validate shader!");
+        } else {
+            let render_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Render Pipeline Layout"),
+                    bind_group_layouts: &[
+                        &scene.target_binds.bind_layout,
+                        &scene.texture_binds.bind_layout,
+                        &scene.panel_binds.bind_layout,
+                        &self.factorizer.bind_group_layout,
+                    ],
+                    push_constant_ranges: &[],
+                });
+
+            let render_pipe = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"), // 1. Entry points to the shader, call the main
+                    // function to make things easier!
+                    buffers: &[vertex::Vertex::desc()], // 2. //Passing things to the shader
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    // 3. // Fragment is optional
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        // 4. // What color outputs it should set up!
+                        format: self.surface_config.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList, // Types of Primitives
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw, // Colling mode
+                    cull_mode: None,
+                    // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    // Requires Features::DEPTH_CLIP_CONTROL
+                    unclipped_depth: false,
+                    // Requires Features::CONSERVATIVE_RASTERIZATION
+                    conservative: false,
+                },
+                depth_stencil: None, // 1.
+                multisample: wgpu::MultisampleState {
+                    count: 1,                         // 2.
+                    mask: !0,                         // 3.
+                    alpha_to_coverage_enabled: false, // 4.
+                },
+                multiview: None, // 5. === USEFUL FOR RENDERING TO ARRAY TEXTURES ====
+                cache: None,     // 6.
+            });
+            self.render_pipe = render_pipe;
+        }
+    }
     fn will_sample_light_field(&self) -> bool {
         self.factorizer.will_sample()
     }
@@ -274,15 +346,6 @@ impl AppState {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
-    }
-
-    fn panel_textures_set_up(device: &wgpu::Device, queue: &wgpu::Queue) -> Texture {
-        // 1k by 1k, should be enough?
-        let panel_1 = image::DynamicImage::new_rgb8(1000, 1000);
-        let panel_2 = image::DynamicImage::new_rgb8(1000, 1000);
-        let texture_vec = vec![panel_1, panel_2];
-
-        texture::Texture::from_images(device, queue, &texture_vec, Some("2D Panel Array"))
     }
 }
 
@@ -655,12 +718,21 @@ impl App {
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<FileWatcher> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
             .create_window(Window::default_attributes())
             .unwrap();
         pollster::block_on(self.set_window(window));
+    }
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: FileWatcher) {
+        match event {
+            FileWatcher::FileChange => {
+                if let Some(state) = self.state.as_mut() {
+                    state.build_pipeline();
+                }
+            }
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
