@@ -53,6 +53,10 @@ pub struct LFBuffers {
     rng: bool,
     sample_next_redraw_flag: bool,
     solve_next_redraw_flag: bool,
+    blend: bool,
+    blend_sigma: f32,
+    average: bool,
+    inverse: bool,
     progress: Option<RwLock<f32>>,
     matrix_rep: Option<LFMatrices>,
 }
@@ -180,8 +184,12 @@ impl LFBuffers {
             starting_values: (0.5, 0.5),
             sample_next_redraw_flag: false,
             solve_next_redraw_flag: false,
+            blend: false,
+            blend_sigma: 0.1f32,
+            average: false,
             progress: None,
             matrix_rep: None,
+            inverse: false,
         }
     }
 
@@ -351,7 +359,10 @@ impl LFBuffers {
         self.matrix_rep.as_ref()?;
 
         let mut matrices = self.matrix_rep.as_ref().unwrap().clone();
-        //matrices.average();
+
+        if self.average {
+            matrices.average();
+        }
 
         let m_a_y = &matrices.m_a_y_matrix;
         let m_a_x = &matrices.m_a_x_matrix;
@@ -399,8 +410,12 @@ impl LFBuffers {
                     "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
                     x, 2
                 );
-                matrix_to_image(&c_a).save_with_format(path_1, image::ImageFormat::Png);
-                matrix_to_image(&c_b).save_with_format(path_2, image::ImageFormat::Png);
+                matrix_to_image(&c_a)
+                    .save_with_format(path_1, image::ImageFormat::Png)
+                    .ok()?;
+                matrix_to_image(&c_b)
+                    .save_with_format(path_2, image::ImageFormat::Png)
+                    .ok()?;
             }
             // CA update
             //
@@ -443,7 +458,17 @@ impl LFBuffers {
             }
         }
 
-        let image_a = matrix_to_image(&c_a);
+        let image_a = {
+            let mut output = matrix_to_image(&c_a);
+            if self.blend {
+                output = output.fast_blur(self.blend_sigma);
+            }
+
+            if self.inverse {
+                output.invert();
+            }
+            output
+        };
         image_a
             .save_with_format(
                 "./resources/panel_compute/panel_1.png",
@@ -451,7 +476,16 @@ impl LFBuffers {
             )
             .unwrap();
 
-        let image_b = matrix_to_image(&c_b);
+        let image_b = {
+            let mut output = matrix_to_image(&c_b);
+            if self.blend {
+                output = output.fast_blur(self.blend_sigma);
+            }
+            if self.inverse {
+                output.invert();
+            }
+            output
+        };
 
         image_b
             .save_with_format(
@@ -479,7 +513,6 @@ impl LFMatrices {
         self.m_a_y_matrix /= faer::Scale(self.sample_count as f32);
         self.m_b_y_matrix /= faer::Scale(self.sample_count as f32);
     }
-    pub fn max(&mut self) {}
 }
 
 impl DrawUI for LFBuffers {
@@ -495,6 +528,7 @@ impl DrawUI for LFBuffers {
                 ui.label("Iteration count");
                 ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
                 ui.checkbox(&mut self.show_steps, "Print steps");
+                ui.checkbox(&mut self.inverse, "White on black");
 
                 if ui.button("Sample").clicked() {
                     self.sample_next_redraw_flag = true;
@@ -502,6 +536,7 @@ impl DrawUI for LFBuffers {
                 if ui.button("Solve").clicked() {
                     self.solve_next_redraw_flag = true;
                 }
+                ui.checkbox(&mut self.average, "Average view points");
                 if self.progress.is_some() {
                     let progress = *self.progress.as_ref().unwrap().read();
                     ui.add(egui::ProgressBar::new(progress));
@@ -511,6 +546,9 @@ impl DrawUI for LFBuffers {
                 if ui.button("Reset").clicked() {
                     todo!("Reset functionality not implemented yet");
                 }
+                ui.checkbox(&mut self.blend, "Blend Out Image");
+                ui.label("Sigma");
+                ui.add(egui::Slider::new(&mut self.blend_sigma, 0.0..=1.0));
                 ui.checkbox(&mut self.rng, "Random starting values");
                 ui.label("Initial guesses");
                 ui.add(egui::Slider::new(
