@@ -1,11 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::vertex::Vertex;
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
-use egui_winit::egui::{self, Context, Pos2};
-use image::Rgba;
-use uom::si::f32::Length;
-use uom::si::length::{meter, millimeter};
 
 pub trait Shape: crevice::std140::AsStd140 {
     /* Return a new shape at the position that the model matrix determined
@@ -79,13 +74,6 @@ impl Shape for VWPanel {
     }
 }
 impl VWPanel {
-    pub fn from_quad(quad: Quad, pixel_count: Vector2<u32>, size: Vector2<f32>) -> Self {
-        VWPanel {
-            quad,
-            pixel_count,
-            size,
-        }
-    }
     pub fn border_correction(&self) -> Self {
         let pixel_count = self.pixel_count + Vector2::new(0, 0);
         VWPanel {
@@ -101,24 +89,8 @@ impl VWPanel {
             Vector3::new(-0.5, -0.5, 0.0),
             Vector3::new(0.5, -0.5, 0.0),
         );
-        let pixel_count = Vector2::new(30, 30);
+        let pixel_count = Vector2::new(300, 300);
         let size = Vector2::new(1.0, 1.0);
-        VWPanel {
-            quad,
-            pixel_count,
-            size,
-        }
-    }
-    pub fn new(
-        a: Vector3<f32>,
-        b: Vector3<f32>,
-        c: Vector3<f32>,
-        d: Vector3<f32>,
-        pixel_count: Vector2<u32>,
-        size: Vector2<f32>,
-    ) -> Self {
-        let quad = Quad::new(a, b, c, d);
-
         VWPanel {
             quad,
             pixel_count,

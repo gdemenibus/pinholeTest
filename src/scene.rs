@@ -56,7 +56,6 @@ pub struct TargetBinds {
 pub struct TextureBinds {
     pub bind_group: BindGroup,
     pub bind_layout: BindGroupLayout,
-    pub tex_size_buffer: Buffer,
     pub target_texture: texture::Texture,
 }
 
@@ -147,7 +146,6 @@ impl TextureBinds {
         TextureBinds {
             bind_group: diffuse_bind_group,
             bind_layout: texture_bind_group_layout,
-            tex_size_buffer: text_size_buffer,
             target_texture: texture,
         }
     }
@@ -536,15 +534,6 @@ impl Scene {
         panels.sort_by(|x, y| x.distance_compar(y, camera.position));
         let _count = writer.write(panels.as_slice()).unwrap();
         buffer
-    }
-    pub fn panels_pixel_count(&self) -> [u32; 4] {
-        let mut output = [0; 4];
-        for x in 0..2 {
-            let panel = self.panels[x].panel.pixel_count;
-            output[x * 2] = panel.x;
-            output[x * 2 + 1] = panel.y;
-        }
-        output
     }
 }
 
