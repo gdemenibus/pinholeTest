@@ -53,9 +53,6 @@ pub struct LFBuffers {
     rng: bool,
     sample_next_redraw_flag: bool,
     solve_next_redraw_flag: bool,
-    blend: bool,
-    blend_sigma: f32,
-    average: bool,
     progress: Option<RwLock<f32>>,
     matrix_rep: Option<LFMatrices>,
 }
@@ -183,9 +180,6 @@ impl LFBuffers {
             starting_values: (0.5, 0.5),
             sample_next_redraw_flag: false,
             solve_next_redraw_flag: false,
-            blend: false,
-            blend_sigma: 0.1f32,
-            average: false,
             progress: None,
             matrix_rep: None,
         }
@@ -357,10 +351,7 @@ impl LFBuffers {
         self.matrix_rep.as_ref()?;
 
         let mut matrices = self.matrix_rep.as_ref().unwrap().clone();
-
-        if self.average {
-            matrices.average();
-        }
+        //matrices.average();
 
         let m_a_y = &matrices.m_a_y_matrix;
         let m_a_x = &matrices.m_a_x_matrix;
@@ -452,13 +443,7 @@ impl LFBuffers {
             }
         }
 
-        let image_a = {
-            let mut output = matrix_to_image(&c_a);
-            if self.blend {
-                output = output.fast_blur(self.blend_sigma);
-            }
-            output
-        };
+        let image_a = matrix_to_image(&c_a);
         image_a
             .save_with_format(
                 "./resources/panel_compute/panel_1.png",
@@ -466,13 +451,7 @@ impl LFBuffers {
             )
             .unwrap();
 
-        let image_b = {
-            let mut output = matrix_to_image(&c_a);
-            if self.blend {
-                output = output.fast_blur(self.blend_sigma);
-            }
-            output
-        };
+        let image_b = matrix_to_image(&c_b);
 
         image_b
             .save_with_format(
@@ -500,6 +479,7 @@ impl LFMatrices {
         self.m_a_y_matrix /= faer::Scale(self.sample_count as f32);
         self.m_b_y_matrix /= faer::Scale(self.sample_count as f32);
     }
+    pub fn max(&mut self) {}
 }
 
 impl DrawUI for LFBuffers {
@@ -522,7 +502,6 @@ impl DrawUI for LFBuffers {
                 if ui.button("Solve").clicked() {
                     self.solve_next_redraw_flag = true;
                 }
-                ui.checkbox(&mut self.average, "Average view points");
                 if self.progress.is_some() {
                     let progress = *self.progress.as_ref().unwrap().read();
                     ui.add(egui::ProgressBar::new(progress));
@@ -532,9 +511,6 @@ impl DrawUI for LFBuffers {
                 if ui.button("Reset").clicked() {
                     todo!("Reset functionality not implemented yet");
                 }
-                ui.checkbox(&mut self.blend, "Blend Out Image");
-                ui.label("Sigma");
-                ui.add(egui::Slider::new(&mut self.blend_sigma, 0.0..=1.0));
                 ui.checkbox(&mut self.rng, "Random starting values");
                 ui.label("Initial guesses");
                 ui.add(egui::Slider::new(
