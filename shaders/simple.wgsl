@@ -152,6 +152,36 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let trig_1 = intersection_panel(&ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
         let trig_2 = intersection_panel(&ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
 
+        if trig_1.border {
+            clean_up_record(position);
+            return border_color;
+        }
+
+        if trig_2.border {
+
+            clean_up_record(position);
+            return border_color;
+        }
+    }
+
+    for (var index = 0u; index < 2; index++) {
+
+        let panel = panels[index];
+
+        let trig_1 = intersection_panel(&ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
+        let trig_2 = intersection_panel(&ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
+
+        if trig_1.border {
+            clean_up_record(position);
+            return border_color;
+        }
+
+        if trig_2.border {
+
+            clean_up_record(position);
+            return border_color;
+        }
+
         if index == 0 {
             hit_first = trig_1.hit || trig_2.hit;
             if trig_1.hit {
@@ -181,16 +211,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             }
         }
 
-        if trig_1.border {
-            clean_up_record(position);
-            return border_color;
-        }
-
-        if trig_2.border {
-
-            clean_up_record(position);
-            return border_color;
-        }
     }
 
     // We have hit both
