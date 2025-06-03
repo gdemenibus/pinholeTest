@@ -327,3 +327,24 @@ Can you change the mapping?
 
 
 STRANGE BUG AT LOW ANGLES, THREATENS EVERYTHING?
+
+
+## Review with Ricardo:
+
+Idea: Use the matrices to determine if a value is "unused" or "black"
+Design new shaders to get raycasting done
+Probably compute shader needed?
+Fix the transparency bug
+Quentin feedback on writing
+Rewrite Related work
+Reframe introduction
+Contact Proffessors
+
+Main priority:
+1) Try our approach of using mapping matrix to determine if pixel interacts
+2) Quentin Feedback
+3) Related work
+4) Start justification
+
+
+
