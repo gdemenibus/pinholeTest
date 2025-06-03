@@ -5,7 +5,7 @@ use egui::{ahash::HashSet, mutex::RwLock};
 use faer::{
     sparse::{SparseColMat, Triplet},
     stats::prelude::{thread_rng, Rng},
-    unzip, zip, Mat,
+    unzip, zip, Mat, MatMut,
 };
 use image::{DynamicImage, GenericImageView, ImageBuffer};
 use wgpu::{util::DeviceExt, Buffer};
@@ -457,6 +457,8 @@ impl LFBuffers {
                     .for_each(|unzip!(c_b, n, d)| *c_b *= *n / (*d + 0.000000001f32));
             }
         }
+        Self::filter_zeroes(c_a.as_mut(), m_a_y, m_a_x);
+        Self::filter_zeroes(c_b.as_mut(), m_b_y, m_b_x);
 
         let image_a = {
             let mut output = matrix_to_image(&c_a);
@@ -495,6 +497,25 @@ impl LFBuffers {
             .unwrap();
         self.solve_next_redraw_flag = false;
         Some((image_a, image_b))
+    }
+    fn filter_zeroes(
+        mat: MatMut<f32, usize, usize>,
+        mat_y: &SparseColMat<u32, f32>,
+        mat_x: &SparseColMat<u32, f32>,
+    ) {
+        let x_ncols = mat_x.col_ptr();
+        let y_ncols = mat_y.col_ptr();
+        for (column, x) in mat.col_iter_mut().enumerate() {
+            for (row, y) in x.iter_mut().enumerate() {
+                if *y != 0.0 {
+                    break;
+                }
+                // Check M_X
+                if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
+                    *y = 1.0;
+                }
+            }
+        }
     }
 }
 
