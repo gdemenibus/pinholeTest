@@ -27,7 +27,7 @@ const eps = 0.00001;
 const scene_size: u32 = 2;
 const miss_color: vec4f = vec4(0.0, 0.0, 0.0, 0.0);
 const border_color: vec4f = vec4(1.0, 0.0, 0.0, 1.0);
-
+const background_color: vec4f = vec4(0.0, 0.0, 0.3, 1.0);
 
 // Scene group
 @group(0) @binding(0)
@@ -118,9 +118,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // If panels are involved, means we are going to hit something
     //
     if panels_use_texture != 0 {
-        let color = panels_texture_hit(&ray);
-        if color.a != 0.0 {
-            return color;
+        let panel_hit = panels_texture_hit(&ray);
+        if panel_hit.hit == true {
+            if panel_hit.border {
+                return border_color;
+            }
+            return panel_hit.color * background_color;
+
         }
     }
 
@@ -269,22 +273,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     clean_up_record(position);
-    return vec4f(0.0, 0.0, 0.3, 1.0);
+    return background_color;
 }
 
-fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
+struct PanelHit {
+    hit: bool,
+    border: bool,
+    color: vec4f,
+
+}
+
+fn panels_texture_hit(ray: ptr<function, Ray>) -> PanelHit {
 
     // WE DO THIS THE 'ARD WAY
 
-    var color = vec4f(1.0, 1.0, 1.0, 0.0);
+    var color = vec4f(1.0, 1.0, 1.0, 1.0);
+    var hit = false;
 
     for (var index = 0u; index < 2; index++) {
 
         let panel = panels[index];
 
         let trig_1 = intersection_panel(ray, panel.quad.a, panel.quad.b, panel.quad.c, true, panel);
+        hit = hit || trig_1.hit;
         if trig_1.border {
-            return border_color;
+            return PanelHit(hit, true, border_color);
         }
         if trig_1.hit {
             let pixel_coords = trig_1.pixel_coords - vec2u(1, 1);
@@ -297,8 +310,9 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
 
         let trig_2 = intersection_panel(ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
 
+        hit = hit || trig_2.hit;
         if trig_2.border {
-            return border_color;
+            return PanelHit(hit, true, border_color);
         }
         if trig_2.hit {
             let pixel_coords = trig_2.pixel_coords - vec2u(1, 1);
@@ -311,9 +325,9 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> vec4f {
         ;
     }
 
-    let opacity = 1.0 - color.r;
-    color.a = opacity;
-    return color;
+    color.a = 1 - color.r;
+
+    return PanelHit(hit, false, color);
 }
 
 
