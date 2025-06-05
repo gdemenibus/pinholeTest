@@ -2,6 +2,7 @@
 mod app;
 mod als;
 mod camera;
+mod compute_pass;
 mod egui_tools;
 mod file_picker;
 mod light_factor;
