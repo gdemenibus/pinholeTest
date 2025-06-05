@@ -5,7 +5,7 @@ use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
-use crate::{matrix, vertex, FileWatcher};
+use crate::{compute_pass, matrix, vertex, FileWatcher};
 use crevice::std140::AsStd140;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
@@ -58,8 +58,10 @@ impl AppState {
             .await
             .expect("Failed to find an appropriate adapter");
 
-        let features =
-            wgpu::Features::VERTEX_WRITABLE_STORAGE | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS;
+        let features = wgpu::Features::VERTEX_WRITABLE_STORAGE
+            | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
+            | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+            | wgpu::Features::BGRA8UNORM_STORAGE;
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
@@ -346,6 +348,9 @@ impl AppState {
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
     }
+    fn compute_pass(&self) {
+        compute_pass::compute_pipeline(&self.device, &self.queue);
+    }
 }
 
 // Handles the drawing and the app logic
@@ -430,7 +435,15 @@ impl App {
                 self.update_panel_texture();
                 self.displaying_panel_textures = !self.displaying_panel_textures;
             }
+            PhysicalKey::Code(KeyCode::KeyO) => {
+                self.compute_pass();
+            }
             _ => (),
+        }
+    }
+    pub fn compute_pass(&self) {
+        if let Some(state) = &self.state {
+            state.compute_pass();
         }
     }
 
