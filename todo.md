@@ -332,6 +332,8 @@ STRANGE BUG AT LOW ANGLES, THREATENS EVERYTHING?
 ## Review with Ricardo:
 
 Idea: Use the matrices to determine if a value is "unused" or "black"
+Worked out very well!
+
 Design new shaders to get raycasting done
 Probably compute shader needed?
 Fix the transparency bug
@@ -342,9 +344,20 @@ Contact Proffessors
 
 Main priority:
 1) Try our approach of using mapping matrix to determine if pixel interacts
+Worked real good!
+
 2) Quentin Feedback
+Taken in and working on it
+Mostly done!
+
 3) Related work
+
 4) Start justification
+
+5) Bug fixes!
+DOne!
+
+
 
 
 
