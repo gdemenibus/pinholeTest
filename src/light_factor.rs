@@ -457,6 +457,7 @@ impl LFBuffers {
                     .for_each(|unzip!(c_b, n, d)| *c_b *= *n / (*d + 0.000000001f32));
             }
         }
+
         Self::filter_zeroes(c_a.as_mut(), m_a_y, m_a_x);
         Self::filter_zeroes(c_b.as_mut(), m_b_y, m_b_x);
 
