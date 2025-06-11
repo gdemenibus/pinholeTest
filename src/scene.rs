@@ -1,5 +1,6 @@
+use image::{DynamicImage, GenericImageView};
 use std::path::PathBuf;
-use wgpu::{util::DeviceExt, BindGroupLayout, Queue, RenderPass};
+use wgpu::{util::DeviceExt, BindGroupLayout, ComputePass, Queue, RenderPass};
 
 use crate::{
     camera::Camera,
@@ -8,8 +9,8 @@ use crate::{
     shape::{Quad, Shape, VWPanel},
     texture,
 };
-use cgmath::{Matrix4, Rad, SquareMatrix, Vector3, Vector4};
-use crevice::std140::{AsStd140, Std140, Writer};
+use cgmath::{Matrix4, Rad, SquareMatrix, Vector2, Vector3, Vector4};
+use crevice::std140::{self, AsStd140, Std140, Writer};
 use egui::{Color32, RichText};
 use egui_winit::egui::{self, Context};
 use wgpu::{BindGroup, Buffer, Device};
@@ -28,7 +29,7 @@ TODO: SCENE ONLY USES QUAD, MIGHT WANT MORE?
 Scene struct. Encapsulates UI and handles access to the raw quads
 */
 pub struct Scene {
-    world: Vec<Target>,
+    pub world: Vec<Target>,
     pub panels: Vec<ScenePanel>,
     ray_tracer: RayTraceInfo,
     pub target_binds: TargetBinds,
@@ -67,6 +68,7 @@ pub struct PanelBinds {
     pub panel_bool_buffer: Buffer,
 }
 
+#[derive(Clone)]
 pub struct Target {
     yaw: Rad<f32>,
     pitch: Rad<f32>,
@@ -74,6 +76,9 @@ pub struct Target {
     placement: Matrix4<f32>,
     scale: Matrix4<f32>,
     quad: Quad,
+    pub pixel_count: Vector2<u32>,
+    // TODO: Change this to UOM
+    pub size: Vector2<f32>,
 }
 
 impl TextureBinds {
@@ -87,7 +92,7 @@ impl TextureBinds {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        visibility: wgpu::ShaderStages::all(),
                         ty: wgpu::BindingType::Texture {
                             multisampled: false,
                             view_dimension: wgpu::TextureViewDimension::D2,
@@ -97,7 +102,7 @@ impl TextureBinds {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        visibility: wgpu::ShaderStages::all(),
                         // This should match the filterable field of the
                         // corresponding Texture entry above.
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
@@ -105,7 +110,7 @@ impl TextureBinds {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        visibility: wgpu::ShaderStages::all(),
                         // This should match the filter﻿able field of the
                         // corresponding Texture entry above.
                         ty: wgpu::BindingType::Buffer {
@@ -148,6 +153,32 @@ impl TextureBinds {
             bind_layout: texture_bind_group_layout,
             target_texture: texture,
         }
+    }
+
+    pub fn update_target_texture(&self, img: &DynamicImage, queue: &Queue) -> Result<(), ()> {
+        let our_dimensions = self.target_texture.dimensions;
+        let img_dimensions = img.dimensions();
+        if our_dimensions.x < img_dimensions.0 || our_dimensions.y < img_dimensions.1 {
+            println!("Image is bigger than texture buffer!");
+            return Err(());
+        }
+        let copy = self.target_texture.texture.as_image_copy();
+
+        queue.write_texture(
+            copy,
+            &img.to_rgba8(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * img_dimensions.0),
+                rows_per_image: Some(img_dimensions.1),
+            },
+            wgpu::Extent3d {
+                width: img_dimensions.0,
+                height: img_dimensions.1,
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(())
     }
 }
 
@@ -215,8 +246,8 @@ impl TargetBinds {
 }
 impl PanelBinds {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &[u8]) -> Self {
-        let panel_1 = image::DynamicImage::new_rgb8(1000, 1000);
-        let panel_2 = image::DynamicImage::new_rgb8(1000, 1000);
+        let panel_1 = image::DynamicImage::new_rgb8(300, 300);
+        let panel_2 = image::DynamicImage::new_rgb8(300, 300);
         let texture_vec = vec![panel_1, panel_2];
 
         let panel_textures =
@@ -251,7 +282,7 @@ impl PanelBinds {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::all(),
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -261,7 +292,7 @@ impl PanelBinds {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::all(),
                     // This should match the filterable field of the
                     // corresponding Texture entry above.
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
@@ -269,7 +300,7 @@ impl PanelBinds {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::all(),
                     // This should match the filter﻿able field of the
                     // corresponding Texture entry above.
                     ty: wgpu::BindingType::Buffer {
@@ -332,7 +363,7 @@ impl PanelBinds {
 }
 
 impl Target {
-    fn new(place_vec: Vector4<f32>) -> Self {
+    fn new(place_vec: Vector4<f32>, pixel_count: Vector2<u32>, size: Vector2<f32>) -> Self {
         let yaw = Rad(0.0);
 
         let pitch = Rad(0.0);
@@ -348,6 +379,9 @@ impl Target {
         );
 
         Target {
+            pixel_count,
+            size,
+
             quad,
             yaw,
             pitch,
@@ -356,15 +390,30 @@ impl Target {
             scale,
         }
     }
+    pub fn update_pixel_count(&mut self, pixel_count: (u32, u32)) {
+        let pixel_count = Vector2::new(pixel_count.0, pixel_count.1);
+        self.pixel_count = pixel_count;
+    }
 
-    fn place_target(&self) -> Quad {
+    fn place_target(&self) -> Target {
         let yaw_matrix = Matrix4::from_angle_x(self.yaw);
         let pitch_matrix = Matrix4::from_angle_y(self.pitch);
         let roll_matrix = Matrix4::from_angle_z(self.roll);
         // will need to double check this ordering
         let placement_matrix =
             self.placement * self.scale * yaw_matrix * pitch_matrix * roll_matrix;
-        self.quad.place(&placement_matrix)
+        let quad = self.quad.place(&placement_matrix);
+        let mut clone = self.clone();
+        clone.quad = quad;
+        clone
+    }
+    fn target_to_bytes(&self) -> Vec<u8> {
+        let mut output: Vec<u8> = Vec::new();
+        let mut writer = std140::Writer::new(&mut output);
+        writer.write(&self.quad).unwrap();
+        writer.write(&self.pixel_count).unwrap();
+        writer.write(&self.size).unwrap();
+        output
     }
 }
 
@@ -377,6 +426,15 @@ impl DrawUI for Target {
             .default_size([150.0, 175.0])
             .default_open(false)
             .show(ctx, |ui| {
+                ui.label(
+                    RichText::new(format!("Pixels X: {}", self.pixel_count.x))
+                        .color(Color32::ORANGE),
+                );
+                ui.label(
+                    RichText::new(format!("Pixels Y: {}", self.pixel_count.y))
+                        .color(Color32::ORANGE),
+                );
+
                 ui.label(RichText::new("Move x").color(Color32::RED));
                 ui.add(egui::Slider::new(&mut self.placement.w.x, -10.0..=10.0));
                 ui.label(RichText::new("Move y").color(Color32::GREEN));
@@ -443,8 +501,9 @@ impl Scene {
 
         let place_2 = Vector4::new(0.5, 1.5, 2.0, 1.0);
         let target_1 = Vector4::new(0.5, 1.5, 0.0, 1.0);
-        let target_2 = Vector4::new(7.5, 1.5, 0.0, 1.0);
-        let world = vec![Target::new(target_1), Target::new(target_2)];
+        let pixel_count = Vector2::new(256, 256);
+        let size = Vector2::new(1.0, 1.0);
+        let world = vec![Target::new(target_1, pixel_count, size)];
         let panels = vec![ScenePanel::new(place_1, 1), ScenePanel::new(place_2, 2)];
 
         let world_buffer = Self::world_as_bytes(&world, camera);
@@ -505,21 +564,32 @@ impl Scene {
 
         render_pass.set_bind_group(2, Some(&self.panel_binds.bind_group), &[]);
     }
+    pub fn compute_pass(&self, compute_pass: &mut ComputePass) {
+        compute_pass.set_bind_group(0, Some(&self.target_binds.bind_group), &[]);
+        compute_pass.set_bind_group(1, Some(&self.texture_binds.bind_group), &[]);
+
+        compute_pass.set_bind_group(2, Some(&self.panel_binds.bind_group), &[]);
+    }
 
     /// Will always place the closest quad first
     pub fn world_as_bytes(world: &[Target], camera: &Camera) -> [u8; 256] {
-        let mut buffer = [0u8; 256];
-        let mut writer = Writer::new(&mut buffer[..]);
-        let mut shapes: Vec<Quad> = world.iter().map(|target| target.place_target()).collect();
+        let mut shapes: Vec<Target> = world.iter().map(|target| target.place_target()).collect();
 
         shapes.sort_by(|x, y| {
             let camera_origin = camera.position;
-            let x_dist = x.distance_to(camera_origin);
-            let y_dist = y.distance_to(camera_origin);
+            let x_dist = x.quad.distance_to(camera_origin);
+            let y_dist = y.quad.distance_to(camera_origin);
             x_dist.total_cmp(&y_dist)
         });
-
-        let _count = writer.write(shapes.as_slice()).unwrap();
+        let byte_vec: Vec<u8> = shapes
+            .iter()
+            .flat_map(|shape| shape.target_to_bytes())
+            .collect();
+        // Pad?
+        let mut buffer = [0u8; 256];
+        for (i, x) in byte_vec.iter().enumerate() {
+            buffer[i] = *x;
+        }
         buffer
     }
     /// Will always place the closest panel first

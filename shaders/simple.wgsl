@@ -12,6 +12,12 @@ struct Quad {
 }
 ;
 
+struct Target {
+    quad: Quad,
+    pixel_count: vec2u,
+    size: vec2f,
+}
+
 struct RayTraceInfo {
     ray_origin: vec3f,
     q_x: vec3f,
@@ -23,15 +29,22 @@ struct Ray {
     direction: vec3f,
 }
 
+struct Panel {
+    // Coordinates assume
+    quad: Quad,
+    pixel_count: vec2u,
+    size: vec2f,
+}
+
 const eps = 0.00001;
-const scene_size: u32 = 2;
+const scene_size: u32 = 1;
 const miss_color: vec4f = vec4(0.0, 0.0, 0.0, 0.0);
 const border_color: vec4f = vec4(1.0, 0.0, 0.0, 1.0);
 const background_color: vec4f = vec4(0.0, 0.0, 0.3, 1.0);
 
 // Scene group
 @group(0) @binding(0)
-var<uniform> scene: array<Quad, scene_size>;
+var<uniform> scene: Target;
 @group(0) @binding(1)
 var<uniform> rt: RayTraceInfo;
 // Panel Group
@@ -45,12 +58,6 @@ var s_diffuse: sampler;
 var<uniform> tex_size: vec2<u32>;
 
 // Panel group!
-struct Panel {
-    // Coordinates assume
-    quad: Quad,
-    pixel_count: vec2u,
-    size: vec2f,
-}
 @group(2) @binding(0)
 var<uniform> panels: array<Panel, 2>;
 
@@ -74,7 +81,6 @@ var<uniform> panel_texture_size: vec2<u32>;
 // WARNING: This needs to be double tested!
 @group(3) @binding(0)
 var<storage, read_write> m_a_y_buffer: array<u32>;
-
 @group(3) @binding(1)
 var<storage, read_write> m_a_x_buffer: array<u32>;
 @group(3) @binding(2)
@@ -103,6 +109,8 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // THE OLD FAITHFUL
+
     // Clip position tells us the fragment location
     let position: vec2<f32> = in.clip_position.xy;
 
@@ -234,42 +242,40 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         light_field_distortion(&ray, ray.origin, new_direction);
     }
 
-    for (var index = 0u; index < scene_size; index++) {
-        var target_intersection = intersection(&ray, scene[index].a, scene[index].b, scene[index].c, true);
-        var color = target_intersection.color;
+    var target_intersection = intersection(&ray, scene.quad.a, scene.quad.b, scene.quad.c, true);
+    var color = target_intersection.color;
 
-        if color.w != 0.0 {
-            if hit_first || hit_second {
+    if color.a != 0.0 {
+        if hit_first || hit_second {
 
-                let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
-                if hit_first && hit_second {
+            let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
+            if hit_first && hit_second {
 
-                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
-                }
-
-                return vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            //record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
             }
 
-            return color;
+            return vec4f(gray_scale, gray_scale, gray_scale, color.a);
         }
-        target_intersection = intersection(&ray, scene[index].b, scene[index].c, scene[index].d, false);
-        color = target_intersection.color;
 
-        if color.w != 0.0 {
+        return color;
+    }
+    target_intersection = intersection(&ray, scene.quad.b, scene.quad.c, scene.quad.d, false);
+    color = target_intersection.color;
 
-            if hit_first || hit_second {
+    if color.a != 0.0 {
 
-                let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
+        if hit_first || hit_second {
 
-                if hit_first && hit_second {
+            let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
-                    record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
-                }
+            if hit_first && hit_second {
 
-                return vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            //record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
             }
-            return color;
+
+            return vec4f(gray_scale, gray_scale, gray_scale, color.a);
         }
+        return color;
     }
 
     clean_up_record(position);
@@ -345,19 +351,19 @@ fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, pan
 
     // ROW, COLUMN, ENTRY
     // There is an unusual problem, sometimes we record hits that are outside the panel?
-    m_a_y_buffer[array_coordination] = min(targets_coords.y, tex_size.y);
+    m_a_y_buffer[array_coordination] = min(targets_coords.y, scene.pixel_count.y);
     m_a_y_buffer[array_coordination + 1] = min(panel_1_coords.y, panels[0].pixel_count.y);
     m_a_y_buffer[array_coordination + 2] = 1;
 
-    m_a_x_buffer[array_coordination] = min(targets_coords.x, tex_size.x);
+    m_a_x_buffer[array_coordination] = min(targets_coords.x, scene.pixel_count.x);
     m_a_x_buffer[array_coordination + 1] = min(panel_1_coords.x, panels[0].pixel_count.x);
     m_a_x_buffer[array_coordination + 2] = 1;
 
-    m_b_y_buffer[array_coordination] = min(targets_coords.y, tex_size.y);
+    m_b_y_buffer[array_coordination] = min(targets_coords.y, scene.pixel_count.y);
     m_b_y_buffer[array_coordination + 1] = min(panel_2_coords.y, panels[1].pixel_count.y);
     m_b_y_buffer[array_coordination + 2] = 1;
 
-    m_b_x_buffer[array_coordination] = min(targets_coords.x, tex_size.x);
+    m_b_x_buffer[array_coordination] = min(targets_coords.x, scene.pixel_count.x);
     m_b_x_buffer[array_coordination + 1] = min(panel_2_coords.x, panels[1].pixel_count.x);
     m_b_x_buffer[array_coordination + 2] = 1;
 }
@@ -434,8 +440,8 @@ fn target_texel(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>) -> vec
     // From Relative coordinates to pixel
     // Casting
     // Cast pixel count into a f32 to multiply, then into u32 to round
-    let x_pixel = u32(floor(x_coord * f32(tex_size.x)));
-    let y_pixel = u32(floor(y_coord * f32(tex_size.y)));
+    let x_pixel = u32(floor(x_coord * f32(scene.pixel_count.x)));
+    let y_pixel = u32(floor(y_coord * f32(scene.pixel_count.y)));
     return vec2(x_pixel, y_pixel);
 }
 
@@ -606,7 +612,7 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
             //| /
             //v
             let tex_coords = array(vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
-            let color = sample_texture(bary_coords, tex_coords[0], tex_coords[1], tex_coords[2], tex_size);
+            let color = sample_texture(bary_coords, tex_coords[0], tex_coords[1], tex_coords[2], scene.pixel_count);
             //let color = vec4f(u, v, w, 1.0);
             let texel = target_texel(bary_coords, tex_coords);
             return TargetIntersection(
@@ -624,7 +630,7 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
             //  /    |
             // u === v
             let tex_coords = array(vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0));
-            let color = sample_texture(bary_coords, tex_coords[0], tex_coords[1], tex_coords[2], tex_size);
+            let color = sample_texture(bary_coords, tex_coords[0], tex_coords[1], tex_coords[2], scene.pixel_count);
 
             //let color = vec4f(u, v, w, 1.0);
             let texel = target_texel(bary_coords, tex_coords);
@@ -646,9 +652,13 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
 // Texture is upside down for Shader? why?
 fn sample_texture(bary_coords: vec3f, tex_coord_0: vec2f, tex_coord1: vec2f, tex_coord2: vec2f, texture_size: vec2u) -> vec4f {
     // sample expects between [0,0] and [1,1]
-    let x_coord = (bary_coords.x * tex_coord_0.x + bary_coords.y * tex_coord1.x + bary_coords.z * tex_coord2.x);
+    var x_coord = (bary_coords.x * tex_coord_0.x + bary_coords.y * tex_coord1.x + bary_coords.z * tex_coord2.x);
     // 0,0 is bottom left, not top left. Flip the Y axis to get the right image
-    let y_coord = (bary_coords.x * tex_coord_0.y + bary_coords.y * tex_coord1.y + bary_coords.z * tex_coord2.y);
+    var y_coord = (bary_coords.x * tex_coord_0.y + bary_coords.y * tex_coord1.y + bary_coords.z * tex_coord2.y);
+    // Express coordinate as ratio
+    x_coord = x_coord * (f32(texture_size.x) / f32(tex_size.x));
+    y_coord = y_coord * (f32(texture_size.y) / f32(tex_size.y));
+
     let coordinates = vec2f(x_coord, y_coord);
 
     return textureSample(t_diffuse, s_diffuse, coordinates);

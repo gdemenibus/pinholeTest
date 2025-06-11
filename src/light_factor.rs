@@ -59,6 +59,7 @@ pub struct LFBuffers {
     inverse: bool,
     progress: Option<RwLock<f32>>,
     matrix_rep: Option<LFMatrices>,
+    filter: bool,
 }
 
 /// Struct to hold the matrices that we will build.
@@ -190,6 +191,7 @@ impl LFBuffers {
             progress: None,
             matrix_rep: None,
             inverse: false,
+            filter: false,
         }
     }
 
@@ -225,6 +227,7 @@ impl LFBuffers {
     }
     fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u32, f32>>) {
         triplets.retain(|x| x.row < rows && x.col < columns);
+        println!("Triplet size is: {}", triplets.len());
     }
 
     pub fn build_m_a(
@@ -458,8 +461,10 @@ impl LFBuffers {
             }
         }
 
-        Self::filter_zeroes(c_a.as_mut(), m_a_y, m_a_x);
-        Self::filter_zeroes(c_b.as_mut(), m_b_y, m_b_x);
+        if self.filter {
+            Self::filter_zeroes(c_a.as_mut(), m_a_y, m_a_x);
+            Self::filter_zeroes(c_b.as_mut(), m_b_y, m_b_x);
+        }
 
         let image_a = {
             let mut output = matrix_to_image(&c_a);
@@ -551,6 +556,7 @@ impl DrawUI for LFBuffers {
                 ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
                 ui.checkbox(&mut self.show_steps, "Print steps");
                 ui.checkbox(&mut self.inverse, "White on black");
+                ui.checkbox(&mut self.filter, "Filter Columns");
 
                 if ui.button("Sample").clicked() {
                     self.sample_next_redraw_flag = true;

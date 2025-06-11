@@ -1,12 +1,14 @@
 use crate::camera::{Camera, CameraController, CameraHistory};
+use crate::compute_pass::ReverseProj;
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
 use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
-use crate::{compute_pass, matrix, vertex, FileWatcher};
+use crate::{matrix, vertex, FileWatcher};
 use crevice::std140::AsStd140;
+use egui::ahash::HashSet;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
@@ -15,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-use wgpu::{Backends, RenderPipeline};
+use wgpu::{Backends, CommandEncoder, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
@@ -37,6 +39,7 @@ pub struct AppState {
     pub num_index: u32,
     pub scene: Scene,
     pub factorizer: LFBuffers,
+    pub rev_proj: ReverseProj,
 }
 
 impl AppState {
@@ -62,11 +65,13 @@ impl AppState {
             | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
             | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgpu::Features::BGRA8UNORM_STORAGE;
+        let limites = adapter.limits();
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: features,
+                    required_limits: limites,
                     ..Default::default()
                 },
                 None,
@@ -185,6 +190,7 @@ impl AppState {
             contents: bytemuck::cast_slice(&index_list),
             usage: wgpu::BufferUsages::INDEX,
         });
+        let rev_proj = ReverseProj::new(&device, &queue, &scene, &factorizer);
 
         Self {
             device,
@@ -199,6 +205,7 @@ impl AppState {
             num_index: index_list.len() as u32,
             scene,
             factorizer,
+            rev_proj,
         }
     }
 
@@ -284,8 +291,9 @@ impl AppState {
     }
 
     fn sample_light_field(&mut self) {
-        let texture = &self.scene.texture_binds.target_texture;
-        let target_size = (texture.dimensions.x, texture.dimensions.y);
+        let target_size = self.scene.world[0].pixel_count;
+        let target_size = (target_size.x, target_size.y);
+
         let pixel_count_a = self.scene.panels[0].panel.pixel_count;
 
         let pixel_count_b = self.scene.panels[1].panel.pixel_count;
@@ -342,14 +350,28 @@ impl AppState {
             },
         );
     }
+    fn update_target_texture(&mut self, img: &DynamicImage) {
+        if let Ok(_ok) = self
+            .scene
+            .texture_binds
+            .update_target_texture(img, &self.queue)
+        {
+            self.scene.world[0].update_pixel_count(img.dimensions());
+            println!("New Dimensions are: {:#?}", img.dimensions());
+        }
+    }
 
     fn resize_surface(&mut self, width: u32, height: u32) {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
     }
-    fn compute_pass(&self) {
-        compute_pass::compute_pipeline(&self.device, &self.queue);
+    fn compute_pass(&self, encoder: &mut CommandEncoder) {
+        self.rev_proj
+            .compute_pass(encoder, &self.scene, &self.factorizer);
+    }
+    fn print_compute(&self) {
+        self.rev_proj.print_image(&self.device);
     }
 }
 
@@ -368,6 +390,7 @@ pub struct App {
     disable_controls: bool,
     sampling_light_field: bool,
     displaying_panel_textures: bool,
+    pressed_keys: HashSet<KeyCode>,
 }
 
 impl App {
@@ -400,12 +423,20 @@ impl App {
             previous_draw: Instant::now(),
             camera_history: CameraHistory::new(),
             file_picker,
+            pressed_keys: HashSet::default(),
         }
     }
 
     pub fn process_keyboard(&mut self, event: &KeyEvent) {
         if !(event.state == ElementState::Pressed) || self.mouse_on_ui {
             return;
+        }
+        if let PhysicalKey::Code(code) = event.physical_key {
+            if event.state.is_pressed() {
+                self.pressed_keys.insert(code);
+            } else {
+                self.pressed_keys.remove(&code);
+            }
         }
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Minus) => {
@@ -425,25 +456,33 @@ impl App {
                 pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
             }
             PhysicalKey::Code(KeyCode::Comma) => {
-                self.previous_camera();
+                if self.pressed_keys.contains(&KeyCode::ShiftLeft)
+                    || self.pressed_keys.contains(&KeyCode::ShiftRight)
+                {
+                    self.previous_camera();
+                }
             }
 
             PhysicalKey::Code(KeyCode::Period) => {
-                self.next_camera();
+                if self.pressed_keys.contains(&KeyCode::ShiftLeft)
+                    || self.pressed_keys.contains(&KeyCode::ShiftRight)
+                {
+                    self.next_camera();
+                }
             }
             PhysicalKey::Code(KeyCode::KeyM) => {
                 self.update_panel_texture();
                 self.displaying_panel_textures = !self.displaying_panel_textures;
             }
             PhysicalKey::Code(KeyCode::KeyO) => {
-                self.compute_pass();
+                self.print_compute();
             }
             _ => (),
         }
     }
-    pub fn compute_pass(&self) {
+    pub fn print_compute(&self) {
         if let Some(state) = &self.state {
-            state.compute_pass();
+            state.print_compute();
         }
     }
 
@@ -491,12 +530,7 @@ impl App {
             })
             .unwrap()
             .decode()
-            .unwrap()
-            .resize_to_fill(
-                state.scene.texture_binds.target_texture.dimensions.x,
-                state.scene.texture_binds.target_texture.dimensions.y,
-                image::imageops::FilterType::Nearest,
-            );
+            .unwrap();
             state.solver_light_field(&c_t);
         }
         state.will_solve_light_field()
@@ -510,38 +544,9 @@ impl App {
         if file.metadata().unwrap().is_file() {
             //let reader = std::io::BufReader::new(file);
             let img = image::ImageReader::open(path).unwrap().decode().unwrap();
+            state.update_target_texture(&img);
 
             //self.nmf_solver.reset();
-
-            // Ensure you are of the same size??
-            let img = img.resize_to_fill(
-                state.scene.texture_binds.target_texture.dimensions.x,
-                state.scene.texture_binds.target_texture.dimensions.y,
-                image::imageops::FilterType::Nearest,
-            );
-
-            let copy = state
-                .scene
-                .texture_binds
-                .target_texture
-                .texture
-                .as_image_copy();
-            let dimensions = img.dimensions();
-
-            state.queue.write_texture(
-                copy,
-                &img.to_rgba8(),
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * dimensions.0),
-                    rows_per_image: Some(dimensions.1),
-                },
-                wgpu::Extent3d {
-                    width: dimensions.0,
-                    height: dimensions.1,
-                    depth_or_array_layers: 1,
-                },
-            );
         }
     }
 
@@ -724,8 +729,12 @@ impl App {
                 screen_descriptor,
             );
         }
+        {
+            state.compute_pass(&mut encoder);
+        }
 
         state.queue.submit(Some(encoder.finish()));
+
         surface_texture.present();
     }
 }
@@ -738,6 +747,7 @@ impl ApplicationHandler<FileWatcher> for App {
         pollster::block_on(self.set_window(window));
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: FileWatcher) {
+        let _ = event_loop;
         match event {
             FileWatcher::FileChange => {
                 if let Some(state) = self.state.as_mut() {
