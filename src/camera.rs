@@ -3,10 +3,8 @@ use egui::Slider;
 use std::collections::VecDeque;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
-use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
 use winit::event::KeyEvent;
-use winit::event::MouseScrollDelta;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::scene::DrawUI;
@@ -127,7 +125,7 @@ impl CameraController {
                 self.amount_up = amount;
                 true
             }
-            PhysicalKey::Code(KeyCode::ShiftLeft) => {
+            PhysicalKey::Code(KeyCode::CapsLock) => {
                 self.amount_down = amount;
                 true
             }
@@ -197,11 +195,17 @@ impl CameraHistory {
         self.history.push_back(camera.clone());
     }
     pub fn next_save(&mut self) -> Option<&Camera> {
+        if self.history.is_empty() {
+            return None;
+        }
         self.history.rotate_left(1);
         let next = self.history.back();
         next
     }
     pub fn previous_save(&mut self) -> Option<&Camera> {
+        if self.history.is_empty() {
+            return None;
+        }
         self.history.rotate_right(1);
         let next = self.history.back();
         next
