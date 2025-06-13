@@ -357,3 +357,32 @@ Mostly done!
 5) Bug fixes!
 DOne!
 CONTACT PROFFESSORS FOR FORUM
+
+
+## Meeting on the 12th
+Why not use the general solution?
+Justification is much more important
+WHy was a custom solution needed
+Look at what other's have done
+Optimizing the input to get a better output?
+
+
+Experiment once the mulitview is done
+Preprocesses
+
+Image Metrics:
+Some are based on values, some are based on perception
+SSIM, how close are two images. Perception based model
+
+
+What is the traditional method?
+
+
+
+
+
+
+
+
+
+
