@@ -1,7 +1,7 @@
 use cgmath::Vector2;
 use wgpu::{BindGroup, Buffer, CommandEncoder, ComputePipeline, ComputePipelineDescriptor};
 
-use crate::{light_factor::LFBuffers, scene, texture::Texture};
+use crate::{camera::CameraHistory, light_factor::LFBuffers, scene, texture::Texture};
 
 pub struct ReverseProj {
     compute_pipeline: ComputePipeline,
@@ -16,6 +16,7 @@ impl ReverseProj {
         queue: &wgpu::Queue,
         scene: &scene::Scene,
         factorizer: &LFBuffers,
+        camera_history: &CameraHistory,
     ) -> Self {
         let rv_proj = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Reverse Projection Shader"),
@@ -61,6 +62,7 @@ impl ReverseProj {
                     &scene.panel_binds.bind_layout,
                     &factorizer.bind_group_layout,
                     &bind_group_layout,
+                    &camera_history.bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -100,6 +102,7 @@ impl ReverseProj {
         encoder: &mut CommandEncoder,
         scene: &scene::Scene,
         factorizer: &LFBuffers,
+        camera_history: &CameraHistory,
     ) {
         let work_group_size = Self::work_group_size(scene.world[0].pixel_count);
 
@@ -118,6 +121,7 @@ impl ReverseProj {
 
             compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
             compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
+            compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
 
             compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
         }

@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
-use wgpu::{Backends, CommandEncoder, RenderPipeline};
+use wgpu::{Backends, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
@@ -40,6 +40,7 @@ pub struct AppState {
     pub scene: Scene,
     pub factorizer: LFBuffers,
     pub rev_proj: ReverseProj,
+    pub camera_history: CameraHistory,
 }
 
 impl AppState {
@@ -116,7 +117,7 @@ impl AppState {
             label: Some("Test Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/simple.wgsl").into()),
         });
-        if let Some(error) = pollster::block_on(device.pop_error_scope()) {
+        if let Some(_error) = pollster::block_on(device.pop_error_scope()) {
             println!("Could not validate shader!");
         }
         let render_pipeline_layout =
@@ -190,7 +191,8 @@ impl AppState {
             contents: bytemuck::cast_slice(&index_list),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let rev_proj = ReverseProj::new(&device, &queue, &scene, &factorizer);
+        let camera_history = CameraHistory::new(&device);
+        let rev_proj = ReverseProj::new(&device, &queue, &scene, &factorizer, &camera_history);
 
         Self {
             device,
@@ -206,6 +208,7 @@ impl AppState {
             scene,
             factorizer,
             rev_proj,
+            camera_history,
         }
     }
 
@@ -222,7 +225,7 @@ impl AppState {
             label: Some("Test Shader"),
             source: wgpu::ShaderSource::Wgsl(shader_string.into()),
         });
-        if let Some(error) = pollster::block_on(device.pop_error_scope()) {
+        if let Some(_error) = pollster::block_on(device.pop_error_scope()) {
             println!("Could not validate shader!");
         } else {
             let render_pipeline_layout =
@@ -283,32 +286,50 @@ impl AppState {
             self.render_pipe = render_pipe;
         }
     }
-    fn will_sample_light_field(&self) -> bool {
-        self.factorizer.will_sample()
-    }
-    fn will_solve_light_field(&self) -> bool {
-        self.factorizer.will_solve()
-    }
-
-    fn sample_light_field(&mut self) {
-        let target_size = self.scene.world[0].pixel_count;
-        let target_size = (target_size.x, target_size.y);
-
-        let pixel_count_a = self.scene.panels[0].panel.pixel_count;
-
-        let pixel_count_b = self.scene.panels[1].panel.pixel_count;
-        let device = &self.device;
-        self.factorizer
-            .sample_light_field(device, pixel_count_a, pixel_count_b, target_size);
-    }
     fn solver_light_field(&mut self, ct_image: &DynamicImage) {
-        if self.factorizer.will_solve() {
-            let images = self.factorizer.factorize(ct_image);
+        println!("Solving for light field!");
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            self.rev_proj.compute_pass(
+                &mut encoder,
+                &self.scene,
+                &self.factorizer,
+                &self.camera_history,
+            );
+        }
+        self.queue.submit(Some(encoder.finish()));
+        self.device.poll(wgpu::MaintainBase::Wait);
+        {
+            let pixel_count_a = self.scene.panels[0].panel.pixel_count;
+            let pixel_count_b = self.scene.panels[1].panel.pixel_count;
+            let target_size = (
+                self.scene.world[0].pixel_count.x,
+                self.scene.world[0].pixel_count.y,
+            );
+            println!("sampling!");
+            let number_of_view_points = self.camera_history.len() as u32;
+            self.factorizer.sample_light_field(
+                &self.device,
+                pixel_count_a,
+                pixel_count_b,
+                target_size,
+                number_of_view_points,
+            );
+            let ray_cast = (
+                number_of_view_points * target_size.0,
+                number_of_view_points * target_size.1,
+            );
+            println!("Factorizing");
+            let images = self.factorizer.factorize(ct_image, ray_cast);
 
             if let Some((img_0, img_1)) = images {
                 self.update_panel(img_0, 0);
 
                 self.update_panel(img_1, 1);
+            } else {
+                println!("No matrices were sampled")
             }
         }
     }
@@ -366,10 +387,6 @@ impl AppState {
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
     }
-    fn compute_pass(&self, encoder: &mut CommandEncoder) {
-        self.rev_proj
-            .compute_pass(encoder, &self.scene, &self.factorizer);
-    }
     fn print_compute(&self) {
         self.rev_proj.print_image(&self.device);
     }
@@ -382,7 +399,6 @@ pub struct App {
     window: Option<Arc<Window>>,
     camera: Camera,
     camera_control: CameraController,
-    camera_history: CameraHistory,
     file_picker: FilePicker,
     previous_draw: Instant,
     mouse_press: bool,
@@ -421,7 +437,6 @@ impl App {
             ),
             camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
-            camera_history: CameraHistory::new(),
             file_picker,
             pressed_keys: HashSet::default(),
         }
@@ -487,53 +502,34 @@ impl App {
     }
 
     pub fn next_camera(&mut self) {
-        self.camera = self
-            .camera_history
-            .next_save()
-            .unwrap_or(&self.camera)
-            .clone();
+        if let Some(state) = self.state.as_mut() {
+            self.camera = state
+                .camera_history
+                .next_save()
+                .unwrap_or(&self.camera)
+                .clone();
+        }
     }
     pub fn previous_camera(&mut self) {
-        self.camera = self
-            .camera_history
-            .previous_save()
-            .unwrap_or(&self.camera)
-            .clone();
-    }
-
-    /// Return true if we have sampled the light field, which means that we need to update the
-    /// textures!
-    pub fn get_sample_light_field(&mut self) -> Result<bool, String> {
-        let state = self.state.as_mut().unwrap();
-        if state.will_sample_light_field() {
-            self.sampling_light_field = true;
-
-            state.sample_light_field();
-            //state.factorizer.sample_buffer_a_y(device);
-            self.camera_history.save_point(&self.camera);
-
-            self.sampling_light_field = false;
-            Ok(true)
-        } else {
-            Ok(false)
+        if let Some(state) = self.state.as_mut() {
+            self.camera = state
+                .camera_history
+                .previous_save()
+                .unwrap_or(&self.camera)
+                .clone();
         }
     }
-    pub fn solve_light_field(&mut self) -> bool {
-        let state = self.state.as_mut().unwrap();
-        if state.will_solve_light_field() {
-            let c_t = image::ImageReader::open({
-                if self.file_picker.texture_file.is_dir() {
-                    self.file_picker.default_texture().clone()
-                } else {
-                    self.file_picker.texture_file.clone()
-                }
-            })
-            .unwrap()
-            .decode()
-            .unwrap();
-            state.solver_light_field(&c_t);
-        }
-        state.will_solve_light_field()
+    pub fn c_t(&self) -> DynamicImage {
+        image::ImageReader::open({
+            if self.file_picker.texture_file.is_dir() {
+                self.file_picker.default_texture().clone()
+            } else {
+                self.file_picker.texture_file.clone()
+            }
+        })
+        .unwrap()
+        .decode()
+        .unwrap()
     }
 
     // Take the new texture and queue an update
@@ -619,14 +615,21 @@ impl App {
         }
 
         //self.update_panel_texture();
+        //
 
-        self.get_sample_light_field().unwrap();
-
-        if self.solve_light_field() {
-            self.displaying_panel_textures = true;
-        }
-
+        let c_t = self.c_t();
         let state = self.state.as_mut().unwrap();
+
+        if state.factorizer.will_sample() {
+            println!("Saved Camera Point");
+            state.camera_history.save_point(&self.camera);
+            state.factorizer.has_sampled();
+        }
+        if state.factorizer.will_solve() {
+            state.solver_light_field(&c_t);
+            self.displaying_panel_textures = true;
+            state.factorizer.has_solved();
+        }
 
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [state.surface_config.width, state.surface_config.height],
@@ -672,6 +675,7 @@ impl App {
             state
                 .scene
                 .update_draw(&state.queue, &self.camera, self.displaying_panel_textures);
+            state.camera_history.update_buffer(&state.queue);
             // Need to get: The texture being passed to wgpu, and the new data.
             // Should not be called every time, that is ineffective. Instead, as response to
             // Changes
@@ -730,7 +734,7 @@ impl App {
             );
         }
         {
-            state.compute_pass(&mut encoder);
+            //state.compute_pass(&mut encoder);
         }
 
         state.queue.submit(Some(encoder.finish()));

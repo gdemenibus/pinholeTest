@@ -44,6 +44,8 @@ pub struct LFBuffers {
     m_a_x_buffer: Buffer,
     m_b_y_buffer: Buffer,
     m_b_x_buffer: Buffer,
+    m_t_x_buffer: Buffer,
+    m_t_y_buffer: Buffer,
 
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
@@ -70,6 +72,8 @@ pub struct LFMatrices {
     m_a_x_matrix: SparseColMat<u32, f32>,
     m_b_y_matrix: SparseColMat<u32, f32>,
     m_b_x_matrix: SparseColMat<u32, f32>,
+    m_t_y_matrix: SparseColMat<u32, f32>,
+    m_t_x_matrix: SparseColMat<u32, f32>,
     sample_count: usize,
 }
 
@@ -92,9 +96,13 @@ impl LFBuffers {
         let mut layout_entry_1 = layout_entry_0;
         let mut layout_entry_2 = layout_entry_0;
         let mut layout_entry_3 = layout_entry_0;
+        let mut layout_entry_4 = layout_entry_0;
+        let mut layout_entry_5 = layout_entry_0;
         layout_entry_1.binding = 1;
         layout_entry_2.binding = 2;
         layout_entry_3.binding = 3;
+        layout_entry_4.binding = 4;
+        layout_entry_5.binding = 5;
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("LFFactorizer Bind group layout"),
@@ -103,6 +111,8 @@ impl LFBuffers {
                 layout_entry_1,
                 layout_entry_2,
                 layout_entry_3,
+                layout_entry_4,
+                layout_entry_5,
             ],
         });
 
@@ -150,6 +160,28 @@ impl LFBuffers {
                 | wgpu::BufferUsages::COPY_SRC,
         });
 
+        let m_t_y_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("m_t_y buffer"),
+            // Resolution times 4, as it's a floating 32 per entry, and 3 entries
+            contents: &[0u8; 2560 * 1600 * 4 * 3],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::MAP_WRITE
+                | wgpu::BufferUsages::MAP_READ
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
+
+        let m_t_x_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("m_t_x buffer"),
+            // Resolution times 4, as it's a floating 32 per entry, and 3 entries
+            contents: &[0u8; 2560 * 1600 * 4 * 3],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::MAP_WRITE
+                | wgpu::BufferUsages::MAP_READ
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bind group for Sampler"),
             layout: &bind_group_layout,
@@ -170,6 +202,14 @@ impl LFBuffers {
                     binding: 3,
                     resource: m_b_x_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: m_t_y_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: m_t_x_buffer.as_entire_binding(),
+                },
             ],
         });
         Self {
@@ -177,6 +217,8 @@ impl LFBuffers {
             m_a_x_buffer,
             m_b_y_buffer,
             m_b_x_buffer,
+            m_t_y_buffer,
+            m_t_x_buffer,
             bind_group_layout,
             bind_group,
             rng: false,
@@ -215,9 +257,15 @@ impl LFBuffers {
             .collect();
         // Remove duplicates!
         triplet_list.retain(|(x, y, _entry)| seen.insert((*x, *y)));
-        let max_index = triplet_list.iter().max().unwrap();
+        let max_index = triplet_list.iter().max();
         println!("Max seen is: {:?}", max_index);
         seen
+    }
+    pub fn has_sampled(&mut self) {
+        self.sample_next_redraw_flag = false;
+    }
+    pub fn has_solved(&mut self) {
+        self.solve_next_redraw_flag = false;
     }
     pub fn will_sample(&self) -> bool {
         self.sample_next_redraw_flag
@@ -228,6 +276,44 @@ impl LFBuffers {
     fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u32, f32>>) {
         triplets.retain(|x| x.row < rows && x.col < columns);
         println!("Triplet size is: {}", triplets.len());
+    }
+    pub fn build_m_t(
+        &self,
+        device: &wgpu::Device,
+        target_size: (u32, u32),
+        rays_cast: (u32, u32),
+    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
+        let tripltets_m_t_x = Self::buffer_to_triplet(&self.m_t_x_buffer, device);
+        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_t_x
+            .iter()
+            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
+            .collect();
+        Self::check_triplets(target_size.1, rays_cast.1, &mut triplet_list);
+
+        // Height t times height a
+        let matrix_m_t_x = SparseColMat::try_new_from_triplets(
+            target_size.1 as usize,
+            rays_cast.1 as usize,
+            &triplet_list,
+        )
+        .unwrap();
+
+        let tripltets_m_t_y = Self::buffer_to_triplet(&self.m_t_y_buffer, device);
+        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_t_y
+            .iter()
+            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
+            .collect();
+
+        Self::check_triplets(target_size.0, rays_cast.0, &mut triplet_list);
+        // Height t times height a
+        let matrix_m_t_y = SparseColMat::try_new_from_triplets(
+            target_size.0 as usize,
+            rays_cast.0 as usize,
+            &triplet_list,
+        )
+        .unwrap();
+
+        (matrix_m_t_x, matrix_m_t_y)
     }
 
     pub fn build_m_a(
@@ -319,35 +405,36 @@ impl LFBuffers {
         pixel_count_a: Vector2<u32>,
         pixel_count_b: Vector2<u32>,
         target_size: (u32, u32),
+        number_of_view_points: u32,
     ) {
-        // Flag has not been raised
-        if !self.sample_next_redraw_flag {
-            return;
-        }
-
+        let number_of_rays = (
+            target_size.0 * number_of_view_points,
+            target_size.1 * number_of_view_points,
+        );
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
-        let (ma_x, ma_y) = self.build_m_a(device, target_size, panel_a_size);
-        let (mb_x, mb_y) = self.build_m_b(device, target_size, panel_b_size);
+        let (ma_x, ma_y) = self.build_m_a(device, number_of_rays, panel_a_size);
+        let (mb_x, mb_y) = self.build_m_b(device, number_of_rays, panel_b_size);
+        // TO BE CHANGED SOON
+        let (mt_x, mt_y) = self.build_m_t(device, number_of_rays, target_size);
 
         let matrices = LFMatrices {
             m_a_y_matrix: ma_y,
             m_a_x_matrix: ma_x,
             m_b_y_matrix: mb_y,
             m_b_x_matrix: mb_x,
+            m_t_x_matrix: mt_x,
+            m_t_y_matrix: mt_y,
             sample_count: 1,
         };
-        if self.matrix_rep.is_none() {
-            self.matrix_rep = Some(matrices);
-        } else {
-            self.matrix_rep.as_mut().unwrap().join(matrices);
-        }
-
-        // We have already sampled, no need to sample again
-        self.sample_next_redraw_flag = false;
+        self.matrix_rep = Some(matrices);
     }
 
-    pub fn factorize(&mut self, c_t: &DynamicImage) -> Option<(DynamicImage, DynamicImage)> {
+    pub fn factorize(
+        &mut self,
+        c_t: &DynamicImage,
+        rays_cast: (u32, u32),
+    ) -> Option<(DynamicImage, DynamicImage)> {
         let c_t = image_to_matrix(c_t);
         matrix_to_image(&c_t)
             .save_with_format(
@@ -371,6 +458,9 @@ impl LFBuffers {
         let m_a_x = &matrices.m_a_x_matrix;
         let m_b_y = &matrices.m_b_y_matrix;
         let m_b_x = &matrices.m_b_x_matrix;
+        let m_t_x = &matrices.m_t_x_matrix;
+        let m_t_y = &matrices.m_t_y_matrix;
+
         let h_a = m_a_y.shape().1;
         let h_b = m_b_y.shape().1;
 
@@ -399,10 +489,12 @@ impl LFBuffers {
             }
         });
 
-        let mut upper = Mat::<f32>::zeros(c_t.shape().0, c_t.shape().1);
+        let mut upper = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
 
-        let mut lower = Mat::<f32>::zeros(c_t.shape().0, c_t.shape().1);
+        let mut lower = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
 
+        // Doesn't change
+        let c_t_m_product = m_t_y * c_t * m_t_x.transpose();
         for x in 0..self.iter_count {
             if self.show_steps {
                 let path_1 = format!(
@@ -426,9 +518,11 @@ impl LFBuffers {
                 let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
                 let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
 
-                zip!(&mut upper, &c_b_m_product, &c_t).for_each(|unzip!(upper, c_b, c_t)| {
-                    *upper = *c_b * *c_t;
-                });
+                zip!(&mut upper, &c_b_m_product, &c_t_m_product).for_each(
+                    |unzip!(upper, c_b, c_t)| {
+                        *upper = *c_b * *c_t;
+                    },
+                );
 
                 zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
                     |unzip!(lower, c_b, c_a)| {
@@ -444,9 +538,11 @@ impl LFBuffers {
                 let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
                 let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
 
-                zip!(&mut upper, &c_a_m_product, &c_t).for_each(|unzip!(upper, c_a, c_t)| {
-                    *upper = *c_a * *c_t;
-                });
+                zip!(&mut upper, &c_a_m_product, &c_t_m_product).for_each(
+                    |unzip!(upper, c_a, c_t)| {
+                        *upper = *c_a * *c_t;
+                    },
+                );
 
                 zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
                     |unzip!(lower, c_b, c_a)| {
