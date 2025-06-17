@@ -77,9 +77,17 @@ var<storage, read_write> m_a_x_buffer: array<u32>;
 var<storage, read_write> m_b_y_buffer: array<u32>;
 @group(3) @binding(3)
 var<storage, read_write> m_b_x_buffer: array<u32>;
-
+@group(3) @binding(4)
+var<storage, read_write> m_t_y_buffer: array<u32>;
+@group(3) @binding(5)
+var<storage, read_write> m_t_x_buffer: array<u32>;
 
 @group(4) @binding(0) var color_buffer: texture_storage_2d<rgba8unorm, write>;
+
+// Deals with camera history
+// We need to declare a maximum in order to handle this. 10 seems like a correct amount?
+@group(5) @binding(0) var<uniform> camera_positions: array<vec3<f32>, 10>;
+@group(5) @binding(1) var<uniform> camera_count: u32;
 
 
 @compute @workgroup_size(8, 8, 1)
@@ -91,18 +99,26 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
     let pixel_location = pixel_to_world_location(scene, screen_pos);
     let origin = pixel_location;
-    let direction = normalize(rt.ray_origin - pixel_location);
+    for (var camera_index = 0u; camera_index < camera_count; camera_index++) {
+        let observer = camera_positions[camera_index];
 
-    // Build the ray
-    let ray = Ray(origin, direction);
-    double_intersection(ray, screen_pos);
+        let direction = normalize(observer - pixel_location);
+
+        // Build the ray
+        let ray = Ray(origin, direction);
+        double_intersection(ray, screen_pos, camera_index);
+
+    }
 
 }
 
-fn double_intersection(ray: Ray, current_pixel: vec2<u32>) {
+fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
 
     // Panels are ordered such that the first panel is the closest to the observer
     // Index 0 aligns with A
+    let ray_index_x = current_pixel.x + (scene.pixel_count.x * observer_index);
+    let ray_index_y = current_pixel.y + (scene.pixel_count.y * observer_index);
+    let ray_index = vec2u(ray_index_x, ray_index_y);
     var color = background_color;
     for (var index = 0u; index < 2; index++) {
         var trig_1_intersection = intersection_panel(ray, true, panels[index]);
@@ -116,12 +132,12 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>) {
 
             if index == 0 {
                 color = vec4f(1.0, 1.0, 0.0, 1.0);
-                record_hit_A(current_pixel, trig_1_intersection.pixel_coords);
+                record_hit_A(ray_index, trig_1_intersection.pixel_coords);
 
             } else {
 
                 color = vec4f(1.0, 0.0, 1.0, 1.0);
-                record_hit_B(current_pixel, trig_1_intersection.pixel_coords);
+                record_hit_B(ray_index, trig_1_intersection.pixel_coords);
 
             }
 
@@ -160,6 +176,8 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>) {
         }
 
     }
+    // TO CHANGE WHEN MULTIVIEW
+    record_hit_T(ray_index, current_pixel);
 
     textureStore(color_buffer, current_pixel, color);
 }
@@ -167,12 +185,12 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>) {
 fn record_hit_A(global_coordinat: vec2<u32>, a_coords: vec2<u32>) {
     let array_coordinate = (global_coordinat.x + global_coordinat.y * scene.pixel_count.y) * 3;
 
-    m_a_y_buffer[array_coordinate] = min(global_coordinat.y, scene.pixel_count.y);
-    m_a_y_buffer[array_coordinate + 1] = min(a_coords.y, panels[0].pixel_count.y);
+    m_a_y_buffer[array_coordinate] = global_coordinat.y;
+    m_a_y_buffer[array_coordinate + 1] = a_coords.y;
     m_a_y_buffer[array_coordinate + 2] = 1;
 
-    m_a_x_buffer[array_coordinate] = min(global_coordinat.x, scene.pixel_count.x);
-    m_a_x_buffer[array_coordinate + 1] = min(a_coords.x, panels[0].pixel_count.x);
+    m_a_x_buffer[array_coordinate] = global_coordinat.x;
+    m_a_x_buffer[array_coordinate + 1] = a_coords.x;
     m_a_x_buffer[array_coordinate + 2] = 1;
 
 }
@@ -181,15 +199,29 @@ fn record_hit_B(global_coordinat: vec2<u32>, b_coords: vec2<u32>) {
 
     let array_coordinate = (global_coordinat.x + global_coordinat.y * scene.pixel_count.y) * 3;
 
-    m_b_y_buffer[array_coordinate] = min(global_coordinat.y, scene.pixel_count.y);
-    m_b_y_buffer[array_coordinate + 1] = min(b_coords.y, panels[1].pixel_count.y);
+    m_b_y_buffer[array_coordinate] = global_coordinat.y;
+    m_b_y_buffer[array_coordinate + 1] = b_coords.y;
     m_b_y_buffer[array_coordinate + 2] = 1;
 
-    m_b_x_buffer[array_coordinate] = min(global_coordinat.x, scene.pixel_count.x);
-    m_b_x_buffer[array_coordinate + 1] = min(b_coords.x, panels[1].pixel_count.x);
+    m_b_x_buffer[array_coordinate] = global_coordinat.x;
+    m_b_x_buffer[array_coordinate + 1] = b_coords.x;
     m_b_x_buffer[array_coordinate + 2] = 1;
 
 }
+fn record_hit_T(global_coordinat: vec2<u32>, t_coords: vec2<u32>) {
+
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * scene.pixel_count.y) * 3;
+
+    m_t_y_buffer[array_coordinate] = global_coordinat.y;
+    m_t_y_buffer[array_coordinate + 1] = t_coords.y;
+    m_t_y_buffer[array_coordinate + 2] = 1;
+
+    m_t_x_buffer[array_coordinate] = global_coordinat.x;
+    m_t_x_buffer[array_coordinate + 1] = t_coords.x;
+    m_t_x_buffer[array_coordinate + 2] = 1;
+
+}
+
 
 struct PanelIntersection {
     hit: bool,

@@ -1,8 +1,17 @@
 use cgmath::*;
+use crevice::std140::AsStd140;
+use crevice::std140::Std140;
+use crevice::std140::Writer;
 use egui::Slider;
 use std::collections::VecDeque;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
+use wgpu::util::DeviceExt;
+use wgpu::BindGroup;
+use wgpu::BindGroupLayout;
+use wgpu::Buffer;
+use wgpu::Device;
+use wgpu::Queue;
 use winit::event::ElementState;
 use winit::event::KeyEvent;
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -10,7 +19,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::scene::DrawUI;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Camera {
     pub position: Point3<f32>,
     yaw: Rad<f32>,
@@ -184,15 +193,77 @@ impl CameraController {
 // Struct to store camera positions, especially when sampling!
 pub struct CameraHistory {
     history: VecDeque<Camera>,
+    pub bind_group_layout: BindGroupLayout,
+    pub bind_group: BindGroup,
+    pub history_buffer: Buffer,
+    pub size_buffer: Buffer,
 }
 impl CameraHistory {
-    pub fn new() -> Self {
+    pub fn new(device: &Device) -> Self {
+        let history_layout = wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::all(),
+            count: None,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        };
+        let size_layout = wgpu::BindGroupLayoutEntry {
+            binding: 1,
+            visibility: wgpu::ShaderStages::all(),
+            count: None,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        };
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera History Bind Group Layout"),
+            entries: &[history_layout, size_layout],
+        });
+        let history_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            // Each camera position is 3 f32s. 12 bytes. 21 postions should be fine
+            size: 1024,
+            label: Some("Camera History Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: true,
+        });
+        let size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera History size buffer"),
+            contents: 0u32.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Binding For Panel group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: history_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: size_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        history_buffer.unmap();
+
         CameraHistory {
+            bind_group_layout,
+            size_buffer,
+            history_buffer,
+            bind_group,
             history: VecDeque::new(),
         }
     }
     pub fn save_point(&mut self, camera: &Camera) {
-        self.history.push_back(camera.clone());
+        if !self.history.contains(camera) {
+            self.history.push_back(camera.clone());
+        }
     }
     pub fn next_save(&mut self) -> Option<&Camera> {
         if self.history.is_empty() {
@@ -210,7 +281,30 @@ impl CameraHistory {
         let next = self.history.back();
         next
     }
+    pub fn len(&self) -> usize {
+        self.history.len()
+    }
+    pub fn history_to_bytes(&self) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let mut writer = Writer::new(&mut buffer);
+        for x in self.history.iter() {
+            writer.write(&x.position).unwrap();
+        }
+        buffer
+    }
+    pub fn size_to_bytes(&self) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let mut writer = Writer::new(&mut buffer);
+        writer.write(&(self.history.len() as u32)).unwrap();
+
+        buffer
+    }
+    pub fn update_buffer(&self, queue: &Queue) {
+        queue.write_buffer(&self.history_buffer, 0, &self.history_to_bytes());
+        queue.write_buffer(&self.size_buffer, 0, &self.size_to_bytes());
+    }
 }
+
 impl DrawUI for CameraHistory {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
         let title = title.unwrap_or("Camera Settings".to_string());
