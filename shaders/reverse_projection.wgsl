@@ -132,12 +132,12 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
 
             if index == 0 {
                 color = vec4f(1.0, 1.0, 0.0, 1.0);
-                record_hit_A(ray_index, trig_1_intersection.pixel_coords);
+                record_hit_A(ray_index, trig_1_intersection.pixel_coords, observer_index);
 
             } else {
 
                 color = vec4f(1.0, 0.0, 1.0, 1.0);
-                record_hit_B(ray_index, trig_1_intersection.pixel_coords);
+                record_hit_B(ray_index, trig_1_intersection.pixel_coords, observer_index);
 
             }
 
@@ -158,11 +158,11 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
             if index == 0 {
                 color = vec4f(1.0, 1.0, 0.0, 1.0);
 
-                record_hit_A(current_pixel, trig_2_intersection.pixel_coords);
+                record_hit_A(current_pixel, trig_2_intersection.pixel_coords, observer_index);
             } else {
                 color = vec4f(1.0, 0.0, 1.0, 1.0);
 
-                record_hit_B(current_pixel, trig_2_intersection.pixel_coords);
+                record_hit_B(current_pixel, trig_2_intersection.pixel_coords, observer_index);
             }
 
             color = textureSampleLevel(texture_panel, s_diffuse, hit_relative, index, 0.0);
@@ -177,13 +177,13 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
 
     }
     // TO CHANGE WHEN MULTIVIEW
-    record_hit_T(ray_index, current_pixel);
+    record_hit_T(ray_index, current_pixel, observer_index);
 
     textureStore(color_buffer, current_pixel, color);
 }
 
-fn record_hit_A(global_coordinat: vec2<u32>, a_coords: vec2<u32>) {
-    let array_coordinate = (global_coordinat.x + global_coordinat.y * scene.pixel_count.y) * 3;
+fn record_hit_A(global_coordinat: vec2<u32>, a_coords: vec2<u32>, index: u32) {
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (scene.pixel_count.y * (index + 1))) * 3;
 
     m_a_y_buffer[array_coordinate] = global_coordinat.y;
     m_a_y_buffer[array_coordinate + 1] = a_coords.y;
@@ -195,9 +195,9 @@ fn record_hit_A(global_coordinat: vec2<u32>, a_coords: vec2<u32>) {
 
 }
 
-fn record_hit_B(global_coordinat: vec2<u32>, b_coords: vec2<u32>) {
+fn record_hit_B(global_coordinat: vec2<u32>, b_coords: vec2<u32>, index: u32) {
 
-    let array_coordinate = (global_coordinat.x + global_coordinat.y * scene.pixel_count.y) * 3;
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (scene.pixel_count.y * (index + 1))) * 3;
 
     m_b_y_buffer[array_coordinate] = global_coordinat.y;
     m_b_y_buffer[array_coordinate + 1] = b_coords.y;
@@ -208,9 +208,9 @@ fn record_hit_B(global_coordinat: vec2<u32>, b_coords: vec2<u32>) {
     m_b_x_buffer[array_coordinate + 2] = 1;
 
 }
-fn record_hit_T(global_coordinat: vec2<u32>, t_coords: vec2<u32>) {
+fn record_hit_T(global_coordinat: vec2<u32>, t_coords: vec2<u32>, index: u32) {
 
-    let array_coordinate = (global_coordinat.x + global_coordinat.y * scene.pixel_count.y) * 3;
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (scene.pixel_count.y * (index + 1))) * 3;
 
     m_t_y_buffer[array_coordinate] = global_coordinat.y;
     m_t_y_buffer[array_coordinate + 1] = t_coords.y;
