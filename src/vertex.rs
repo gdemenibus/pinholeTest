@@ -5,10 +5,6 @@ pub struct Vertex {
     position: cgmath::Vector3<f32>,
 }
 impl Vertex {
-    pub fn new(vec: cgmath::Vector3<f32>) -> Self {
-        Vertex { position: vec }
-    }
-
     // Tell WGPU the order we want our vertex to come in
     const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
 

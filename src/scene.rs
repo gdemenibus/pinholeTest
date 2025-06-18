@@ -83,9 +83,12 @@ pub struct Target {
 
 impl TextureBinds {
     pub fn new(device: &wgpu::Device, queue: &Queue) -> Self {
-        let texture_bytes = include_bytes!("../resources/textures/Aircraft_code.png");
+        //let texture_bytes = include_bytes!("../resources/textures/Aircraft_code.png");
 
-        let texture = texture::Texture::from_bytes(device, queue, texture_bytes, "Damn");
+        //let texture = texture::Texture::from_bytes(device, queue, texture_bytes, "Damn");
+        let img = image::DynamicImage::new_rgb8(3000, 3000);
+        let label = Some("Target Texture");
+        let texture = texture::Texture::from_image(device, queue, &img, label);
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -159,7 +162,11 @@ impl TextureBinds {
         let our_dimensions = self.target_texture.dimensions;
         let img_dimensions = img.dimensions();
         if our_dimensions.x < img_dimensions.0 || our_dimensions.y < img_dimensions.1 {
-            println!("Image is bigger than texture buffer!");
+            println!(
+                "Selected texture {:?} is larger than allocated buffer {:?}",
+                img_dimensions,
+                (our_dimensions.x, our_dimensions.y)
+            );
             return Err(());
         }
         let copy = self.target_texture.texture.as_image_copy();
@@ -246,8 +253,8 @@ impl TargetBinds {
 }
 impl PanelBinds {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &[u8]) -> Self {
-        let panel_1 = image::DynamicImage::new_rgb8(300, 300);
-        let panel_2 = image::DynamicImage::new_rgb8(300, 300);
+        let panel_1 = image::DynamicImage::new_rgb8(3000, 3000);
+        let panel_2 = image::DynamicImage::new_rgb8(3000, 3000);
         let texture_vec = vec![panel_1, panel_2];
 
         let panel_textures =

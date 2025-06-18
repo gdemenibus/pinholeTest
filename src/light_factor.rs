@@ -1,7 +1,7 @@
-use std::num::NonZero;
+use std::{num::NonZero, sync::mpsc::channel, thread};
 
 use cgmath::Vector2;
-use egui::{ahash::HashSet, mutex::RwLock};
+use egui::ahash::HashSet;
 use faer::{
     sparse::{SparseColMat, Triplet},
     stats::prelude::{thread_rng, Rng},
@@ -57,9 +57,7 @@ pub struct LFBuffers {
     solve_next_redraw_flag: bool,
     blend: bool,
     blend_sigma: f32,
-    average: bool,
     inverse: bool,
-    progress: Option<RwLock<f32>>,
     matrix_rep: Option<LFMatrices>,
     filter: bool,
 }
@@ -74,7 +72,6 @@ pub struct LFMatrices {
     m_b_x_matrix: SparseColMat<u32, f32>,
     m_t_y_matrix: SparseColMat<u32, f32>,
     m_t_x_matrix: SparseColMat<u32, f32>,
-    sample_count: usize,
 }
 
 impl LFBuffers {
@@ -229,8 +226,6 @@ impl LFBuffers {
             solve_next_redraw_flag: false,
             blend: false,
             blend_sigma: 0.1f32,
-            average: false,
-            progress: None,
             matrix_rep: None,
             inverse: false,
             filter: false,
@@ -429,7 +424,6 @@ impl LFBuffers {
             m_b_x_matrix: mb_x,
             m_t_x_matrix: mt_x,
             m_t_y_matrix: mt_y,
-            sample_count: 1,
         };
         self.matrix_rep = Some(matrices);
     }
@@ -452,11 +446,7 @@ impl LFBuffers {
 
         self.matrix_rep.as_ref()?;
 
-        let mut matrices = self.matrix_rep.as_ref().unwrap().clone();
-
-        if self.average {
-            matrices.average();
-        }
+        let matrices = self.matrix_rep.as_ref()?;
 
         let m_a_y = &matrices.m_a_y_matrix;
         let m_a_x = &matrices.m_a_x_matrix;
@@ -499,6 +489,14 @@ impl LFBuffers {
 
         let mut lower = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
 
+        // Move IO out of loop and into dedicated thread
+        let (sender, receiver) = channel::<(String, DynamicImage)>();
+        thread::spawn(move || {
+            for (path, image) in receiver {
+                image.save_with_format(path, image::ImageFormat::Png).ok();
+            }
+        });
+
         // Doesn't change
         let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
         for x in 0..self.iter_count {
@@ -511,12 +509,12 @@ impl LFBuffers {
                     "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
                     x, 2
                 );
-                matrix_to_image(&c_a)
-                    .save_with_format(path_1, image::ImageFormat::Png)
-                    .ok()?;
-                matrix_to_image(&c_b)
-                    .save_with_format(path_2, image::ImageFormat::Png)
-                    .ok()?;
+                let image_a = matrix_to_image(&c_a);
+                let image_b = matrix_to_image(&c_b);
+                sender.send((path_1, image_a)).unwrap();
+                sender.send((path_2, image_b)).unwrap();
+
+                // Dispatch a thread to do
             }
             // CA update
             //
@@ -627,23 +625,6 @@ impl LFBuffers {
     }
 }
 
-impl LFMatrices {
-    pub fn join(&mut self, other: Self) {
-        self.sample_count += other.sample_count;
-
-        self.m_b_x_matrix = &self.m_b_x_matrix + &other.m_b_x_matrix;
-        self.m_a_x_matrix = &self.m_a_x_matrix + &other.m_a_x_matrix;
-        self.m_b_y_matrix = &self.m_b_y_matrix + &other.m_b_y_matrix;
-        self.m_a_y_matrix = &self.m_a_y_matrix + &other.m_a_y_matrix;
-    }
-    pub fn average(&mut self) {
-        self.m_b_x_matrix /= faer::Scale(self.sample_count as f32);
-        self.m_a_x_matrix /= faer::Scale(self.sample_count as f32);
-        self.m_a_y_matrix /= faer::Scale(self.sample_count as f32);
-        self.m_b_y_matrix /= faer::Scale(self.sample_count as f32);
-    }
-}
-
 impl DrawUI for LFBuffers {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
         let title = title.unwrap_or("Light Field Sampler".to_string());
@@ -666,14 +647,8 @@ impl DrawUI for LFBuffers {
                 if ui.button("Solve").clicked() {
                     self.solve_next_redraw_flag = true;
                 }
-                ui.checkbox(&mut self.average, "Average view points");
-                if self.progress.is_some() {
-                    let progress = *self.progress.as_ref().unwrap().read();
-                    ui.add(egui::ProgressBar::new(progress));
-                } else {
-                    ui.label("Not solving");
-                }
                 if ui.button("Reset").clicked() {
+                    self.matrix_rep = None;
                     todo!("Reset functionality not implemented yet");
                 }
                 ui.checkbox(&mut self.blend, "Blend Out Image");
