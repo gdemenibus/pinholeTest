@@ -304,9 +304,11 @@ impl AppState {
         {
             let pixel_count_a = self.scene.panels[0].panel.pixel_count;
             let pixel_count_b = self.scene.panels[1].panel.pixel_count;
+
+            // Y here maps to additional rows and X to additional Columns
             let target_size = (
-                self.scene.world[0].pixel_count.x,
                 self.scene.world[0].pixel_count.y,
+                self.scene.world[0].pixel_count.x,
             );
             println!("sampling!");
             let number_of_view_points = self.camera_history.len() as u32;

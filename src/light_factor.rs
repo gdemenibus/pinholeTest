@@ -274,26 +274,30 @@ impl LFBuffers {
         self.solve_next_redraw_flag
     }
     fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u32, f32>>) {
+        let pre_filter = triplets.len();
         triplets.retain(|x| x.row < rows && x.col < columns);
+        let post_filer = triplets.len();
+        let diff = pre_filter - post_filer;
+        println!("Filtered {}, entries", diff);
         println!("Triplet size is: {}", triplets.len());
     }
     pub fn build_m_t(
         &self,
         device: &wgpu::Device,
-        target_size: (u32, u32),
         rays_cast: (u32, u32),
+        target_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
         let tripltets_m_t_x = Self::buffer_to_triplet(&self.m_t_x_buffer, device);
         let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_t_x
             .iter()
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
-        Self::check_triplets(target_size.1, rays_cast.1, &mut triplet_list);
+        Self::check_triplets(rays_cast.1, target_size.1, &mut triplet_list);
 
         // Height t times height a
         let matrix_m_t_x = SparseColMat::try_new_from_triplets(
-            target_size.1 as usize,
             rays_cast.1 as usize,
+            target_size.1 as usize,
             &triplet_list,
         )
         .unwrap();
@@ -304,11 +308,11 @@ impl LFBuffers {
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
 
-        Self::check_triplets(target_size.0, rays_cast.0, &mut triplet_list);
+        Self::check_triplets(rays_cast.0, target_size.0, &mut triplet_list);
         // Height t times height a
         let matrix_m_t_y = SparseColMat::try_new_from_triplets(
-            target_size.0 as usize,
             rays_cast.0 as usize,
+            target_size.0 as usize,
             &triplet_list,
         )
         .unwrap();
@@ -319,10 +323,10 @@ impl LFBuffers {
     pub fn build_m_a(
         &self,
         device: &wgpu::Device,
-        target_size: (u32, u32),
+        rays_cast: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Target size: {:?}", target_size);
+        println!("Target size: {:?}", rays_cast);
         println!("Panel Size: {:?}", panel_size);
 
         let tripltets_m_a_x = Self::buffer_to_triplet(&self.m_a_x_buffer, device);
@@ -330,11 +334,11 @@ impl LFBuffers {
             .iter()
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
-        Self::check_triplets(target_size.1, panel_size.1, &mut triplet_list);
+        Self::check_triplets(rays_cast.1, panel_size.1, &mut triplet_list);
 
         // Height t times height a
         let matrix_m_a_x = SparseColMat::try_new_from_triplets(
-            target_size.1 as usize,
+            rays_cast.1 as usize,
             panel_size.1 as usize,
             &triplet_list,
         )
@@ -346,10 +350,10 @@ impl LFBuffers {
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
 
-        Self::check_triplets(target_size.0, panel_size.0, &mut triplet_list);
+        Self::check_triplets(rays_cast.0, panel_size.0, &mut triplet_list);
         // Height t times height a
         let matrix_m_a_y = SparseColMat::try_new_from_triplets(
-            target_size.0 as usize,
+            rays_cast.0 as usize,
             panel_size.0 as usize,
             &triplet_list,
         )
@@ -361,10 +365,10 @@ impl LFBuffers {
     pub fn build_m_b(
         &self,
         device: &wgpu::Device,
-        target_size: (u32, u32),
+        rays_cast: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Target size: {:?}", target_size);
+        println!("Target size: {:?}", rays_cast);
         println!("Panel Size: {:?}", panel_size);
         let tripltets_m_b_x = Self::buffer_to_triplet(&self.m_b_x_buffer, device);
 
@@ -373,10 +377,10 @@ impl LFBuffers {
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
 
-        Self::check_triplets(target_size.1, panel_size.1, &mut triplet_list);
+        Self::check_triplets(rays_cast.1, panel_size.1, &mut triplet_list);
         // Height t times height a
         let matrix_m_b_x = SparseColMat::try_new_from_triplets(
-            target_size.1 as usize,
+            rays_cast.1 as usize,
             panel_size.1 as usize,
             &triplet_list,
         )
@@ -389,9 +393,9 @@ impl LFBuffers {
             .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
             .collect();
 
-        Self::check_triplets(target_size.0, panel_size.0, &mut triplet_list);
+        Self::check_triplets(rays_cast.0, panel_size.0, &mut triplet_list);
         let matrix_m_b_y = SparseColMat::try_new_from_triplets(
-            target_size.0 as usize,
+            rays_cast.0 as usize,
             panel_size.0 as usize,
             &triplet_list,
         )
@@ -467,12 +471,14 @@ impl LFBuffers {
         let w_a = m_a_x.shape().1;
         let w_b = m_b_x.shape().1;
 
-        println!("w_a: {}", w_a);
-        println!("h_a: {}", h_a);
-        println!("h_b: {}", h_b);
-        println!("w_b: {}", w_b);
-        println!("w_t: {}", c_t.shape().1);
-        println!("h_t: {}", c_t.shape().0);
+        println!("A_y shape: {:?}", m_a_y.shape());
+        println!("A_x shape: {:?}", m_a_x.shape());
+        println!("b_y shape: {:?}", m_b_y.shape());
+        println!("b_x shape: {:?}", m_b_x.shape());
+        println!("t_y shape: {:?}", m_t_y.shape());
+        println!("t_x shape: {:?}", m_t_x.shape());
+        println!("C_T shape: {:?}", c_t.shape());
+        println!("Rays cast: {:?}", rays_cast);
 
         let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
             if self.rng {
@@ -494,7 +500,7 @@ impl LFBuffers {
         let mut lower = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
 
         // Doesn't change
-        let c_t_m_product = m_t_y * c_t * m_t_x.transpose();
+        let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
         for x in 0..self.iter_count {
             if self.show_steps {
                 let path_1 = format!(
