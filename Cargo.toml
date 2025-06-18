@@ -10,15 +10,12 @@ crevice = { version = "0.18.0", features = ["cgmath"] }
 egui = "0.31.1"
 egui-wgpu = "0.31.1"
 egui-winit = "0.31.1"
-egui_extras = {version = "0.29.0", features = ["all_loaders", "file", "image"]}
 egui_file = "0.22.1"
-faer = "0.21.7"
+faer = {version = "0.21.7", features =["perf-warn", "rayon", "std"]}
 futures-intrusive = "0.5.0"
 image = {version = "0.25.5", features= ["jpeg", "png", "rayon"]}
-indicatif = "0.17.11"
 notify = "8.0.0"
 pollster = "0.4.0"
-uom = "0.36.0"
 wgpu = "24.0.1"
 winit = "0.30.9"
 

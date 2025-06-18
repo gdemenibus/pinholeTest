@@ -980,6 +980,7 @@ dependencies = [
  "gemm",
  "generativity",
  "libm",
+ "log",
  "nano-gemm",
  "npyz",
  "num-complex",

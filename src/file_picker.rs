@@ -49,7 +49,7 @@ impl DrawUI for FilePicker {
             .vscroll(true)
             .default_size([50.0, 50.0])
             .default_open(false)
-            .show(ctx, |ui| {
+            .show(ctx, |_ui| {
                 self.file_dialog.open();
                 if self.file_dialog.show(ctx).selected() {
                     if let Some(file) = self.file_dialog.path() {

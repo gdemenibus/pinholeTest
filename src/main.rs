@@ -1,15 +1,12 @@
 #[macro_use]
 mod app;
-mod als;
 mod camera;
 mod compute_pass;
 mod egui_tools;
 mod file_picker;
 mod light_factor;
-mod matrix;
 mod raytracer;
 mod scene;
-mod shader;
 mod shape;
 mod texture;
 mod utils;

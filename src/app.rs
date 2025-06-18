@@ -6,7 +6,9 @@ use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
-use crate::{matrix, vertex, FileWatcher};
+use crate::vertex;
+use crate::FileWatcher;
+use cgmath::Vector2;
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
 use egui_wgpu::wgpu::SurfaceError;
@@ -302,10 +304,10 @@ impl AppState {
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::MaintainBase::Wait);
         {
-            let pixel_count_a = self.scene.panels[0].panel.pixel_count;
-            let pixel_count_b = self.scene.panels[1].panel.pixel_count;
-
             // Y here maps to additional rows and X to additional Columns
+            let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
+            let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
+
             let target_size = (
                 self.scene.world[0].pixel_count.y,
                 self.scene.world[0].pixel_count.x,
@@ -372,6 +374,7 @@ impl AppState {
                 depth_or_array_layers: 1,
             },
         );
+        self.scene.panels[panel_entry].panel.pixel_count = Vector2::new(dimensions.0, dimensions.1);
     }
     fn update_target_texture(&mut self, img: &DynamicImage) {
         if let Ok(_ok) = self
@@ -406,7 +409,6 @@ pub struct App {
     mouse_press: bool,
     mouse_on_ui: bool,
     disable_controls: bool,
-    sampling_light_field: bool,
     displaying_panel_textures: bool,
     pressed_keys: HashSet<KeyCode>,
 }
@@ -424,7 +426,6 @@ impl App {
         );
         Self {
             instance,
-            sampling_light_field: false,
             mouse_press: false,
             mouse_on_ui: false,
             disable_controls: false,
@@ -467,10 +468,6 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::Slash) => {
                 println!("DEBUG KEY PRESSED");
-
-                let device_ref = &self.state.as_ref().unwrap().device;
-                let queue = &self.state.as_ref().unwrap().queue;
-                pollster::block_on(matrix::nmf_pipeline(device_ref, queue));
             }
             PhysicalKey::Code(KeyCode::Comma) => {
                 if self.pressed_keys.contains(&KeyCode::ShiftLeft)
