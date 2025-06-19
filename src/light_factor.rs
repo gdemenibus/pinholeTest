@@ -270,11 +270,14 @@ impl LFBuffers {
     }
     fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u32, f32>>) {
         let pre_filter = triplets.len();
-        triplets.retain(|x| x.row < rows && x.col < columns);
+        //triplets.retain(|x| x.row < rows && x.col < columns);
         let post_filer = triplets.len();
         let diff = pre_filter - post_filer;
         println!("Filtered {}, entries", diff);
         println!("Triplet size is: {}", triplets.len());
+        if triplets.len() < 5 {
+            println!("Triplets are: {:#?}", triplets);
+        }
     }
     pub fn build_m_t(
         &self,
@@ -282,6 +285,7 @@ impl LFBuffers {
         rays_cast: (u32, u32),
         target_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
+        println!("Building M_t");
         let tripltets_m_t_x = Self::buffer_to_triplet(&self.m_t_x_buffer, device);
         let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_t_x
             .iter()
@@ -321,8 +325,7 @@ impl LFBuffers {
         rays_cast: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Target size: {:?}", rays_cast);
-        println!("Panel Size: {:?}", panel_size);
+        println!("Building M_A");
 
         let tripltets_m_a_x = Self::buffer_to_triplet(&self.m_a_x_buffer, device);
         let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_x
@@ -363,8 +366,7 @@ impl LFBuffers {
         rays_cast: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Target size: {:?}", rays_cast);
-        println!("Panel Size: {:?}", panel_size);
+        println!("Building M_B");
         let tripltets_m_b_x = Self::buffer_to_triplet(&self.m_b_x_buffer, device);
 
         let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_b_x
@@ -452,12 +454,12 @@ impl LFBuffers {
 
         let matrices = self.matrix_rep.as_ref()?;
 
-        let m_a_y = &matrices.m_a_y_matrix;
-        let m_a_x = &matrices.m_a_x_matrix;
-        let m_b_y = &matrices.m_b_y_matrix;
-        let m_b_x = &matrices.m_b_x_matrix;
-        let m_t_x = &matrices.m_t_x_matrix;
-        let m_t_y = &matrices.m_t_y_matrix;
+        let m_a_y = &matrices.m_a_y_matrix.to_dense();
+        let m_a_x = &matrices.m_a_x_matrix.to_dense();
+        let m_b_y = &matrices.m_b_y_matrix.to_dense();
+        let m_b_x = &matrices.m_b_x_matrix.to_dense();
+        let m_t_x = &matrices.m_t_x_matrix.to_dense();
+        let m_t_y = &matrices.m_t_y_matrix.to_dense();
 
         let h_a = m_a_y.shape().1;
         let h_b = m_b_y.shape().1;
@@ -503,7 +505,9 @@ impl LFBuffers {
 
         // Doesn't change
         let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
+        let progress_bar = indicatif::ProgressBar::new(self.iter_count as u64);
         for x in 0..self.iter_count {
+            progress_bar.inc(1);
             if self.show_steps {
                 let path_1 = format!(
                     "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
@@ -566,8 +570,8 @@ impl LFBuffers {
         }
 
         if self.filter {
-            Self::filter_zeroes(c_a.as_mut(), m_a_y, m_a_x);
-            Self::filter_zeroes(c_b.as_mut(), m_b_y, m_b_x);
+            //Self::filter_zeroes(c_a.as_mut(), m_a_y, m_a_x);
+            //Self::filter_zeroes(c_b.as_mut(), m_b_y, m_b_x);
         }
 
         let image_a = {
@@ -620,7 +624,7 @@ impl LFBuffers {
                 if *y != 0.0 {
                     break;
                 }
-                // Check M_X
+                // This means there are no entries for this column
                 if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
                     *y = 1.0;
                 }

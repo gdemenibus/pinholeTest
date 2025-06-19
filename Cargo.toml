@@ -14,6 +14,7 @@ egui_file = "0.22.1"
 faer = {version = "0.21.7", features =["perf-warn", "rayon", "std"]}
 futures-intrusive = "0.5.0"
 image = {version = "0.25.5", features= ["jpeg", "png", "rayon"]}
+indicatif = "0.17.11"
 notify = "8.0.0"
 pollster = "0.4.0"
 wgpu = "24.0.1"
