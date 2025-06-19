@@ -93,20 +93,19 @@ var<storage, read_write> m_t_x_buffer: array<u32>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     let screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, GlobalInvocationID.y);
-    if screen_pos.x < scene.pixel_count.x || screen_pos.y < scene.pixel_count.y {
+    if screen_pos.x < scene.pixel_count.x && screen_pos.y < scene.pixel_count.y {
+        let pixel_location = pixel_to_world_location(scene, screen_pos);
+        let origin = pixel_location;
+        for (var camera_index = 0u; camera_index < camera_count; camera_index++) {
+            let observer = camera_positions[camera_index];
 
-    }
+            let direction = normalize(observer - pixel_location);
 
-    let pixel_location = pixel_to_world_location(scene, screen_pos);
-    let origin = pixel_location;
-    for (var camera_index = 0u; camera_index < camera_count; camera_index++) {
-        let observer = camera_positions[camera_index];
+            // Build the ray
+            let ray = Ray(origin, direction);
+            double_intersection(ray, screen_pos, camera_index);
 
-        let direction = normalize(observer - pixel_location);
-
-        // Build the ray
-        let ray = Ray(origin, direction);
-        double_intersection(ray, screen_pos, camera_index);
+        }
 
     }
 
