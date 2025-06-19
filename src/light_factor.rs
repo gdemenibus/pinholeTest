@@ -443,6 +443,10 @@ impl LFBuffers {
 
         // Give 10 threads
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
+        println!(
+            "Global Parallelism is: {:?}",
+            faer::get_global_parallelism()
+        );
 
         self.matrix_rep.as_ref()?;
 
@@ -649,7 +653,6 @@ impl DrawUI for LFBuffers {
                 }
                 if ui.button("Reset").clicked() {
                     self.matrix_rep = None;
-                    todo!("Reset functionality not implemented yet");
                 }
                 ui.checkbox(&mut self.blend, "Blend Out Image");
                 ui.label("Sigma");
