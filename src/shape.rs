@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
+use serde::{Deserialize, Serialize};
 
 pub trait Shape: crevice::std140::AsStd140 {
     /* Return a new shape at the position that the model matrix determined
@@ -17,7 +18,7 @@ pub trait Shape: crevice::std140::AsStd140 {
 * C ==== D
 */
 
-#[derive(crevice::std140::AsStd140, Clone)]
+#[derive(crevice::std140::AsStd140, Clone, Serialize, Deserialize)]
 pub struct Quad {
     a: Vector3<f32>,
     b: Vector3<f32>,
@@ -56,7 +57,7 @@ impl Quad {
     }
 }
 // Struct Representing video window Panel
-#[derive(crevice::std140::AsStd140)]
+#[derive(crevice::std140::AsStd140, Serialize, Deserialize, Clone)]
 pub struct VWPanel {
     quad: Quad,
     pub pixel_count: Vector2<u32>,

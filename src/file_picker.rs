@@ -4,12 +4,21 @@ use egui::{Context, Ui};
 use egui_file::FileDialog;
 
 use crate::scene::DrawUI;
-
 pub struct FilePicker {
     pub texture_file: PathBuf,
     pub file_dialog: FileDialog,
     pub change_file: bool,
     pub default_texture: PathBuf,
+}
+impl Clone for FilePicker {
+    fn clone(&self) -> Self {
+        Self {
+            texture_file: self.texture_file.clone(),
+            file_dialog: FileDialog::open_file(Some(self.texture_file.clone())),
+            change_file: self.change_file.clone(),
+            default_texture: self.default_texture.clone(),
+        }
+    }
 }
 
 impl FilePicker {
@@ -40,6 +49,21 @@ impl FilePicker {
         &self.default_texture
     }
 }
+impl Default for FilePicker {
+    fn default() -> Self {
+        let path = Path::new("./resources/");
+
+        let texture_file = PathBuf::from(path);
+        let file_dialog = FileDialog::open_file(Some(texture_file.clone()));
+        Self {
+            texture_file,
+            file_dialog,
+            change_file: false,
+            default_texture: Default::default(),
+        }
+    }
+}
+
 impl DrawUI for FilePicker {
     fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Texture Selection".to_string());
