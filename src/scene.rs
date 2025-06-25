@@ -11,16 +11,17 @@ use crate::{
 };
 use cgmath::{Matrix4, Rad, SquareMatrix, Vector2, Vector3, Vector4};
 use crevice::std140::{self, AsStd140, Std140, Writer};
-use egui::{Color32, RichText};
+use egui::{Color32, RichText, Ui};
 use egui_winit::egui::{self, Context};
 use wgpu::{BindGroup, Buffer, Device};
 pub trait DrawUI {
     /*
     Draw UI for this element
     */
-    fn draw_ui(&mut self, ctx: &Context, title: Option<String>) {
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
         let _ = title;
         let _ = ctx;
+        let _ = ui;
     }
 }
 
@@ -425,8 +426,8 @@ impl Target {
 }
 
 impl DrawUI for Target {
-    fn draw_ui(&mut self, ctx: &Context, title: Option<String>) {
-        let title = title.unwrap_or("VW Panel".to_string());
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let title = title.unwrap_or("Target".to_string());
         egui_winit::egui::Window::new(title)
             .resizable(true)
             .vscroll(true)
@@ -615,7 +616,7 @@ impl Scene {
 }
 
 impl DrawUI for ScenePanel {
-    fn draw_ui(&mut self, ctx: &Context, title: Option<String>) {
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("VW Panel".to_string());
         egui_winit::egui::Window::new(title)
             .resizable(true)
@@ -678,18 +679,18 @@ impl DrawUI for Scene {
     Translation, take in three coords
     Rotation: Slider
     */
-    fn draw_ui(&mut self, ctx: &Context, title: Option<String>) {
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
         let _title = title.unwrap_or("Scene".to_string());
         let mut count = 1;
         for target in self.world.iter_mut() {
             let title = Some(format!("Target Quad {}", count));
             count += 1;
-            target.draw_ui(ctx, title);
+            target.draw_ui(ctx, title, None);
         }
         count = 1;
         for panel in self.panels.iter_mut() {
             let title = format!("VW Panel# {} ", count);
-            panel.draw_ui(ctx, Some(title));
+            panel.draw_ui(ctx, Some(title), None);
 
             count += 1;
         }

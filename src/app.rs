@@ -4,6 +4,7 @@ use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
 use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
+use crate::save::{ImageCache, Save};
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
 use crate::vertex;
@@ -14,6 +15,7 @@ use egui::ahash::HashSet;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
+use serde::Serialize;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,6 +45,7 @@ pub struct AppState {
     pub factorizer: LFBuffers,
     pub rev_proj: ReverseProj,
     pub camera_history: CameraHistory,
+    pub image_cache: ImageCache,
 }
 
 impl AppState {
@@ -195,8 +198,10 @@ impl AppState {
         });
         let camera_history = CameraHistory::new(&device);
         let rev_proj = ReverseProj::new(&device, &queue, &scene, &factorizer, &camera_history);
+        let image_cache = ImageCache::default();
 
         Self {
+            image_cache,
             device,
             queue,
             surface,
@@ -339,6 +344,7 @@ impl AppState {
     }
     fn update_panel(&mut self, image: DynamicImage, panel_entry: usize) {
         let dimensions = image.dimensions();
+
         let copy = &self.scene.panel_binds.panel_texture.texture;
         if dimensions.0 > copy.width() || dimensions.1 > copy.height() {
             println!(
@@ -348,8 +354,6 @@ impl AppState {
             );
             return;
         }
-
-        let dimensions = image.dimensions();
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -374,6 +378,8 @@ impl AppState {
                 depth_or_array_layers: 1,
             },
         );
+
+        self.image_cache.panels[panel_entry] = image;
         self.scene.panels[panel_entry].panel.pixel_count = Vector2::new(dimensions.0, dimensions.1);
     }
     fn update_target_texture(&mut self, img: &DynamicImage) {
@@ -384,6 +390,7 @@ impl AppState {
         {
             self.scene.world[0].update_pixel_count(img.dimensions());
             println!("New Dimensions are: {:#?}", img.dimensions());
+            self.image_cache.target_image = img.clone();
         }
     }
 
@@ -394,6 +401,14 @@ impl AppState {
     }
     fn print_compute(&self) {
         self.rev_proj.print_image(&self.device);
+    }
+    fn save(&self) {
+        let save = Save::from_cache(
+            &self.camera_history.history,
+            "Test".to_string(),
+            &self.image_cache,
+        );
+        println!("RON: {}", ron::ser::to_string(&save).unwrap());
     }
 }
 
@@ -468,6 +483,9 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::Slash) => {
                 println!("DEBUG KEY PRESSED");
+                if let Some(state) = &self.state {
+                    state.save();
+                }
             }
             PhysicalKey::Code(KeyCode::Comma) => {
                 if self.pressed_keys.contains(&KeyCode::ShiftLeft)
@@ -718,10 +736,10 @@ impl App {
             state.egui_renderer.begin_frame(window);
             let context = state.egui_renderer.context();
 
-            state.scene.draw_ui(context, None);
-            self.camera.draw_ui(context, None);
-            self.file_picker.draw_ui(context, None);
-            state.factorizer.draw_ui(context, None);
+            state.scene.draw_ui(context, None, None);
+            state.camera_history.draw_ui(context, None, None);
+            self.file_picker.draw_ui(context, None, None);
+            state.factorizer.draw_ui(context, None, None);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,

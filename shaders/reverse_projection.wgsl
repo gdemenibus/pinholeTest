@@ -123,11 +123,11 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
         var trig_1_intersection = intersection_panel(ray, true, panels[index]);
         var trig_2_intersection = intersection_panel(ray, false, panels[index]);
 
-        if trig_1_intersection.hit {
+        let pixel_count = panels[index].pixel_count;
 
+        if trig_1_intersection.hit {
             let pixel_coords = trig_1_intersection.pixel_coords;
-            let size = panels[index].pixel_count;
-            let hit_relative = vec2f(f32(pixel_coords.x) / f32(size.x), f32(pixel_coords.y) / f32(size.y));
+            let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
 
             if index == 0 {
                 color = vec4f(1.0, 1.0, 0.0, 1.0);
@@ -151,8 +151,7 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
         if trig_2_intersection.hit {
 
             let pixel_coords = trig_2_intersection.pixel_coords;
-            let size = panels[index].pixel_count;
-            let hit_relative = vec2f(f32(pixel_coords.x) / f32(size.x), f32(pixel_coords.y) / f32(size.y));
+            let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
 
             if index == 0 {
                 color = vec4f(1.0, 1.0, 0.0, 1.0);
@@ -165,13 +164,10 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
             }
 
             color = textureSampleLevel(texture_panel, s_diffuse, hit_relative, index, 0.0);
-        //color = vec4f(hit_relative, 0.0, 1.0);
         }
 
         if trig_2_intersection.border {
             color = vec4f(0.5, 0.0, 0.5, 1.0);
-
-            textureStore(color_buffer, current_pixel, color);
         }
 
     }

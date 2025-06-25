@@ -3,6 +3,9 @@ use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
 use egui::Slider;
+use egui::Ui;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::VecDeque;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
@@ -19,7 +22,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::scene::DrawUI;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Camera {
     pub position: Point3<f32>,
     yaw: Rad<f32>,
@@ -48,7 +51,7 @@ impl Camera {
     }
 }
 impl DrawUI for Camera {
-    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Camera Settings".to_string());
 
         egui_winit::egui::Window::new(title)
@@ -192,7 +195,7 @@ impl CameraController {
 
 // Struct to store camera positions, especially when sampling!
 pub struct CameraHistory {
-    history: VecDeque<Camera>,
+    pub history: VecDeque<Camera>,
     pub bind_group_layout: BindGroupLayout,
     pub bind_group: BindGroup,
     pub history_buffer: Buffer,
@@ -306,7 +309,7 @@ impl CameraHistory {
 }
 
 impl DrawUI for CameraHistory {
-    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Camera Settings".to_string());
 
         egui_winit::egui::Window::new(title)
@@ -318,7 +321,11 @@ impl DrawUI for CameraHistory {
                 ui.label(format!(
                     "Current camera positions saved:{}",
                     self.history.len()
-                ))
+                ));
+
+                if ui.button("Reset").clicked() {
+                    self.history = VecDeque::new();
+                }
             });
     }
 }
