@@ -263,6 +263,9 @@ impl CameraHistory {
             history: VecDeque::new(),
         }
     }
+    pub fn update_history(&mut self, new_vec: VecDeque<Camera>) {
+        self.history = new_vec.clone();
+    }
     pub fn save_point(&mut self, camera: &Camera) {
         if !self.history.contains(camera) {
             self.history.push_back(camera.clone());

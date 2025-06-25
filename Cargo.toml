@@ -16,9 +16,11 @@ futures-intrusive = "0.5.0"
 image = {version = "0.25.5", features= ["jpeg", "png", "rayon", "serde"]}
 indicatif = "0.17.11"
 notify = "8.0.0"
+plotters = "0.3.7"
 pollster = "0.4.0"
 ron = "0.10.1"
 serde = { version = "1.0.219", features = ["std", "derive"] }
+walkdir = "2.5.0"
 wgpu = "24.0.1"
 winit = "0.30.9"
 

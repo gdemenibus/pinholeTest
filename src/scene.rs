@@ -1,4 +1,5 @@
 use image::{DynamicImage, GenericImageView};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use wgpu::{util::DeviceExt, BindGroupLayout, ComputePass, Queue, RenderPass};
 
@@ -38,6 +39,7 @@ pub struct Scene {
     pub texture_binds: TextureBinds,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ScenePanel {
     yaw: Rad<f32>,
     pitch: Rad<f32>,
@@ -45,6 +47,7 @@ pub struct ScenePanel {
     placement: Matrix4<f32>,
     scale: Matrix4<f32>,
     pub panel: VWPanel,
+    #[serde(skip)]
     pub texture: FilePicker,
     lock_pixel: bool,
 }
@@ -69,7 +72,7 @@ pub struct PanelBinds {
     pub panel_bool_buffer: Buffer,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Target {
     yaw: Rad<f32>,
     pitch: Rad<f32>,

@@ -4,7 +4,7 @@ use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
 use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
-use crate::save::{ImageCache, Save};
+use crate::save::{ImageCache, Save, SaveManager};
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
 use crate::vertex;
@@ -15,11 +15,10 @@ use egui::ahash::HashSet;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
-use serde::Serialize;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 use wgpu::util::DeviceExt;
 use wgpu::{Backends, RenderPipeline};
 use winit::application::ApplicationHandler;
@@ -46,6 +45,8 @@ pub struct AppState {
     pub rev_proj: ReverseProj,
     pub camera_history: CameraHistory,
     pub image_cache: ImageCache,
+    pub save_manager: SaveManager,
+    displaying_panel_textures: bool,
 }
 
 impl AppState {
@@ -199,8 +200,11 @@ impl AppState {
         let camera_history = CameraHistory::new(&device);
         let rev_proj = ReverseProj::new(&device, &queue, &scene, &factorizer, &camera_history);
         let image_cache = ImageCache::default();
+        let save_manager = SaveManager::boot();
 
         Self {
+            displaying_panel_textures: false,
+            save_manager,
             image_cache,
             device,
             queue,
@@ -333,16 +337,16 @@ impl AppState {
             println!("Factorizing");
             let images = self.factorizer.factorize(ct_image, ray_cast);
 
-            if let Some((img_0, img_1)) = images {
-                self.update_panel(img_0, 0);
-
-                self.update_panel(img_1, 1);
+            if let Some((img_0, img_1, error)) = images {
+                self.update_panel(&img_0, 0);
+                self.update_panel(&img_1, 1);
+                self.image_cache.error = error;
             } else {
                 println!("No matrices were sampled")
             }
         }
     }
-    fn update_panel(&mut self, image: DynamicImage, panel_entry: usize) {
+    fn update_panel(&mut self, image: &DynamicImage, panel_entry: usize) {
         let dimensions = image.dimensions();
 
         let copy = &self.scene.panel_binds.panel_texture.texture;
@@ -379,7 +383,7 @@ impl AppState {
             },
         );
 
-        self.image_cache.panels[panel_entry] = image;
+        self.image_cache.panels[panel_entry] = image.clone();
         self.scene.panels[panel_entry].panel.pixel_count = Vector2::new(dimensions.0, dimensions.1);
     }
     fn update_target_texture(&mut self, img: &DynamicImage) {
@@ -402,13 +406,46 @@ impl AppState {
     fn print_compute(&self) {
         self.rev_proj.print_image(&self.device);
     }
-    fn save(&self) {
+    fn save(&mut self) {
+        let time = SystemTime::now();
+        let name = format!("{:?}", time);
+
         let save = Save::from_cache(
             &self.camera_history.history,
-            "Test".to_string(),
+            name,
             &self.image_cache,
+            &self.scene,
         );
         println!("RON: {}", ron::ser::to_string(&save).unwrap());
+        self.save_manager.add_save(save);
+    }
+    fn load_next_save(&mut self) {
+        let next_save = self.save_manager.next_save();
+        if let Some(save) = next_save {
+            let new_cache = save.to_cache();
+            let cameras = save.cameras.clone();
+            save.update_scene(&mut self.scene);
+            self.update_target_texture(&new_cache.target_image);
+            self.update_panel(&new_cache.panels[0], 0);
+            self.update_panel(&new_cache.panels[1], 1);
+            self.displaying_panel_textures = true;
+            self.camera_history.update_history(cameras);
+        }
+    }
+    fn load_previous_save(&mut self) {
+        let next_save = self.save_manager.previous_save();
+        if let Some(save) = next_save {
+            let new_cache = save.to_cache();
+            let cameras = save.cameras.clone();
+
+            save.update_scene(&mut self.scene);
+
+            self.camera_history.update_history(cameras);
+            self.update_target_texture(&new_cache.target_image);
+            self.update_panel(&new_cache.panels[0], 0);
+            self.update_panel(&new_cache.panels[1], 1);
+            self.displaying_panel_textures = true;
+        }
     }
 }
 
@@ -424,7 +461,6 @@ pub struct App {
     mouse_press: bool,
     mouse_on_ui: bool,
     disable_controls: bool,
-    displaying_panel_textures: bool,
     pressed_keys: HashSet<KeyCode>,
 }
 
@@ -444,7 +480,6 @@ impl App {
             mouse_press: false,
             mouse_on_ui: false,
             disable_controls: false,
-            displaying_panel_textures: false,
             state: None,
             window: None,
             camera: Camera::new(
@@ -481,10 +516,32 @@ impl App {
                     println!("Controls Enabled");
                 }
             }
-            PhysicalKey::Code(KeyCode::Slash) => {
+            PhysicalKey::Code(KeyCode::Backslash) => {
                 println!("DEBUG KEY PRESSED");
-                if let Some(state) = &self.state {
+                if let Some(state) = self.state.as_mut() {
                     state.save();
+                }
+            }
+            PhysicalKey::Code(KeyCode::BracketRight) => {
+                if self.pressed_keys.contains(&KeyCode::ShiftLeft)
+                    || self.pressed_keys.contains(&KeyCode::ShiftRight)
+                {
+                    if let Some(state) = self.state.as_mut() {
+                        state.load_next_save();
+                        self.next_camera();
+                    }
+                }
+            }
+
+            PhysicalKey::Code(KeyCode::BracketLeft) => {
+                if self.pressed_keys.contains(&KeyCode::ShiftLeft)
+                    || self.pressed_keys.contains(&KeyCode::ShiftRight)
+                {
+                    if let Some(state) = self.state.as_mut() {
+                        state.load_previous_save();
+
+                        self.next_camera();
+                    }
                 }
             }
             PhysicalKey::Code(KeyCode::Comma) => {
@@ -504,7 +561,9 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::KeyM) => {
                 self.update_panel_texture();
-                self.displaying_panel_textures = !self.displaying_panel_textures;
+                if let Some(state) = self.state.as_mut() {
+                    state.displaying_panel_textures = !state.displaying_panel_textures
+                }
             }
             PhysicalKey::Code(KeyCode::KeyO) => {
                 self.print_compute();
@@ -578,7 +637,7 @@ impl App {
             let file = File::open(path).unwrap();
             if file.metadata().unwrap().is_file() {
                 let img = image::ImageReader::open(path).unwrap().decode().unwrap();
-                state.update_panel(img, x);
+                state.update_panel(&img, x);
             }
             state.scene.panels[x].texture.change_file = false;
         }
@@ -644,7 +703,7 @@ impl App {
         }
         if state.factorizer.will_solve() {
             state.solver_light_field(&c_t);
-            self.displaying_panel_textures = true;
+            state.displaying_panel_textures = true;
             state.factorizer.has_solved();
         }
 
@@ -691,7 +750,7 @@ impl App {
             );
             state
                 .scene
-                .update_draw(&state.queue, &self.camera, self.displaying_panel_textures);
+                .update_draw(&state.queue, &self.camera, state.displaying_panel_textures);
             state.camera_history.update_buffer(&state.queue);
             // Need to get: The texture being passed to wgpu, and the new data.
             // Should not be called every time, that is ineffective. Instead, as response to
