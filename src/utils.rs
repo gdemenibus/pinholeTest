@@ -1,3 +1,4 @@
+use image::{DynamicImage, GenericImageView};
 use wgpu::Buffer;
 
 pub fn sample_buffer(sample_buffer: &Buffer, device: &wgpu::Device) -> Vec<u8> {

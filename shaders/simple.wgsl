@@ -72,6 +72,9 @@ var sampler_panel: sampler;
 // WE ASSUME BOTH ARE THE SAME SIZE, THIS MIGHT BE WRONG?
 @group(2) @binding(4)
 var<uniform> panel_texture_size: vec2<u32>;
+@group(2) @binding(5)
+// SUPER HACKY, can't pass bool. Treat 0 as false, rest as true??
+var<uniform> distort_rays: u32;
 //@group(2) @binding(4)
 //var<uniform> panels_sample_world: u32;
 
@@ -97,6 +100,7 @@ struct VertexOutput {
 }
 ;
 
+//@group(4) @binding(0) var color_buffer: texture_storage_2d<rgba8unorm, write>;
 
 @vertex
 fn vs_main(
@@ -107,8 +111,15 @@ fn vs_main(
     return out;
 }
 
+
+struct FragmentOutput {
+    @location(0) color0: vec4<f32>,
+    @location(1) color1: vec4<f32>,
+}
+
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(in: VertexOutput) -> FragmentOutput {
+
     // THE OLD FAITHFUL
 
     // Clip position tells us the fragment location
@@ -129,9 +140,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let panel_hit = panels_texture_hit(&ray);
         if panel_hit.hit == true {
             if panel_hit.border {
-                return border_color;
+                return FragmentOutput(border_color, border_color);
             }
-            return panel_hit.color * background_color;
+            return FragmentOutput(
+                panel_hit.color * background_color,
+                panel_hit.color * background_color,
+            );
 
         }
     }
@@ -166,13 +180,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         if trig_1.border {
             clean_up_record(position);
-            return border_color;
+            return FragmentOutput(border_color, border_color);
         }
 
         if trig_2.border {
 
             clean_up_record(position);
-            return border_color;
+            return FragmentOutput(border_color, border_color);
         }
     }
 
@@ -185,13 +199,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         if trig_1.border {
             clean_up_record(position);
-            return border_color;
+            return FragmentOutput(border_color, border_color);
         }
 
         if trig_2.border {
 
             clean_up_record(position);
-            return border_color;
+            return FragmentOutput(border_color, border_color);
         }
 
         if index == 0 {
@@ -249,15 +263,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         if hit_first || hit_second {
 
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
-            if hit_first && hit_second {
 
-            //record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
-            }
+            let out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            return FragmentOutput(out, out);
 
-            return vec4f(gray_scale, gray_scale, gray_scale, color.a);
         }
 
-        return color;
+        return FragmentOutput(color, color);
     }
     target_intersection = intersection(&ray, scene.quad.b, scene.quad.c, scene.quad.d, false);
     color = target_intersection.color;
@@ -268,18 +280,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
-            if hit_first && hit_second {
-
-            //record_light_field_sample(position, coordinates_first_relative_pixel, coordinates_second_relative_pixel, target_intersection.texel, gray_scale);
-            }
-
-            return vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            let out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            return FragmentOutput(out, out);
         }
-        return color;
+        return FragmentOutput(color, color);
     }
 
     clean_up_record(position);
-    return background_color;
+    return FragmentOutput(background_color, background_color);
 }
 
 struct PanelHit {
@@ -388,8 +396,10 @@ fn clean_up_record(position: vec2<f32>) {
 // Distortion of Ray caused by limits of the panel
 // Change the Ray that will be used for other intersections
 fn light_field_distortion(ray: ptr<function, Ray>, new_origin: vec3f, new_direction: vec3f) {
-    (*ray).origin = new_origin;
-    (*ray).direction = new_direction;
+    if distort_rays != 0 {
+        (*ray).origin = new_origin;
+        (*ray).direction = new_direction;
+    }
 }
 ;
 struct Pixel_Panel {

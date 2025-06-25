@@ -70,6 +70,7 @@ pub struct PanelBinds {
     pub panel_buffer: Buffer,
     pub panel_texture: texture::Texture,
     pub panel_bool_buffer: Buffer,
+    pub distort_rays_buffer: Buffer,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -321,6 +322,16 @@ impl PanelBinds {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::all(),
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
             ],
             label: Some("Binding group for Scene"),
         });
@@ -333,6 +344,12 @@ impl PanelBinds {
             });
         let panel_bool_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Boolean for panel textures"),
+            contents: 0u32.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let distort_rays_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Boolean for Ray Distortion"),
             contents: 0u32.as_std140().as_bytes(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -361,9 +378,14 @@ impl PanelBinds {
                     binding: 4,
                     resource: panel_textures_size_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: distort_rays_buffer.as_entire_binding(),
+                },
             ],
         });
         PanelBinds {
+            distort_rays_buffer,
             bind_layout: panel_bind_group,
             bind_group: panel_bind,
             panel_buffer,
@@ -537,7 +559,13 @@ impl Scene {
         self.ray_tracer = RayTraceInfo::test(camera, height, width);
     }
 
-    pub fn update_draw(&self, queue: &Queue, camera: &Camera, display_panel_texture: bool) {
+    pub fn update_draw(
+        &self,
+        queue: &Queue,
+        camera: &Camera,
+        display_panel_texture: bool,
+        distort_rays: bool,
+    ) {
         queue.write_buffer(
             &self.target_binds.ray_tracer_buffer,
             0,
@@ -564,6 +592,19 @@ impl Scene {
         } else {
             queue.write_buffer(
                 &self.panel_binds.panel_bool_buffer,
+                0,
+                0.as_std140().as_bytes(),
+            );
+        }
+        if distort_rays {
+            queue.write_buffer(
+                &self.panel_binds.distort_rays_buffer,
+                0,
+                1.as_std140().as_bytes(),
+            );
+        } else {
+            queue.write_buffer(
+                &self.panel_binds.distort_rays_buffer,
                 0,
                 0.as_std140().as_bytes(),
             );
