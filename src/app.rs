@@ -2,6 +2,7 @@ use crate::camera::{Camera, CameraController, CameraHistory};
 use crate::compute_pass::ReverseProj;
 use crate::egui_tools::EguiRenderer;
 use crate::file_picker::FilePicker;
+use crate::headless::HeadlessImage;
 use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
 use crate::save::{ImageCache, Save, SaveManager};
@@ -12,6 +13,7 @@ use crate::FileWatcher;
 use cgmath::Vector2;
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
+use egui::Key;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
@@ -47,6 +49,8 @@ pub struct AppState {
     pub image_cache: ImageCache,
     pub save_manager: SaveManager,
     displaying_panel_textures: bool,
+    distort_rays: bool,
+    pub headless: HeadlessImage,
 }
 
 impl AppState {
@@ -71,7 +75,8 @@ impl AppState {
         let features = wgpu::Features::VERTEX_WRITABLE_STORAGE
             | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
             | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-            | wgpu::Features::BGRA8UNORM_STORAGE;
+            | wgpu::Features::BGRA8UNORM_STORAGE
+            | wgpu::Features::MULTI_DRAW_INDIRECT;
         let limites = adapter.limits();
         let (device, queue) = adapter
             .request_device(
@@ -107,12 +112,13 @@ impl AppState {
 
         surface.configure(&device, &surface_config);
 
-        let imag_height = surface_config.height;
+        let image_height = surface_config.height;
         let image_width = surface_config.width;
-        let rt_test = RayTraceInfo::test(camera, imag_height, image_width);
+        let rt_test = RayTraceInfo::test(camera, image_height, image_width);
         let scene = Scene::new(rt_test, camera, &device, &queue);
 
         let factorizer = LFBuffers::set_up(&device);
+        let mut headless = HeadlessImage::new(&device, &queue, image_width, image_height);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -134,6 +140,7 @@ impl AppState {
                     &scene.texture_binds.bind_layout,
                     &scene.panel_binds.bind_layout,
                     &factorizer.bind_group_layout,
+                    //&headless.bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -152,12 +159,20 @@ impl AppState {
                 // 3. // Fragment is optional
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    // 4. // What color outputs it should set up!
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        // 4. // What color outputs it should set up!
+                        format: surface_config.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    // Multitarget output
+                    Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                ],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -204,6 +219,7 @@ impl AppState {
 
         Self {
             displaying_panel_textures: false,
+            distort_rays: true,
             save_manager,
             image_cache,
             device,
@@ -220,6 +236,7 @@ impl AppState {
             factorizer,
             rev_proj,
             camera_history,
+            headless,
         }
     }
 
@@ -247,6 +264,7 @@ impl AppState {
                         &scene.texture_binds.bind_layout,
                         &scene.panel_binds.bind_layout,
                         &self.factorizer.bind_group_layout,
+                        //&self.headless.bind_group_layout,
                     ],
                     push_constant_ranges: &[],
                 });
@@ -265,12 +283,20 @@ impl AppState {
                     // 3. // Fragment is optional
                     module: &shader,
                     entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        // 4. // What color outputs it should set up!
-                        format: self.surface_config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
+                    targets: &[
+                        Some(wgpu::ColorTargetState {
+                            // 4. // What color outputs it should set up!
+                            format: self.surface_config.format,
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
+                        // Multitarget output
+                        Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
+                    ],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
@@ -346,6 +372,7 @@ impl AppState {
             }
         }
     }
+
     fn update_panel(&mut self, image: &DynamicImage, panel_entry: usize) {
         let dimensions = image.dimensions();
 
@@ -357,6 +384,10 @@ impl AppState {
                 (copy.width(), copy.height())
             );
             return;
+        }
+        // Pad the image to deal with no squares
+        if dimensions.0 != dimensions.1 {
+            println!("IMage is not a square, they may be distortions.")
         }
 
         self.queue.write_texture(
@@ -522,6 +553,12 @@ impl App {
                     state.save();
                 }
             }
+            PhysicalKey::Code(KeyCode::Enter) => {
+                if let Some(state) = self.state.as_mut() {
+                    state.headless.print_image(&state.device);
+                }
+            }
+
             PhysicalKey::Code(KeyCode::BracketRight) => {
                 if self.pressed_keys.contains(&KeyCode::ShiftLeft)
                     || self.pressed_keys.contains(&KeyCode::ShiftRight)
@@ -565,6 +602,13 @@ impl App {
                     state.displaying_panel_textures = !state.displaying_panel_textures
                 }
             }
+
+            PhysicalKey::Code(KeyCode::KeyN) => {
+                if let Some(state) = self.state.as_mut() {
+                    state.distort_rays = !state.distort_rays;
+                }
+            }
+
             PhysicalKey::Code(KeyCode::KeyO) => {
                 self.print_compute();
             }
@@ -748,45 +792,62 @@ impl App {
                 state.surface_config.height,
                 state.surface_config.width,
             );
-            state
-                .scene
-                .update_draw(&state.queue, &self.camera, state.displaying_panel_textures);
+            state.scene.update_draw(
+                &state.queue,
+                &self.camera,
+                state.displaying_panel_textures,
+                state.distort_rays,
+            );
+
             state.camera_history.update_buffer(&state.queue);
-            // Need to get: The texture being passed to wgpu, and the new data.
-            // Should not be called every time, that is ineffective. Instead, as response to
-            // Changes
-            // Change texture
-            //
-            //state.queue.write_texture(state.texture.texture.as_image_copy(), data, data_layout, size);
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &state.headless.texture.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-
             render_pass.set_pipeline(&state.render_pipe);
             // Pass uniform!
             state.scene.render_pass(&mut render_pass);
             render_pass.set_bind_group(3, &state.factorizer.bind_group, &[]);
+            //render_pass.set_bind_group(4, &state.headless.bind_group, &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
             render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..state.num_index, 0, 0..1);
+        }
+
+        {
+            state.headless.draw_pass(&mut encoder);
         }
 
         // TODO: Make this slightly more elegant!
@@ -814,7 +875,6 @@ impl App {
         }
 
         state.queue.submit(Some(encoder.finish()));
-
         surface_texture.present();
     }
 }

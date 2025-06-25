@@ -4,6 +4,7 @@ mod camera;
 mod compute_pass;
 mod egui_tools;
 mod file_picker;
+mod headless;
 mod light_factor;
 mod raytracer;
 mod save;

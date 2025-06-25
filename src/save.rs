@@ -29,7 +29,7 @@ impl ImageCache {
             let root = BitMapBackend::new(&location, (640, 480)).into_drawing_area();
             root.fill(&WHITE)?;
             let mut chart = ChartBuilder::on(&root)
-                .caption("SQRT of Max norm over time", ("sans-serif", 50).into_font())
+                .caption("Spectral Norm over time", ("sans-serif", 50).into_font())
                 .margin(5)
                 .x_label_area_size(30)
                 .y_label_area_size(30)
