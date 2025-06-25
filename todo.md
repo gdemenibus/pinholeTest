@@ -383,6 +383,15 @@ What is the traditional method?
 
 
 
+## Todo
+
+Test out with just a texture, not with text?
+Try one pixel in target?
+Why the slow down after solving once?
 
 
+
+
+Entries are being filtered. Strange strange
+Why do we not jut get the pixel when looking at pixel of size 1. Introduction of some amount of black?
 

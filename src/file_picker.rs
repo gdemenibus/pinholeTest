@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use egui::Context;
+use egui::{Context, Ui};
 use egui_file::FileDialog;
 
 use crate::scene::DrawUI;
@@ -41,7 +41,7 @@ impl FilePicker {
     }
 }
 impl DrawUI for FilePicker {
-    fn draw_ui(&mut self, ctx: &Context, title: Option<String>) {
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Texture Selection".to_string());
 
         egui_winit::egui::Window::new(title)

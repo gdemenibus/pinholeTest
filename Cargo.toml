@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 bytemuck = {version = "1.22.0", features = ["derive"]}
-cgmath = { version = "0.18.0", features = ["swizzle"] }
+cgmath = { version = "0.18.0", features = ["swizzle", "serde"] }
 crevice = { version = "0.18.0", features = ["cgmath"] }
 egui = "0.31.1"
 egui-wgpu = "0.31.1"
@@ -13,10 +13,12 @@ egui-winit = "0.31.1"
 egui_file = "0.22.1"
 faer = {version = "0.21.7", features =["perf-warn", "rayon", "std"]}
 futures-intrusive = "0.5.0"
-image = {version = "0.25.5", features= ["jpeg", "png", "rayon"]}
+image = {version = "0.25.5", features= ["jpeg", "png", "rayon", "serde"]}
 indicatif = "0.17.11"
 notify = "8.0.0"
 pollster = "0.4.0"
+ron = "0.10.1"
+serde = { version = "1.0.219", features = ["std", "derive"] }
 wgpu = "24.0.1"
 winit = "0.30.9"
 

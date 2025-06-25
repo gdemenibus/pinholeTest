@@ -1,7 +1,7 @@
-use std::{num::NonZero, sync::mpsc::channel, thread};
+use std::{cmp::max, num::NonZero, sync::mpsc::channel, thread};
 
-use cgmath::Vector2;
-use egui::ahash::HashSet;
+use cgmath::{prelude, Vector2};
+use egui::{ahash::HashSet, Ui};
 use faer::{
     sparse::{SparseColMat, Triplet},
     stats::prelude::{thread_rng, Rng},
@@ -16,12 +16,18 @@ use crate::{scene::DrawUI, utils};
 pub fn image_to_matrix(image: &DynamicImage) -> Mat<f32> {
     let rows = image.height() as usize;
     let column = image.width() as usize;
-    //let image = image.grayscale();
+    let image = image.grayscale();
 
     Mat::from_fn(rows, column, |x, y| {
+        // Pixel is in RGBA
         let pixel = image.get_pixel(y as u32, x as u32).0;
+        // Transform to floating point
+        let pixel = pixel.map(|pixel| pixel as f32 / 255.0);
+        for x in pixel.iter() {
+            assert!(*x <= 1.0, "Pixel value is {}", x);
+        }
 
-        pixel[0] as f32 * 0.299 + 0.587 * pixel[1] as f32 + 0.114 * pixel[2] as f32
+        pixel[0] * 0.299 + 0.587 * pixel[1] + 0.114 * pixel[2]
     })
 }
 
@@ -29,6 +35,8 @@ pub fn matrix_to_image(mat: &Mat<f32, usize, usize>) -> DynamicImage {
     let (height, width) = mat.shape();
     let image_buffer = ImageBuffer::from_par_fn(width as u32, height as u32, |x, y| {
         let value = mat[(y as usize, x as usize)];
+
+        assert!(value <= 1.0, "Pixel value is {}", x);
 
         image::Rgba::<u8>([
             (value * 255.0) as u8,
@@ -270,7 +278,7 @@ impl LFBuffers {
     }
     fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u32, f32>>) {
         let pre_filter = triplets.len();
-        //triplets.retain(|x| x.row < rows && x.col < columns);
+        triplets.retain(|x| x.row < rows && x.col < columns);
         let post_filer = triplets.len();
         let diff = pre_filter - post_filer;
         println!("Filtered {}, entries", diff);
@@ -430,12 +438,25 @@ impl LFBuffers {
         self.matrix_rep = Some(matrices);
     }
 
+    pub fn verify_matrix(mat: &Mat<f32>) {
+        for col in mat.col_iter() {
+            for entry in col.iter() {
+                assert!(
+                    *entry <= 1.0,
+                    "Entry in this matrix is too high, entry: {}",
+                    entry
+                );
+            }
+        }
+    }
     pub fn factorize(
         &mut self,
         c_t: &DynamicImage,
         rays_cast: (u32, u32),
     ) -> Option<(DynamicImage, DynamicImage)> {
         let c_t = image_to_matrix(c_t);
+        Self::verify_matrix(&c_t);
+
         matrix_to_image(&c_t)
             .save_with_format(
                 "./resources/panel_compute/intermediate/C_T.png",
@@ -543,9 +564,11 @@ impl LFBuffers {
                 );
                 let numerator = m_a_y.transpose() * &upper * m_a_x;
                 let denominator = m_a_y.transpose() * &lower * m_a_x;
-                zip!(&mut c_a, &numerator, &denominator)
-                    .for_each(|unzip!(c_a, n, d)| *c_a *= *n / (*d + 0.0000001f32));
+                zip!(&mut c_a, &numerator, &denominator).for_each(|unzip!(c_a, n, d)| {
+                    *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32))
+                });
             }
+            // C_B Update
             {
                 let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
                 let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
@@ -564,15 +587,18 @@ impl LFBuffers {
 
                 let numerator = m_b_y.transpose() * &upper * m_b_x;
                 let denominator = m_b_y.transpose() * &lower * m_b_x;
-                zip!(&mut c_b, &numerator, &denominator)
-                    .for_each(|unzip!(c_b, n, d)| *c_b *= *n / (*d + 0.000000001f32));
+                zip!(&mut c_b, &numerator, &denominator).for_each(|unzip!(c_b, n, d)| {
+                    *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
+                });
             }
         }
 
         if self.filter {
-            //Self::filter_zeroes(c_a.as_mut(), m_a_y, m_a_x);
-            //Self::filter_zeroes(c_b.as_mut(), m_b_y, m_b_x);
+            Self::filter_zeroes(c_a.as_mut(), &matrices.m_a_y_matrix, &matrices.m_a_x_matrix);
+            Self::filter_zeroes(c_b.as_mut(), &matrices.m_b_y_matrix, &matrices.m_b_x_matrix);
         }
+        Self::verify_matrix(&c_a);
+        Self::verify_matrix(&c_b);
 
         let image_a = {
             let mut output = matrix_to_image(&c_a);
@@ -622,7 +648,7 @@ impl LFBuffers {
         for (column, x) in mat.col_iter_mut().enumerate() {
             for (row, y) in x.iter_mut().enumerate() {
                 if *y != 0.0 {
-                    break;
+                    //break;
                 }
                 // This means there are no entries for this column
                 if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
@@ -634,7 +660,7 @@ impl LFBuffers {
 }
 
 impl DrawUI for LFBuffers {
-    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>) {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Light Field Sampler".to_string());
 
         egui_winit::egui::Window::new(title)
@@ -683,12 +709,19 @@ mod test {
 
     #[test]
     fn image_around_the_world() {
-        let image = image::open("./resources/textures/4 by 4 T filled.png").unwrap();
+        let mut image = image::open("./resources/textures/Gibbon.jpg").unwrap();
+        image = image.grayscale();
         let matrix = image_to_matrix(&image);
         let new_image = matrix_to_image(&matrix);
         let new_matrix = image_to_matrix(&new_image);
+        // Write both into
+        image.save("./resources/test/OG.png").unwrap();
+        new_image.save("./resources/test/NEW.png").unwrap();
+        for (og, new) in std::iter::zip(image.pixels(), new_image.pixels()) {
+            assert_eq!(og, new);
+        }
 
-        assert_eq!(image, new_image);
+        //assert_eq!(image, new_image);
         assert_eq!(new_matrix, matrix);
     }
 }

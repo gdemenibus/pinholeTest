@@ -6,6 +6,7 @@ mod egui_tools;
 mod file_picker;
 mod light_factor;
 mod raytracer;
+mod save;
 mod scene;
 mod shape;
 mod texture;
