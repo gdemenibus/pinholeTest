@@ -31,7 +31,7 @@ TODO: SCENE ONLY USES QUAD, MIGHT WANT MORE?
 Scene struct. Encapsulates UI and handles access to the raw quads
 */
 pub struct Scene {
-    pub world: Vec<Target>,
+    pub world: Target,
     pub panels: Vec<ScenePanel>,
     ray_tracer: RayTraceInfo,
     pub target_binds: TargetBinds,
@@ -84,6 +84,8 @@ pub struct Target {
     pub pixel_count: Vector2<u32>,
     // TODO: Change this to UOM
     pub size: Vector2<f32>,
+    #[serde(skip)]
+    pub texture: FilePicker,
 }
 
 impl TextureBinds {
@@ -411,6 +413,8 @@ impl Target {
             Vector3::new(0.5, -0.5, 0.0),
         );
 
+        let default_path = PathBuf::from("./resources/textures/256.png".to_string());
+
         Target {
             pixel_count,
             size,
@@ -421,6 +425,8 @@ impl Target {
             roll,
             placement,
             scale,
+
+            texture: FilePicker::new("./resources/textures/".to_string(), default_path),
         }
     }
     pub fn update_pixel_count(&mut self, pixel_count: (u32, u32)) {
@@ -452,6 +458,7 @@ impl Target {
 
 impl DrawUI for Target {
     fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let _ = ui;
         let title = title.unwrap_or("Target".to_string());
         egui_winit::egui::Window::new(title)
             .resizable(true)
@@ -459,6 +466,7 @@ impl DrawUI for Target {
             .default_size([150.0, 175.0])
             .default_open(false)
             .show(ctx, |ui| {
+                self.texture.button(ctx, ui);
                 ui.label(
                     RichText::new(format!("Pixels X: {}", self.pixel_count.x))
                         .color(Color32::ORANGE),
@@ -536,7 +544,7 @@ impl Scene {
         let target_1 = Vector4::new(0.5, 1.5, 0.0, 1.0);
         let pixel_count = Vector2::new(256, 256);
         let size = Vector2::new(1.0, 1.0);
-        let world = vec![Target::new(target_1, pixel_count, size)];
+        let world = Target::new(target_1, pixel_count, size);
         let panels = vec![ScenePanel::new(place_1, 1), ScenePanel::new(place_2, 2)];
 
         let world_buffer = Self::world_as_bytes(&world, camera);
@@ -624,8 +632,8 @@ impl Scene {
     }
 
     /// Will always place the closest quad first
-    pub fn world_as_bytes(world: &[Target], camera: &Camera) -> [u8; 256] {
-        let mut shapes: Vec<Target> = world.iter().map(|target| target.place_target()).collect();
+    pub fn world_as_bytes(world: &Target, camera: &Camera) -> [u8; 256] {
+        let mut shapes: Vec<Target> = vec![world.place_target()];
 
         shapes.sort_by(|x, y| {
             let camera_origin = camera.position;
@@ -661,6 +669,7 @@ impl Scene {
 
 impl DrawUI for ScenePanel {
     fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let _ = ui;
         let title = title.unwrap_or("VW Panel".to_string());
         egui_winit::egui::Window::new(title)
             .resizable(true)
@@ -724,13 +733,12 @@ impl DrawUI for Scene {
     Rotation: Slider
     */
     fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let _ = ui;
         let _title = title.unwrap_or("Scene".to_string());
         let mut count = 1;
-        for target in self.world.iter_mut() {
-            let title = Some(format!("Target Quad {}", count));
-            count += 1;
-            target.draw_ui(ctx, title, None);
-        }
+        let target = &mut self.world;
+        let title = Some(format!("Target Quad {}", count));
+        target.draw_ui(ctx, title, None);
         count = 1;
         for panel in self.panels.iter_mut() {
             let title = format!("VW Panel# {} ", count);

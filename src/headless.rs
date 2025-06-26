@@ -5,6 +5,7 @@ pub struct HeadlessImage {
     pub texture: Texture,
     pub width: u32,
     pub height: u32,
+    pub retrieve_image: bool,
 }
 impl HeadlessImage {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, width: u32, height: u32) -> Self {
@@ -32,9 +33,44 @@ impl HeadlessImage {
             height,
             texture_buffer: output_buffer,
             texture,
+            retrieve_image: false,
         }
     }
+    pub fn handle_resize(
+        &mut self,
+        width: u32,
+        height: u32,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
+        let image = image::DynamicImage::new_rgba8(width, height);
+        let texture = Texture::headless_texture(device, queue, &image, Some("Texture For view"));
+        self.width = width;
+        self.height = height;
+
+        let u32_size = std::mem::size_of::<u32>() as u32;
+        let unalisgned_bytes_per_row = u32_size * width;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let aligned_bytes_per_row = unalisgned_bytes_per_row.div_ceil(align) * align;
+
+        let u32_size = std::mem::size_of::<u32>() as u32;
+
+        let output_buffer_size = (u32_size * aligned_bytes_per_row * height) as wgpu::BufferAddress;
+        let output_buffer_desc = wgpu::BufferDescriptor {
+            size: output_buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            label: None,
+            mapped_at_creation: false,
+        };
+        let output_buffer = device.create_buffer(&output_buffer_desc);
+        self.texture = texture;
+        self.texture_buffer = output_buffer
+    }
+
     pub fn draw_pass(&self, encoder: &mut wgpu::CommandEncoder) {
+        if !self.retrieve_image {
+            return;
+        }
         let u32_size = std::mem::size_of::<u32>() as u32;
         let unalisgned_bytes_per_row = u32_size * self.width;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -59,7 +95,7 @@ impl HeadlessImage {
         );
     }
 
-    pub fn print_image(&self, device: &wgpu::Device) {
+    pub fn print_image(&mut self, device: &wgpu::Device) {
         println!("Printing Texture!");
         let pixel_size: u32 = 4;
         let actual_bytes_per_row = self.width * pixel_size;
@@ -95,5 +131,6 @@ impl HeadlessImage {
             buffer.save("test.png").unwrap();
         }
         self.texture_buffer.unmap();
+        self.retrieve_image = false;
     }
 }

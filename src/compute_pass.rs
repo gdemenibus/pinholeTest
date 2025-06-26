@@ -104,7 +104,7 @@ impl ReverseProj {
         factorizer: &LFBuffers,
         camera_history: &CameraHistory,
     ) {
-        let work_group_size = Self::work_group_size(scene.world[0].pixel_count);
+        let work_group_size = Self::work_group_size(scene.world.pixel_count);
         println!("Dispatching a work group of size: {:?}", work_group_size);
 
         let texture_size = 256;
