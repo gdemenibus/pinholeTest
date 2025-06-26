@@ -1,6 +1,6 @@
-use std::{cmp::max, num::NonZero, sync::mpsc::channel, thread};
+use std::{collections::VecDeque, num::NonZero, sync::mpsc::channel, thread};
 
-use cgmath::{prelude, Vector2};
+use cgmath::Vector2;
 use egui::{ahash::HashSet, Ui};
 use faer::{
     sparse::{SparseColMat, Triplet},
@@ -65,7 +65,7 @@ pub struct LFBuffers {
     solve_next_redraw_flag: bool,
     blend: bool,
     blend_sigma: f32,
-    inverse: bool,
+    early_stop: bool,
     matrix_rep: Option<LFMatrices>,
     filter: bool,
     save_error: bool,
@@ -236,7 +236,7 @@ impl LFBuffers {
             blend: false,
             blend_sigma: 0.1f32,
             matrix_rep: None,
-            inverse: false,
+            early_stop: false,
             filter: false,
             save_error: true,
         }
@@ -529,90 +529,94 @@ impl LFBuffers {
         // Doesn't change
         let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
         let progress_bar = indicatif::ProgressBar::new(self.iter_count as u64);
-        let error: Vec<_> = (0..self.iter_count)
-            .map(|x| {
-                progress_bar.inc(1);
-                let mut ret = 0.0f32;
+        let mut error = VecDeque::with_capacity(self.iter_count);
+        for x in 0..self.iter_count {
+            progress_bar.inc(1);
 
-                if self.show_steps {
-                    let path_1 = format!(
-                        "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-                        x, 1
-                    );
-                    let path_2 = format!(
-                        "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-                        x, 2
-                    );
-                    let image_a = matrix_to_image(&c_a);
-                    let image_b = matrix_to_image(&c_b);
-                    sender.send((path_1, image_a)).unwrap();
-                    sender.send((path_2, image_b)).unwrap();
+            if self.show_steps {
+                let path_1 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 1
+                );
+                let path_2 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 2
+                );
+                let image_a = matrix_to_image(&c_a);
+                let image_b = matrix_to_image(&c_b);
+                sender.send((path_1, image_a)).unwrap();
+                sender.send((path_2, image_b)).unwrap();
 
-                    // Dispatch a thread to do
-                }
-                // CA update
-                //
-                {
-                    let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
-                    let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+                // Dispatch a thread to do
+            }
+            // CA update
+            //
+            {
+                let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
 
-                    zip!(&mut upper, &c_b_m_product, &c_t_m_product).for_each(
-                        |unzip!(upper, c_b, c_t)| {
-                            *upper = *c_b * *c_t;
+                zip!(&mut upper, &c_b_m_product, &c_t_m_product).for_each(
+                    |unzip!(upper, c_b, c_t)| {
+                        *upper = *c_b * *c_t;
+                    },
+                );
+
+                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                    |unzip!(lower, c_b, c_a)| {
+                        *lower = *c_a * *c_b * *c_b;
+                    },
+                );
+                let numerator = m_a_y.transpose() * &upper * m_a_x;
+                let denominator = m_a_y.transpose() * &lower * m_a_x;
+                zip!(&mut c_a, &numerator, &denominator).for_each(|unzip!(c_a, n, d)| {
+                    *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32))
+                });
+
+                if self.save_error {
+                    zip!(&mut upper, &c_b_m_product, &c_a_m_product).for_each(
+                        |unzip!(upper, c_b, c_a)| {
+                            *upper = *c_b * *c_a;
                         },
                     );
+                    let iter_error = &c_t_m_product - &upper;
+                    let cross = iter_error.transpose() * iter_error.clone();
+                    let eigen_norm = cross.self_adjoint_eigenvalues(faer::Side::Upper).unwrap();
+                    let eigen_max = eigen_norm[eigen_norm.len() - 1];
 
-                    zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
-                        |unzip!(lower, c_b, c_a)| {
-                            *lower = *c_a * *c_b * *c_b;
-                        },
-                    );
-                    let numerator = m_a_y.transpose() * &upper * m_a_x;
-                    let denominator = m_a_y.transpose() * &lower * m_a_x;
-                    zip!(&mut c_a, &numerator, &denominator).for_each(|unzip!(c_a, n, d)| {
-                        *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32))
-                    });
-
-                    if self.save_error {
-                        zip!(&mut upper, &c_b_m_product, &c_a_m_product).for_each(
-                            |unzip!(upper, c_b, c_a)| {
-                                *upper = *c_b * *c_a;
-                            },
-                        );
-                        let iter_error = &c_t_m_product - &upper;
-                        let cross = iter_error.transpose() * iter_error.clone();
-                        let eigen_norm = cross.self_adjoint_eigenvalues(faer::Side::Upper).unwrap();
-                        let eigen_max = eigen_norm[eigen_norm.len() - 1];
-
-                        ret = eigen_max.sqrt();
+                    let ret = eigen_max.sqrt();
+                    if let Some(previous) = error.back() {
+                        let diff: f32 = ret - previous;
+                        if self.early_stop && diff.abs() < 0.0000001f32 {
+                            break;
+                        }
                     }
+                    error.push_back(ret);
                 }
-                // C_B Update
-                {
-                    let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
-                    let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+            }
+            // C_B Update
+            {
+                let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
 
-                    zip!(&mut upper, &c_a_m_product, &c_t_m_product).for_each(
-                        |unzip!(upper, c_a, c_t)| {
-                            *upper = *c_a * *c_t;
-                        },
-                    );
+                zip!(&mut upper, &c_a_m_product, &c_t_m_product).for_each(
+                    |unzip!(upper, c_a, c_t)| {
+                        *upper = *c_a * *c_t;
+                    },
+                );
 
-                    zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
-                        |unzip!(lower, c_b, c_a)| {
-                            *lower = *c_b * *c_a * *c_a;
-                        },
-                    );
+                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                    |unzip!(lower, c_b, c_a)| {
+                        *lower = *c_b * *c_a * *c_a;
+                    },
+                );
 
-                    let numerator = m_b_y.transpose() * &upper * m_b_x;
-                    let denominator = m_b_y.transpose() * &lower * m_b_x;
-                    zip!(&mut c_b, &numerator, &denominator).for_each(|unzip!(c_b, n, d)| {
-                        *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
-                    });
-                    ret
-                }
-            })
-            .collect();
+                let numerator = m_b_y.transpose() * &upper * m_b_x;
+                let denominator = m_b_y.transpose() * &lower * m_b_x;
+                zip!(&mut c_b, &numerator, &denominator).for_each(|unzip!(c_b, n, d)| {
+                    *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
+                });
+            }
+        }
 
         if self.filter {
             Self::filter_zeroes(c_a.as_mut(), &matrices.m_a_y_matrix, &matrices.m_a_x_matrix);
@@ -627,9 +631,6 @@ impl LFBuffers {
                 output = output.fast_blur(self.blend_sigma);
             }
 
-            if self.inverse {
-                output.invert();
-            }
             output
         };
         image_a
@@ -643,9 +644,6 @@ impl LFBuffers {
             let mut output = matrix_to_image(&c_b);
             if self.blend {
                 output = output.fast_blur(self.blend_sigma);
-            }
-            if self.inverse {
-                output.invert();
             }
             output
         };
@@ -661,7 +659,7 @@ impl LFBuffers {
         println!("Errors is: {:?}", error);
         let error = {
             if self.save_error {
-                Some(error)
+                Some(error.into())
             } else {
                 None
             }
@@ -693,6 +691,7 @@ impl LFBuffers {
 impl DrawUI for LFBuffers {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Light Field Sampler".to_string());
+        let _ = ui;
 
         egui_winit::egui::Window::new(title)
             .resizable(true)
@@ -703,7 +702,7 @@ impl DrawUI for LFBuffers {
                 ui.label("Iteration count");
                 ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
                 ui.checkbox(&mut self.show_steps, "Print steps");
-                ui.checkbox(&mut self.inverse, "White on black");
+                ui.checkbox(&mut self.early_stop, "Early stop?");
                 ui.checkbox(&mut self.filter, "Filter Columns");
                 ui.checkbox(&mut self.save_error, "Save Error");
 

@@ -1,4 +1,3 @@
-use cgmath::Vector2;
 use image::{DynamicImage, ImageReader};
 use plotters::{
     chart::ChartBuilder,
@@ -100,7 +99,7 @@ impl Save {
         panel_2_image_path.push("panel_2.png");
         cache.panels[1].save(&panel_2_image_path).unwrap();
         let save = Save {
-            target: scene.world[0].clone(),
+            target: scene.world.clone(),
             cameras: cameras.clone(),
             name,
             target_path: target_image_path,
@@ -113,7 +112,7 @@ impl Save {
         save
     }
     pub fn save_settings(&self) {
-        let content = ron::to_string(&self).unwrap();
+        let content = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default()).unwrap();
 
         let path_core = PathBuf::from(format!("./saves/{}/save.ro", self.name));
         fs::write(path_core, content).unwrap();
@@ -139,7 +138,7 @@ impl Save {
         }
     }
     pub fn update_scene(&self, scene: &mut Scene) {
-        scene.world[0] = self.target.clone();
+        scene.world = self.target.clone();
         scene.panels[0] = self.panel_1.clone();
         scene.panels[1] = self.panel_2.clone();
     }
@@ -191,7 +190,7 @@ impl SaveManager {
 
 impl DrawUI for SaveManager {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut egui::Ui>) {
-        let title = title.unwrap_or("Save manaer".to_string());
+        let _title = title.unwrap_or("Save manaer".to_string());
         let _ = ctx;
         let _ = ui;
     }

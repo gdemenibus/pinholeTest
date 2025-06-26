@@ -323,8 +323,20 @@ impl AppState {
             self.render_pipe = render_pipe;
         }
     }
-    fn solver_light_field(&mut self, ct_image: &DynamicImage) {
+    fn solver_light_field(&mut self) {
         println!("Solving for light field!");
+        let path = &self.scene.world.texture.texture_file;
+
+        let file = File::open(&path).unwrap();
+        if !file.metadata().unwrap().is_file() {
+            println!(
+                "Something went wrong, provided path: {:?}, is not a file",
+                file
+            );
+            return;
+        }
+        //let reader = std::io::BufReader::new(file);
+        let ct_image = image::ImageReader::open(path).unwrap().decode().unwrap();
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -344,8 +356,8 @@ impl AppState {
             let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
 
             let target_size = (
-                self.scene.world[0].pixel_count.y,
-                self.scene.world[0].pixel_count.x,
+                self.scene.world.pixel_count.y,
+                self.scene.world.pixel_count.x,
             );
             println!("sampling!");
             let number_of_view_points = self.camera_history.len() as u32;
@@ -361,7 +373,7 @@ impl AppState {
                 number_of_view_points * target_size.1,
             );
             println!("Factorizing");
-            let images = self.factorizer.factorize(ct_image, ray_cast);
+            let images = self.factorizer.factorize(&ct_image, ray_cast);
 
             if let Some((img_0, img_1, error)) = images {
                 self.update_panel(&img_0, 0);
@@ -423,7 +435,7 @@ impl AppState {
             .texture_binds
             .update_target_texture(img, &self.queue)
         {
-            self.scene.world[0].update_pixel_count(img.dimensions());
+            self.scene.world.update_pixel_count(img.dimensions());
             println!("New Dimensions are: {:#?}", img.dimensions());
             self.image_cache.target_image = img.clone();
         }
@@ -433,6 +445,8 @@ impl AppState {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
+        self.headless
+            .handle_resize(width, height, &self.device, &self.queue);
     }
     fn print_compute(&self) {
         self.rev_proj.print_image(&self.device);
@@ -487,7 +501,6 @@ pub struct App {
     window: Option<Arc<Window>>,
     camera: Camera,
     camera_control: CameraController,
-    file_picker: FilePicker,
     previous_draw: Instant,
     mouse_press: bool,
     mouse_on_ui: bool,
@@ -502,10 +515,6 @@ impl App {
             backends: Backends::VULKAN,
             ..Default::default()
         });
-        let file_picker = FilePicker::new(
-            "./resources/textures/".to_string(),
-            PathBuf::from("./resources/textures/Aircraft_code.png"),
-        );
         Self {
             instance,
             mouse_press: false,
@@ -521,7 +530,6 @@ impl App {
             ),
             camera_control: CameraController::new(4.0, 1.0),
             previous_draw: Instant::now(),
-            file_picker,
             pressed_keys: HashSet::default(),
         }
     }
@@ -555,7 +563,7 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::Enter) => {
                 if let Some(state) = self.state.as_mut() {
-                    state.headless.print_image(&state.device);
+                    state.headless.retrieve_image = true;
                 }
             }
 
@@ -639,24 +647,20 @@ impl App {
                 .clone();
         }
     }
-    pub fn c_t(&self) -> DynamicImage {
-        image::ImageReader::open({
-            if self.file_picker.texture_file.is_dir() {
-                self.file_picker.default_texture().clone()
-            } else {
-                self.file_picker.texture_file.clone()
-            }
-        })
-        .unwrap()
-        .decode()
-        .unwrap()
-    }
 
     // Take the new texture and queue an update
     pub fn update_texture(&mut self) {
         let state = self.state.as_mut().unwrap();
-        let path = self.file_picker.texture_file.clone();
-        let file = File::open(&path).unwrap();
+
+        let target = &mut state.scene.world;
+        if !target.texture.change_file {
+            return;
+        }
+
+        target.texture.change_file = false;
+        let path = &target.texture.texture_file;
+
+        let file = File::open(path).unwrap();
         if file.metadata().unwrap().is_file() {
             //let reader = std::io::BufReader::new(file);
             let img = image::ImageReader::open(path).unwrap().decode().unwrap();
@@ -729,15 +733,12 @@ impl App {
                 }
             }
         }
-        if self.file_picker.change_file {
-            self.update_texture();
-            self.file_picker.change_file = false;
-        }
+
+        self.update_texture();
 
         //self.update_panel_texture();
         //
 
-        let c_t = self.c_t();
         let state = self.state.as_mut().unwrap();
 
         if state.factorizer.will_sample() {
@@ -746,7 +747,7 @@ impl App {
             state.factorizer.has_sampled();
         }
         if state.factorizer.will_solve() {
-            state.solver_light_field(&c_t);
+            state.solver_light_field();
             state.displaying_panel_textures = true;
             state.factorizer.has_solved();
         }
@@ -858,7 +859,6 @@ impl App {
 
             state.scene.draw_ui(context, None, None);
             state.camera_history.draw_ui(context, None, None);
-            self.file_picker.draw_ui(context, None, None);
             state.factorizer.draw_ui(context, None, None);
 
             state.egui_renderer.end_frame_and_draw(
@@ -876,6 +876,10 @@ impl App {
 
         state.queue.submit(Some(encoder.finish()));
         surface_texture.present();
+
+        if state.headless.retrieve_image {
+            state.headless.print_image(&state.device);
+        }
     }
 }
 
