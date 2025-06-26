@@ -327,7 +327,7 @@ impl AppState {
         println!("Solving for light field!");
         let path = &self.scene.world.texture.texture_file;
 
-        let file = File::open(&path).unwrap();
+        let file = File::open(path).unwrap();
         if !file.metadata().unwrap().is_file() {
             println!(
                 "Something went wrong, provided path: {:?}, is not a file",
