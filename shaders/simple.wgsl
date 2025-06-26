@@ -40,7 +40,7 @@ const eps = 0.00001;
 const scene_size: u32 = 1;
 const miss_color: vec4f = vec4(0.0, 0.0, 0.0, 0.0);
 const border_color: vec4f = vec4(1.0, 0.0, 0.0, 1.0);
-const background_color: vec4f = vec4(0.0, 0.0, 0.3, 1.0);
+const background_color: vec4f = vec4(1.0, 1.0, 1.3, 1.0);
 
 // Scene group
 @group(0) @binding(0)
@@ -264,7 +264,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
-            let out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            var out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            out = out * background_color;
             return FragmentOutput(out, out);
 
         }
@@ -280,7 +281,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
-            let out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            var out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
+            out = out * background_color;
+
             return FragmentOutput(out, out);
         }
         return FragmentOutput(color, color);
@@ -339,7 +342,7 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> PanelHit {
         ;
     }
 
-    color.a = 1 - color.r;
+    //color.a = 1 - color.r;
 
     return PanelHit(hit, false, color);
 }
