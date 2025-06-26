@@ -395,3 +395,18 @@ Why the slow down after solving once?
 Entries are being filtered. Strange strange
 Why do we not jut get the pixel when looking at pixel of size 1. Introduction of some amount of black?
 
+
+
+## Advice for exerpiment suite
+
+Test for isolated variables for have an interesting discussion
+Exploration, more so than 
+
+Having a config file that gets turned into experiment
+
+Call with rafael on what we are seeing, and double check what 
+
+
+Test the resoltion, and then talk to rafael.
+
+
