@@ -10,6 +10,13 @@ pub struct ReverseProj {
     debug_bind_group: BindGroup,
 }
 
+pub struct StraightProj {
+    compute_pipeline: ComputePipeline,
+    debug_texture_buffer: Buffer,
+    debug_texture_texture: Texture,
+    debug_bind_group: BindGroup,
+}
+
 impl ReverseProj {
     pub fn new(
         device: &wgpu::Device,

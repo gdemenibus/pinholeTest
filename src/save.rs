@@ -62,7 +62,7 @@ impl Default for ImageCache {
 pub struct Save {
     pub cameras: VecDeque<Camera>,
     target_path: PathBuf,
-    target: Target,
+    pub target: Target,
     panel_1: ScenePanel,
     panel_2: ScenePanel,
     panel_1_texture: PathBuf,
@@ -158,9 +158,11 @@ impl SaveManager {
             let s = std::fs::read_to_string(save_path);
 
             if let Ok(string) = s {
-                let save = ron::from_str(string.as_str());
-                if let Ok(save) = save {
-                    saves.push_back(save);
+                let save = ron::from_str::<Save>(string.as_str());
+                if let Ok(mut save_struct) = save {
+                    save_struct.target.texture.texture_file = save_struct.target_path.clone();
+
+                    saves.push_back(save_struct);
                 }
             }
         }

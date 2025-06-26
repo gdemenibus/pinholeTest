@@ -491,9 +491,12 @@ impl DrawUI for Target {
 
                 ui.label("Scale x");
                 ui.add(egui::DragValue::new(&mut self.scale.x.x).speed(1.0));
+                self.size.x = self.scale.x.x;
 
                 ui.label("Scale y");
                 ui.add(egui::DragValue::new(&mut self.scale.y.y).speed(1.0));
+
+                self.size.y = self.scale.y.y;
             });
     }
 }

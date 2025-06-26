@@ -68,6 +68,7 @@ impl HeadlessImage {
     }
 
     pub fn draw_pass(&self, encoder: &mut wgpu::CommandEncoder) {
+        // Early exit, no image retrieval requested
         if !self.retrieve_image {
             return;
         }
