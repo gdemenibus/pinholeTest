@@ -1,24 +1,22 @@
 use crate::camera::{Camera, CameraController, CameraHistory};
 use crate::compute_pass::ReverseProj;
 use crate::egui_tools::EguiRenderer;
-use crate::file_picker::FilePicker;
 use crate::headless::HeadlessImage;
 use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
 use crate::save::{ImageCache, Save, SaveManager};
 use crate::scene::{DrawUI, Scene};
 use crate::shape::Quad;
+use crate::stereoscope::StereoscopeBuffer;
 use crate::vertex;
 use crate::FileWatcher;
 use cgmath::Vector2;
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
-use egui::Key;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
 use std::fs::{self, File};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 use wgpu::util::DeviceExt;
@@ -44,6 +42,7 @@ pub struct AppState {
     pub num_index: u32,
     pub scene: Scene,
     pub factorizer: LFBuffers,
+    pub stereoscope: StereoscopeBuffer,
     pub rev_proj: ReverseProj,
     pub camera_history: CameraHistory,
     pub image_cache: ImageCache,
@@ -118,7 +117,8 @@ impl AppState {
         let scene = Scene::new(rt_test, camera, &device, &queue);
 
         let factorizer = LFBuffers::set_up(&device);
-        let mut headless = HeadlessImage::new(&device, &queue, image_width, image_height);
+        let stereoscope = StereoscopeBuffer::set_up(&device);
+        let headless = HeadlessImage::new(&device, &queue, image_width, image_height);
 
         let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
 
@@ -213,7 +213,14 @@ impl AppState {
             usage: wgpu::BufferUsages::INDEX,
         });
         let camera_history = CameraHistory::new(&device);
-        let rev_proj = ReverseProj::new(&device, &queue, &scene, &factorizer, &camera_history);
+        let rev_proj = ReverseProj::new(
+            &device,
+            &queue,
+            &scene,
+            &factorizer,
+            &stereoscope,
+            &camera_history,
+        );
         let image_cache = ImageCache::default();
         let save_manager = SaveManager::boot();
 
@@ -234,6 +241,7 @@ impl AppState {
             num_index: index_list.len() as u32,
             scene,
             factorizer,
+            stereoscope,
             rev_proj,
             camera_history,
             headless,
@@ -346,6 +354,7 @@ impl AppState {
                 &self.scene,
                 &self.factorizer,
                 &self.camera_history,
+                &self.stereoscope,
             );
         }
         self.queue.submit(Some(encoder.finish()));

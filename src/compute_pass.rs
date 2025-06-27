@@ -1,16 +1,12 @@
 use cgmath::Vector2;
 use wgpu::{BindGroup, Buffer, CommandEncoder, ComputePipeline, ComputePipelineDescriptor};
 
-use crate::{camera::CameraHistory, light_factor::LFBuffers, scene, texture::Texture};
+use crate::{
+    camera::CameraHistory, light_factor::LFBuffers, scene, stereoscope::StereoscopeBuffer,
+    texture::Texture,
+};
 
 pub struct ReverseProj {
-    compute_pipeline: ComputePipeline,
-    debug_texture_buffer: Buffer,
-    debug_texture_texture: Texture,
-    debug_bind_group: BindGroup,
-}
-
-pub struct StraightProj {
     compute_pipeline: ComputePipeline,
     debug_texture_buffer: Buffer,
     debug_texture_texture: Texture,
@@ -23,6 +19,7 @@ impl ReverseProj {
         queue: &wgpu::Queue,
         scene: &scene::Scene,
         factorizer: &LFBuffers,
+        stereoscope: &StereoscopeBuffer,
         camera_history: &CameraHistory,
     ) -> Self {
         let rv_proj = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -70,6 +67,7 @@ impl ReverseProj {
                     &factorizer.bind_group_layout,
                     &bind_group_layout,
                     &camera_history.bind_group_layout,
+                    &stereoscope.bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -110,6 +108,7 @@ impl ReverseProj {
         scene: &scene::Scene,
         factorizer: &LFBuffers,
         camera_history: &CameraHistory,
+        stereoscope: &StereoscopeBuffer,
     ) {
         let work_group_size = Self::work_group_size(scene.world.pixel_count);
         println!("Dispatching a work group of size: {:?}", work_group_size);
@@ -130,6 +129,7 @@ impl ReverseProj {
             compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
             compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
             compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
+            compute_pass.set_bind_group(3, &stereoscope.bind_group, &[]);
 
             compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
         }
