@@ -1,4 +1,5 @@
 #[macro_use]
+mod stereoscope;
 mod app;
 mod camera;
 mod compute_pass;

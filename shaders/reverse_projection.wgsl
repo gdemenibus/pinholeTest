@@ -89,6 +89,12 @@ var<storage, read_write> m_t_x_buffer: array<u32>;
 @group(5) @binding(0) var<uniform> camera_positions: array<vec3<f32>, 10>;
 @group(5) @binding(1) var<uniform> camera_count: u32;
 
+@group(6) @binding(0)
+var<storage, read_write> a_buffer: array<u32>;
+@group(6) @binding(1)
+var<storage, read_write> b_buffer: array<u32>;
+@group(6) @binding(2)
+var<storage, read_write> l_buffer: array<f32>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
@@ -214,6 +220,21 @@ fn record_hit_T(global_coordinat: vec2<u32>, t_coords: vec2<u32>, index: u32) {
     m_t_x_buffer[array_coordinate] = global_coordinat.x;
     m_t_x_buffer[array_coordinate + 1] = t_coords.x;
     m_t_x_buffer[array_coordinate + 2] = 1;
+
+}
+
+fn record_hit_l(global_coordinat: vec2<u32>, observer_index: u32, sample: f32) {
+
+}
+
+fn record_hit_Theta_A(global_coordinat: vec2<u32>, a_coords: vec2<u32>, index: u32) {
+    // Theta is of size ray amount x panel_a as vec
+    // We need to translate a_coords into vectorize representation
+    // and global_coords + index into vectorize representations
+    // Entry is at ray index
+    let ray_index = (global_coordinat.x + global_coordinat.y * (scene.pixel_count.y * (index + 1)));
+    let array_coordinate = ray_index * 2;
+    let vectorized_a_coords = a_coords.x + a_coords.y * panels[0].pixel_count.y;
 
 }
 
