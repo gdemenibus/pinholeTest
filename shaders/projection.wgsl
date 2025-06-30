@@ -90,6 +90,13 @@ var<storage, read_write> m_t_x_buffer: array<u32>;
 @group(5) @binding(1) var<uniform> camera_count: u32;
 
 
+@group(6) @binding(0)
+var<storage, read_write> a_buffer: array<u32>;
+@group(6) @binding(1)
+var<storage, read_write> b_buffer: array<u32>;
+@group(6) @binding(2)
+var<storage, read_write> l_buffer: array<f32>;
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     let screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, GlobalInvocationID.y);
@@ -106,76 +113,122 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
             // Build the ray
             let ray = Ray(observer, direction);
+            // Check Panel A
+            panel_other_intersection(ray, screen_pos, camera_index);
+            target_intersection(ray, screen_pos, camera_index);
+            record_hit_B(screen_pos, screen_pos, camera_index);
+
+        // Check Target
 
         }
 
     }
 
 }
-fn single_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
 
+fn panel_other_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
     let ray_index_x = current_pixel.x + (panels[1].pixel_count.x * observer_index);
     let ray_index_y = current_pixel.y + (panels[1].pixel_count.y * observer_index);
     let ray_index = vec2u(ray_index_x, ray_index_y);
-    var color = background_color;
+    let trig_1_intersection = intersection_panel(ray, true, panels[0]);
+    let trig_2_intersection = intersection_panel(ray, false, panels[0]);
+    let pixel_count = panels[0].pixel_count;
+    if trig_1_intersection.hit {
+        let pixel_coords = trig_1_intersection.pixel_coords;
+        let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
+        record_hit_A(ray_index, pixel_coords, observer_index);
 
-    var trig_1_intersection = intersection_panel(ray, true, scene);
-    var trig_2_intersection = intersection_panel(ray, false, scene);
+    }
+    if trig_2_intersection.hit {
 
+        let pixel_coords = trig_2_intersection.pixel_coords;
+        let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
+        record_hit_A(ray_index, pixel_coords, observer_index);
+    }
+
+}
+
+fn target_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
+    let ray_index_x = current_pixel.x + (panels[1].pixel_count.x * observer_index);
+    let ray_index_y = current_pixel.y + (panels[1].pixel_count.y * observer_index);
+    let ray_index = vec2u(ray_index_x, ray_index_y);
+    let target_as_panel = Panel(scene.quad, scene.pixel_count, scene.size);
+    let trig_1_intersection = intersection_panel(ray, true, target_as_panel);
+    let trig_2_intersection = intersection_panel(ray, false, target_as_panel);
     let pixel_count = scene.pixel_count;
 
     if trig_1_intersection.hit {
         let pixel_coords = trig_1_intersection.pixel_coords;
         let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
+        record_hit_T(ray_index, pixel_coords, observer_index);
 
-        color = vec4f(1.0, 0.0, 1.0, 1.0);
-
-        record_hit_T(ray_index, current_pixel, observer_index);
-        record_hit_B(ray_index, trig_1_intersection.pixel_coords, observer_index);
-
-    //color = vec4f(hit_relative, 0.0, 1.0);
     }
-
     if trig_2_intersection.hit {
 
         let pixel_coords = trig_2_intersection.pixel_coords;
         let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
-
-        if index == 0 {
-            color = vec4f(1.0, 1.0, 0.0, 1.0);
-
-            record_hit_A(current_pixel, trig_2_intersection.pixel_coords, observer_index);
-
-            record_hit_T(ray_index, current_pixel, observer_index);
-        } else {
-            color = vec4f(1.0, 0.0, 1.0, 1.0);
-
-            record_hit_T(ray_index, current_pixel, observer_index);
-            record_hit_B(current_pixel, trig_2_intersection.pixel_coords, observer_index);
-        }
-
+        record_hit_T(ray_index, pixel_coords, observer_index);
     }
 
 }
 
 
-struct TargetIntersection {
+fn record_hit_A(global_coordinat: vec2<u32>, a_coords: vec2<u32>, index: u32) {
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (panels[1].pixel_count.y * (index + 1))) * 3;
+
+    m_a_y_buffer[array_coordinate] = global_coordinat.y;
+    m_a_y_buffer[array_coordinate + 1] = a_coords.y;
+    m_a_y_buffer[array_coordinate + 2] = 1;
+
+    m_a_x_buffer[array_coordinate] = global_coordinat.x;
+    m_a_x_buffer[array_coordinate + 1] = a_coords.x;
+    m_a_x_buffer[array_coordinate + 2] = 1;
+
+}
+
+fn record_hit_B(global_coordinat: vec2<u32>, b_coords: vec2<u32>, index: u32) {
+
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (panels[1].pixel_count.y * (index + 1))) * 3;
+
+    m_b_y_buffer[array_coordinate] = global_coordinat.y;
+    m_b_y_buffer[array_coordinate + 1] = b_coords.y;
+    m_b_y_buffer[array_coordinate + 2] = 1;
+
+    m_b_x_buffer[array_coordinate] = global_coordinat.x;
+    m_b_x_buffer[array_coordinate + 1] = b_coords.x;
+    m_b_x_buffer[array_coordinate + 2] = 1;
+
+}
+fn record_hit_T(global_coordinat: vec2<u32>, t_coords: vec2<u32>, index: u32) {
+
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (panels[1].pixel_count.y * (index + 1))) * 3;
+
+    m_t_y_buffer[array_coordinate] = global_coordinat.y;
+    m_t_y_buffer[array_coordinate + 1] = t_coords.y;
+    m_t_y_buffer[array_coordinate + 2] = 1;
+
+    m_t_x_buffer[array_coordinate] = global_coordinat.x;
+    m_t_x_buffer[array_coordinate + 1] = t_coords.x;
+    m_t_x_buffer[array_coordinate + 2] = 1;
+
+}
+struct PanelIntersection {
     hit: bool,
+    border: bool,
     pixel_coords: vec2u,
 }
 ;
-fn intersection_panel(ray: Ray, abc: bool, target: Target) -> TargetIntersection {
-
+fn intersection_panel(ray: Ray, abc: bool, panel: Panel) -> PanelIntersection {
     var hit = false;
     var border = false;
     var pixel_coords = vec2u(0, 0);
-    var a = target.quad.a;
-    var b = target.quad.b;
-    var c = target.quad.c;
+    var a = panel.quad.a;
+    var b = panel.quad.b;
+    var c = panel.quad.c;
     if !abc {
-        a = target.quad.b;
-        b = target.quad.c;
-        c = target.quad.d;
+        a = panel.quad.b;
+        b = panel.quad.c;
+        c = panel.quad.d;
     }
 
     var e1 = b - a;
@@ -184,21 +237,21 @@ fn intersection_panel(ray: Ray, abc: bool, target: Target) -> TargetIntersection
     var det = dot(rey_cross_e2, e1);
 
     if det > -eps && det < eps {
-        return TargetIntersection(hit, border, pixel_coords);
+        return PanelIntersection(hit, border, pixel_coords);
     }
     var inv_det = 1.0 / det;
     var s = (ray).origin - a;
     var u = inv_det * dot(rey_cross_e2, s);
 
     if (u < 0.0 && abs(u) > eps) || (u > 1.0 && abs(u - 1.0) > eps) {
-        return TargetIntersection(hit, border, pixel_coords);
+        return PanelIntersection(hit, border, pixel_coords);
     }
     var s_cross_e1 = cross(e1, s);
     var v = inv_det * dot(s_cross_e1,(ray).direction);
     var w = 1.0 - v - u;
 
     if v < 0.0 || u + v > 1.0 {
-        return TargetIntersection(hit, border, pixel_coords);
+        return PanelIntersection(hit, border, pixel_coords);
     }
     // At this stage we can compute t to find out where the intersection point is on the line.
     var t = inv_det * dot(s_cross_e1, e2);
@@ -207,7 +260,7 @@ fn intersection_panel(ray: Ray, abc: bool, target: Target) -> TargetIntersection
         hit = true;
         let bary_coords = vec3f(u, v, w);
 
-        // target definition
+        // Panel definition
         // a ==== b
         // |      |
         // |      |
@@ -225,14 +278,14 @@ fn intersection_panel(ray: Ray, abc: bool, target: Target) -> TargetIntersection
             let tex_coords = array(vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
 
             //
-            let pixels_target = pixel_hit(bary_coords, tex_coords, target);
-            let pixels = pixels_target.pixel;
+            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel);
+            let pixels = pixels_panel.pixel;
 
-            if pixels.x == 0 || pixels.x == target.pixel_count.x - 1 || pixels.y == 0 || pixels.y == target.pixel_count.y - 1 {
+            if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
                 border = true;
-                return TargetIntersection(hit, border, pixels);
+                return PanelIntersection(hit, border, pixels);
             } else {
-                return TargetIntersection(hit, border, pixels);
+                return PanelIntersection(hit, border, pixels);
             //return vec4f(u, v, w, 1.0);
 
             //return miss_color;
@@ -248,46 +301,45 @@ fn intersection_panel(ray: Ray, abc: bool, target: Target) -> TargetIntersection
 
             let tex_coords = array(vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0));
 
-            let pixels_target = pixel_hit(bary_coords, tex_coords, target);
-            let pixels = pixels_target.pixel;
-            if pixels.x == 0 || pixels.x == target.pixel_count.x - 1 || pixels.y == 0 || pixels.y == target.pixel_count.y - 1 {
+            let pixels_panel = pixel_hit(bary_coords, tex_coords, panel);
+            let pixels = pixels_panel.pixel;
+            if pixels.x == 0 || pixels.x == panel.pixel_count.x - 1 || pixels.y == 0 || pixels.y == panel.pixel_count.y - 1 {
 
                 border = true;
-                return TargetIntersection(hit, border, pixels);
+                return PanelIntersection(hit, border, pixels);
             } else {
 
-                return TargetIntersection(hit, border, pixels);
+                return PanelIntersection(hit, border, pixels);
             }
         }
 
     //return vec4f(0.0, 0.5, 0.5, 1.0);
     }
 
-    return TargetIntersection(hit, border, pixel_coords);
-
+    return PanelIntersection(hit, border, pixel_coords);
 }
 
 
-struct Pixel_Target {
+struct Pixel_Panel {
     pixel: vec2u,
 
 }
 ;
-fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, target: Target) -> Pixel_Target {
+fn pixel_hit(bary_coords: vec3f, relative_tex_coords: array<vec2f, 3>, panel: Panel) -> Pixel_Panel {
+
     // Relative Coordinates
     let x_coord = (bary_coords.x * relative_tex_coords[0].x + bary_coords.y * relative_tex_coords[1].x + bary_coords.z * relative_tex_coords[2].x);
     let y_coord = (bary_coords.x * relative_tex_coords[0].y + bary_coords.y * relative_tex_coords[1].y + bary_coords.z * relative_tex_coords[2].y);
     // From Relative coordinates to pixel
     // Casting
     // Cast pixel count into a f32 to multiply, then into u32 to round
-    let x_pixel = u32(x_coord * f32(target.pixel_count.x));
-    let y_pixel = u32(y_coord * f32(target.pixel_count.y));
+    let x_pixel = u32(x_coord * f32(panel.pixel_count.x));
+    let y_pixel = u32(y_coord * f32(panel.pixel_count.y));
 
     // Messy code, need to write this out on paper?
     let pixel = vec2u(x_pixel, y_pixel);
-    return Pixel_Target(pixel);
+    return Pixel_Panel(pixel);
 }
-
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     return a + (t * (b - a));
@@ -298,7 +350,8 @@ fn LerpPoint(a: vec3f, b: vec3f, t: f32) -> vec3f {
     return vec3f(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t));
 
 }
-fn pixel_to_world_location(source: Panel, pixel_pos: vec2<u32>) -> vec3<f32> {
+
+fn pixel_to_world_location(source: Target, pixel_pos: vec2<u32>) -> vec3<f32> {
 
     let pixel_size = source.size / vec2f(source.pixel_count);
 
