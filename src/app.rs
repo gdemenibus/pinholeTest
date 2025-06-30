@@ -129,8 +129,8 @@ impl AppState {
             label: Some("Test Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/simple.wgsl").into()),
         });
-        if let Some(_error) = pollster::block_on(device.pop_error_scope()) {
-            println!("Could not validate shader!");
+        if let Some(error) = pollster::block_on(device.pop_error_scope()) {
+            println!("Could not validate shader!: {error}");
         }
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

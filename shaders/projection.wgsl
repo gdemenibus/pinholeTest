@@ -351,7 +351,7 @@ fn LerpPoint(a: vec3f, b: vec3f, t: f32) -> vec3f {
 
 }
 
-fn pixel_to_world_location(source: Target, pixel_pos: vec2<u32>) -> vec3<f32> {
+fn pixel_to_world_location(source: Panel, pixel_pos: vec2<u32>) -> vec3<f32> {
 
     let pixel_size = source.size / vec2f(source.pixel_count);
 

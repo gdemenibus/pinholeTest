@@ -129,7 +129,7 @@ impl ReverseProj {
             compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
             compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
             compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
-            compute_pass.set_bind_group(3, &stereoscope.bind_group, &[]);
+            compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
 
             compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
         }
