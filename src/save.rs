@@ -159,10 +159,15 @@ impl SaveManager {
 
             if let Ok(string) = s {
                 let save = ron::from_str::<Save>(string.as_str());
-                if let Ok(mut save_struct) = save {
-                    save_struct.target.texture.texture_file = save_struct.target_path.clone();
+                match save {
+                    Ok(mut save_struct) => {
+                        save_struct.target.texture.texture_file = save_struct.target_path.clone();
 
-                    saves.push_back(save_struct);
+                        saves.push_back(save_struct);
+                    }
+                    Err(err) => {
+                        println!("Error with save: {err}")
+                    }
                 }
             }
         }

@@ -32,13 +32,15 @@ struct Target {
 
 const scene_size: u32 = 1;
 
-const background_color: vec4f = vec4(0.0, 0.0, 0.3, 1.0);
 const eps = 0.00001;
 // Scene group
 @group(0) @binding(0)
 var<uniform> scene: Target;
 @group(0) @binding(1)
 var<uniform> rt: RayTraceInfo;
+
+@group(0) @binding(2)
+var<uniform> background_color: vec4<f32>;
 // Panel Group
 
 // Texture group

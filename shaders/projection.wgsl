@@ -32,7 +32,6 @@ struct Target {
 
 const scene_size: u32 = 1;
 
-const background_color: vec4f = vec4(0.0, 0.0, 0.3, 1.0);
 const eps = 0.00001;
 // Scene group
 @group(0) @binding(0)
@@ -46,6 +45,8 @@ var<uniform> rt: RayTraceInfo;
 var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1)
 var s_diffuse: sampler;
+@group(0) @binding(2)
+var<uniform> background_color: vec4<f32>;
 
 // Panel group!
 @group(2) @binding(0)
