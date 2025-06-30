@@ -10,7 +10,7 @@ use crate::{
     shape::{Quad, Shape, VWPanel},
     texture,
 };
-use cgmath::{Matrix4, Rad, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{vec4, Matrix4, Rad, SquareMatrix, Vector2, Vector3, Vector4};
 use crevice::std140::{self, AsStd140, Std140, Writer};
 use egui::{Color32, RichText, Ui};
 use egui_winit::egui::{self, Context};
@@ -57,6 +57,7 @@ pub struct TargetBinds {
     pub bind_layout: BindGroupLayout,
     pub ray_tracer_buffer: Buffer,
     pub scene_buffer: Buffer,
+    pub background_buffer: Buffer,
 }
 pub struct TextureBinds {
     pub bind_group: BindGroup,
@@ -86,6 +87,7 @@ pub struct Target {
     pub size: Vector2<f32>,
     #[serde(skip)]
     pub texture: FilePicker,
+    pub world_color: Vector4<f32>,
 }
 
 impl TextureBinds {
@@ -209,6 +211,13 @@ impl TargetBinds {
             contents: buffer,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let bg_color: Vector4<f32> = vec4(0.5, 0.5, 0.5, 1.0);
+
+        let background_color = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Background Color Buffer"),
+            contents: bg_color.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let scene_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -224,6 +233,16 @@ impl TargetBinds {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
+                    visibility: wgpu::ShaderStages::all(),
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
                     visibility: wgpu::ShaderStages::all(),
                     count: None,
                     ty: wgpu::BindingType::Buffer {
@@ -248,12 +267,18 @@ impl TargetBinds {
                     binding: 1,
                     resource: rt_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: background_color.as_entire_binding(),
+                },
             ],
         });
         TargetBinds {
+            background_buffer: background_color,
             bind_group: scene_bind,
             ray_tracer_buffer: rt_buffer,
             scene_buffer,
+
             bind_layout: scene_bind_group,
         }
     }
@@ -415,10 +440,11 @@ impl Target {
 
         let default_path = PathBuf::from("./resources/textures/256.png".to_string());
 
+        let world_color = vec4(0.5, 0.5, 0.5, 1.0);
         Target {
             pixel_count,
+            world_color,
             size,
-
             quad,
             yaw,
             pitch,
@@ -475,6 +501,11 @@ impl DrawUI for Target {
                     RichText::new(format!("Pixels Y: {}", self.pixel_count.y))
                         .color(Color32::ORANGE),
                 );
+                let mut rgb = [self.world_color.x, self.world_color.y, self.world_color.z];
+                let response = egui::widgets::color_picker::color_edit_button_rgb(ui, &mut rgb);
+                self.world_color.x = rgb[0];
+                self.world_color.y = rgb[1];
+                self.world_color.z = rgb[2];
 
                 ui.label(RichText::new("Move x").color(Color32::RED));
                 ui.add(egui::Slider::new(&mut self.placement.w.x, -10.0..=10.0));
@@ -523,8 +554,7 @@ impl ScenePanel {
         placement.w = place_vec;
         let scale = Matrix4::identity();
         let panel = VWPanel::demo_panel();
-        let default_path =
-            PathBuf::from(format!("./resources/panel_compute/panel_{}.png", position));
+        let default_path = PathBuf::from(format!("./resources/panel_compute/panel_{position}.png"));
         ScenePanel {
             pitch,
             yaw,
@@ -620,6 +650,11 @@ impl Scene {
                 0.as_std140().as_bytes(),
             );
         }
+        queue.write_buffer(
+            &self.target_binds.background_buffer,
+            0,
+            self.world.world_color.as_std140().as_bytes(),
+        );
     }
     pub fn render_pass(&self, render_pass: &mut RenderPass) {
         render_pass.set_bind_group(0, Some(&self.target_binds.bind_group), &[]);
@@ -740,11 +775,11 @@ impl DrawUI for Scene {
         let _title = title.unwrap_or("Scene".to_string());
         let mut count = 1;
         let target = &mut self.world;
-        let title = Some(format!("Target Quad {}", count));
+        let title = Some(format!("Target Quad {count}"));
         target.draw_ui(ctx, title, None);
         count = 1;
         for panel in self.panels.iter_mut() {
-            let title = format!("VW Panel# {} ", count);
+            let title = format!("VW Panel# {count} ");
             panel.draw_ui(ctx, Some(title), None);
 
             count += 1;
