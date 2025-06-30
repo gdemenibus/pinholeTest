@@ -87,6 +87,7 @@ pub struct Target {
     pub size: Vector2<f32>,
     #[serde(skip)]
     pub texture: FilePicker,
+
     pub world_color: Vector4<f32>,
 }
 
