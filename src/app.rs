@@ -501,6 +501,20 @@ impl AppState {
             self.displaying_panel_textures = true;
         }
     }
+
+    fn camera_ui(&mut self, camera: &mut Camera, controller: &mut CameraController) {
+        let ctx = self.egui_renderer.context();
+        egui_winit::egui::Window::new("Camera Settings:")
+            .resizable(true)
+            .vscroll(true)
+            .default_open(false)
+            .default_size([150.0, 125.0])
+            .show(ctx, |ui| {
+                self.camera_history.draw_ui(ctx, None, Some(ui));
+                controller.draw_ui(ctx, None, Some(ui));
+                camera.draw_ui(ctx, None, Some(ui));
+            });
+    }
 }
 
 // Handles the drawing and the app logic
@@ -537,7 +551,7 @@ impl App {
                 cgmath::Deg(-20.0),
                 cgmath::Deg(45.0),
             ),
-            camera_control: CameraController::new(4.0, 1.0),
+            camera_control: CameraController::new(1.0, 1.0),
             previous_draw: Instant::now(),
             pressed_keys: HashSet::default(),
         }
@@ -860,15 +874,15 @@ impl App {
             state.headless.draw_pass(&mut encoder);
         }
 
+        state.egui_renderer.begin_frame(window);
+
+        let context = state.egui_renderer.context();
         // TODO: Make this slightly more elegant!
         // the ui pass
         {
-            state.egui_renderer.begin_frame(window);
-            let context = state.egui_renderer.context();
-
             state.scene.draw_ui(context, None, None);
-            state.camera_history.draw_ui(context, None, None);
             state.factorizer.draw_ui(context, None, None);
+            state.camera_ui(&mut self.camera, &mut self.camera_control);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,

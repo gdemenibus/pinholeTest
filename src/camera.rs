@@ -2,6 +2,8 @@ use cgmath::*;
 use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
+use egui::Color32;
+use egui::RichText;
 use egui::Slider;
 use egui::Ui;
 use serde::Deserialize;
@@ -53,28 +55,37 @@ impl Camera {
 impl DrawUI for Camera {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Camera Settings".to_string());
-
-        egui_winit::egui::Window::new(title)
-            .resizable(true)
-            .vscroll(true)
-            .default_open(false)
-            .default_size([150.0, 125.0])
-            .show(ctx, |ui| {
-                ui.label("FOV");
-                // Present in Degrees
-                ui.add(
-                    Slider::new(&mut self.fov.0, 0.1..=std::f32::consts::PI)
-                        .custom_formatter(|n, _| {
-                            let print = n * 180.0 / std::f64::consts::PI;
-                            format!("{print}")
-                        })
-                        .custom_parser(|s| {
-                            s.parse::<f64>()
-                                .map(|r| r * std::f64::consts::PI / 180.0)
-                                .ok()
-                        }),
-                );
-            });
+        if let Some(ui) = ui {
+            ui.label(
+                RichText::new(format!(
+                    "Camera Position: ({:.2}, {:.2}, {:.2})",
+                    self.position.x, self.position.y, self.position.z
+                ))
+                .color(Color32::RED),
+            );
+        } else {
+            egui_winit::egui::Window::new(title)
+                .resizable(true)
+                .vscroll(true)
+                .default_open(false)
+                .default_size([150.0, 125.0])
+                .show(ctx, |ui| {
+                    ui.label("FOV");
+                    // Present in Degrees
+                    ui.add(
+                        Slider::new(&mut self.fov.0, 0.1..=std::f32::consts::PI)
+                            .custom_formatter(|n, _| {
+                                let print = n * 180.0 / std::f64::consts::PI;
+                                format!("{print}")
+                            })
+                            .custom_parser(|s| {
+                                s.parse::<f64>()
+                                    .map(|r| r * std::f64::consts::PI / 180.0)
+                                    .ok()
+                            }),
+                    );
+                });
+        }
     }
 }
 
@@ -310,25 +321,47 @@ impl CameraHistory {
         queue.write_buffer(&self.size_buffer, 0, &self.size_to_bytes());
     }
 }
+impl DrawUI for CameraController {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let _ = title;
+        let _ = ctx;
+        let _ = ui;
+        if let Some(ui) = ui {
+            ui.label("Camera Speed:");
+            ui.add(egui::DragValue::new(&mut self.speed).speed(0.5));
+        }
+    }
+}
 
 impl DrawUI for CameraHistory {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Camera Settings".to_string());
+        let _ = ui;
+        if let Some(ui) = ui {
+            ui.label(format!(
+                "Current camera positions saved:{}",
+                self.history.len()
+            ));
 
-        egui_winit::egui::Window::new(title)
-            .resizable(true)
-            .vscroll(true)
-            .default_open(false)
-            .default_size([150.0, 125.0])
-            .show(ctx, |ui| {
-                ui.label(format!(
-                    "Current camera positions saved:{}",
-                    self.history.len()
-                ));
+            if ui.button("Reset").clicked() {
+                self.history = VecDeque::new();
+            };
+        } else {
+            egui_winit::egui::Window::new(title)
+                .resizable(true)
+                .vscroll(true)
+                .default_open(false)
+                .default_size([150.0, 125.0])
+                .show(ctx, |ui| {
+                    ui.label(format!(
+                        "Current camera positions saved:{}",
+                        self.history.len()
+                    ));
 
-                if ui.button("Reset").clicked() {
-                    self.history = VecDeque::new();
-                }
-            });
+                    if ui.button("Reset").clicked() {
+                        self.history = VecDeque::new();
+                    }
+                });
+        }
     }
 }
