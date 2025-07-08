@@ -111,7 +111,7 @@ impl ReverseProj {
         stereoscope: &StereoscopeBuffer,
     ) {
         let work_group_size = Self::work_group_size(scene.world.pixel_count);
-        println!("Dispatching a work group of size: {:?}", work_group_size);
+        println!("Dispatching a work group of size: {work_group_size:?}");
 
         let texture_size = 256;
 
@@ -174,7 +174,7 @@ impl ReverseProj {
             use image::{ImageBuffer, Rgba};
             let buffer =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(texture_size, texture_size, data).unwrap();
-            buffer.save("image.png").unwrap();
+            buffer.save("ComputePass Print.png").unwrap();
         }
         self.debug_texture_buffer.unmap();
     }
