@@ -370,6 +370,13 @@ impl AppState {
             );
             println!("sampling!");
             let number_of_view_points = self.camera_history.len() as u32;
+            self.stereoscope.sample_light_field(
+                &self.device,
+                pixel_count_a,
+                pixel_count_b,
+                target_size,
+                number_of_view_points,
+            );
             self.factorizer.sample_light_field(
                 &self.device,
                 pixel_count_a,
@@ -383,6 +390,11 @@ impl AppState {
             );
             println!("Factorizing");
             let images = self.factorizer.factorize(&ct_image, ray_cast);
+            // Simple rn
+            let stereo_imgaes = self.stereoscope.factorize_stereo(
+                (pixel_count_a.x, pixel_count_a.y),
+                (pixel_count_b.x, pixel_count_b.y),
+            );
 
             if let Some((img_0, img_1, error)) = images {
                 self.update_panel(&img_0, 0);
@@ -390,6 +402,13 @@ impl AppState {
                 self.image_cache.error = error;
             } else {
                 println!("No matrices were sampled")
+            }
+            if let Some((steroe_image_0, stereo_image_1, error)) = stereo_imgaes {
+                self.update_panel(&steroe_image_0, 0);
+                self.update_panel(&stereo_image_1, 1);
+                self.image_cache.error = error;
+            } else {
+                println!("Error with stereo Process")
             }
         }
     }
