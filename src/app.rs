@@ -337,10 +337,7 @@ impl AppState {
 
         let file = File::open(path).unwrap();
         if !file.metadata().unwrap().is_file() {
-            println!(
-                "Something went wrong, provided path: {:?}, is not a file",
-                file
-            );
+            println!("Something went wrong, provided path: {file:?}, is not a file",);
             return;
         }
         //let reader = std::io::BufReader::new(file);
@@ -481,7 +478,7 @@ impl AppState {
     }
     fn save(&mut self) {
         let time = SystemTime::now();
-        let name = format!("{:?}", time);
+        let name = format!("{time:?}");
 
         let save = Save::from_cache(
             &self.camera_history.history,
@@ -901,6 +898,7 @@ impl App {
         {
             state.scene.draw_ui(context, None, None);
             state.factorizer.draw_ui(context, None, None);
+            state.stereoscope.draw_ui(context, None, None);
             state.camera_ui(&mut self.camera, &mut self.camera_control);
 
             state.egui_renderer.end_frame_and_draw(
