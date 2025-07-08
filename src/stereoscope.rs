@@ -28,6 +28,7 @@ pub struct StereoscopeBuffer {
     filter: bool,
     save_error: bool,
 }
+const BUFFER_SIZE: usize = 2560 * 1600 * 4 * 3;
 
 #[derive(Clone)]
 pub struct StereoMatrix {
@@ -64,7 +65,7 @@ impl StereoscopeBuffer {
         let a_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("M_A buffer"),
             // Resolution times 4, as it's a floating 32 per entry, and 3 entries
-            contents: &[0u8; 2560 * 1600 * 4 * 3],
+            contents: &[0u8; BUFFER_SIZE],
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::MAP_WRITE
                 | wgpu::BufferUsages::MAP_READ
@@ -75,7 +76,7 @@ impl StereoscopeBuffer {
         let b_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("M_B buffer"),
             // Resolution times 4, as it's a floating 32 per entry, and 3 entries
-            contents: &[0u8; 2560 * 1600 * 4 * 3],
+            contents: &[0u8; BUFFER_SIZE],
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::MAP_WRITE
                 | wgpu::BufferUsages::MAP_READ
@@ -86,7 +87,7 @@ impl StereoscopeBuffer {
         let l_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("T buffer"),
             // Resolution times 4, as it's a floating 32 per entry, and 3 entries
-            contents: &[0u8; 2560 * 1600 * 4 * 3],
+            contents: &[0u8; BUFFER_SIZE],
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::MAP_WRITE
                 | wgpu::BufferUsages::MAP_READ
@@ -205,6 +206,16 @@ impl StereoscopeBuffer {
                 image::ImageFormat::Png,
             )
             .unwrap();
+
+        // Warning in case scene exceds buffers.
+        // Worst case analysis: Every Ray Creates a triplet
+        // Triplet is 4 bytes * 3, 12 bytes
+        //
+        let ray_total_memory = 12 * rays_cast.0 * rays_cast.1;
+        if ray_total_memory as usize > BUFFER_SIZE {
+            panic!("Cannot store the results of all rays in allocated buffers");
+        }
+
         println!("Building Stereo A");
         let a_matrix = self.build_m_a(device, rays_cast, panel_a_size);
         println!("Building Stereo B");
@@ -257,9 +268,11 @@ impl StereoscopeBuffer {
             {
                 // Upper area
                 let t2_rays = &matrices.b_matrix * &vec_b;
-                let t1_rays = &matrices.b_matrix * &vec_a;
+                let t1_rays = &matrices.a_matrix * &vec_a;
+
                 let upper = zip!(&t2_rays, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
                 let numerator = m_a_trans * upper;
+
                 let lower = zip!(&t2_rays, &t1_rays).map(|unzip!(t2, t1)| *t2 * *t2 * *t1);
                 let denominator = m_a_trans * lower;
                 zip!(&mut vec_a, &numerator, &denominator)
@@ -269,7 +282,7 @@ impl StereoscopeBuffer {
             }
             {
                 let t2_rays = &matrices.b_matrix * &vec_b;
-                let t1_rays = &matrices.b_matrix * &vec_a;
+                let t1_rays = &matrices.a_matrix * &vec_a;
 
                 let upper = zip!(&t1_rays, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
                 let numerator = m_b_trans * upper;
@@ -279,6 +292,9 @@ impl StereoscopeBuffer {
 
                 zip!(&mut vec_b, &numerator, &denominator)
                     .for_each(|unzip!(b, n, d)| *b = 1.0_f32.min(*b * *n / (*d + 0.0000001f32)));
+            }
+            {
+                // Compute error
             }
         }
         utils::verify_matrix(&vec_a);
