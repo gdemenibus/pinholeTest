@@ -10,7 +10,7 @@ use crate::shape::Quad;
 use crate::stereoscope::StereoscopeBuffer;
 use crate::vertex;
 use crate::FileWatcher;
-use cgmath::Vector2;
+use cgmath::{Vector2, Vector3};
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
 use egui_wgpu::wgpu::SurfaceError;
@@ -331,17 +331,10 @@ impl AppState {
             self.render_pipe = render_pipe;
         }
     }
-    fn solver_light_field(&mut self) {
-        println!("Solving for light field!");
-        let path = &self.scene.world.texture.texture_file;
+    fn compute_pass(&mut self) {
+        // Update the world first!
+        self.camera_history.update_buffer(&self.queue);
 
-        let file = File::open(path).unwrap();
-        if !file.metadata().unwrap().is_file() {
-            println!("Something went wrong, provided path: {file:?}, is not a file",);
-            return;
-        }
-        //let reader = std::io::BufReader::new(file);
-        let ct_image = image::ImageReader::open(path).unwrap().decode().unwrap();
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -356,6 +349,29 @@ impl AppState {
         }
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::MaintainBase::Wait);
+    }
+    fn verify_m_a(&mut self) {
+        println!("Length of history is: {}", self.camera_history.len());
+        self.compute_pass();
+        let image_shape = self.scene.world.pixel_count;
+        println!("Target Pixel COunt is: {image_shape:?}");
+        let rays_cast = image_shape.x * image_shape.y * self.camera_history.history.len() as u32;
+
+        self.stereoscope.verify_m_a(&self.device, rays_cast);
+    }
+
+    fn solver_light_field(&mut self) {
+        self.compute_pass();
+        println!("Solving for light field!");
+        let mut path = &self.scene.world.texture.texture_file;
+
+        let file = File::open(path).unwrap();
+        if !file.metadata().unwrap().is_file() {
+            println!("Defaulting to 256 Texture");
+            path = self.scene.world.texture.default_texture();
+        }
+        //let reader = std::io::BufReader::new(file);
+        let ct_image = image::ImageReader::open(path).unwrap().decode().unwrap();
         {
             // Y here maps to additional rows and X to additional Columns
             let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
@@ -381,13 +397,9 @@ impl AppState {
                 target_size,
                 number_of_view_points,
             );
-            let ray_cast = (
-                number_of_view_points * target_size.0,
-                number_of_view_points * target_size.1,
-            );
+            let ray_cast = (number_of_view_points * target_size.0, target_size.1);
             println!("Factorizing");
             let images = self.factorizer.factorize(&ct_image, ray_cast);
-            // Simple rn
             let stereo_imgaes = self.stereoscope.factorize_stereo(
                 (pixel_count_a.x, pixel_count_a.y),
                 (pixel_count_b.x, pixel_count_b.y),
@@ -742,7 +754,7 @@ impl App {
             .create_surface(window.clone())
             .expect("Failed to create surface!");
 
-        let state = AppState::new(
+        let mut state = AppState::new(
             &self.instance,
             surface,
             &window,
@@ -751,6 +763,17 @@ impl App {
             &self.camera,
         )
         .await;
+
+        state.camera_history.save_point(&self.camera);
+        // Have one compute pass ready to go.
+        state.verify_m_a();
+        state.rev_proj.print_image(&state.device);
+        let mut new_camera = self.camera.clone();
+        new_camera.position += Vector3::new(1.0, 1.0, 1.0);
+
+        state.camera_history.save_point(&new_camera);
+        state.verify_m_a();
+        state.camera_history.reset();
 
         self.window.get_or_insert(window);
         self.state.get_or_insert(state);

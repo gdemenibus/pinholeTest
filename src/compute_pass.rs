@@ -100,7 +100,10 @@ impl ReverseProj {
     }
 
     pub fn work_group_size(target_dimensions: Vector2<u32>) -> (u32, u32) {
-        (target_dimensions.x / 8 + 1, (target_dimensions.y / 8 + 1))
+        (
+            target_dimensions.x.div_ceil(8),
+            target_dimensions.y.div_ceil(8),
+        )
     }
     pub fn compute_pass(
         &self,

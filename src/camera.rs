@@ -320,6 +320,9 @@ impl CameraHistory {
         queue.write_buffer(&self.history_buffer, 0, &self.history_to_bytes());
         queue.write_buffer(&self.size_buffer, 0, &self.size_to_bytes());
     }
+    pub fn reset(&mut self) {
+        self.history = VecDeque::new();
+    }
 }
 impl DrawUI for CameraController {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
