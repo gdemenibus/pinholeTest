@@ -152,15 +152,12 @@ impl ReverseProj {
             compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
 
             compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
-        }
-        {
+
             let work_group_size = Self::diagonal_work_group(scene.world.pixel_count);
-            let compute_pass_desc = wgpu::ComputePassDescriptor {
-                label: Some("Diagonal pass pass"),
-                timestamp_writes: None,
-            };
-            let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
+            println!("Dispatching Diagonal Work Group of size: {work_group_size}");
+
             compute_pass.set_pipeline(&self.diagonal_pipeline);
+
             scene.compute_pass(&mut compute_pass);
 
             compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);

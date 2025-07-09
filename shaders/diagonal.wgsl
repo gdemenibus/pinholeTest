@@ -104,7 +104,8 @@ var<storage, read_write> l_buffer: array<f32>;
 @compute @workgroup_size(64, 1, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
-    let screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, GlobalInvocationID.x);
+    let starting_y = GlobalInvocationID.x;
+    let screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, starting_y);
 
     if screen_pos.x <= scene.pixel_count.x && screen_pos.y <= scene.pixel_count.y {
         let pixel_location = pixel_to_world_location(scene, screen_pos);
@@ -117,6 +118,8 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
             // Build the ray
             let ray = Ray(origin, direction);
             double_intersection(ray, screen_pos, camera_index);
+
+            storageBarrier();
 
         }
 
@@ -133,15 +136,17 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         textureStore(color_buffer, screen_pos, red);
 
     }
-    // ensure everyone has written??
-    storageBarrier();
+// ensure everyone has written??
 
 }
 
 fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
 
+    let ray_index_x = current_pixel.x;
+    // TODO: THIS ASSUMES SQUARE, BEWARE!
+    let ray_index_y = current_pixel.y + (scene.pixel_count.y * observer_index);
+    let ray_index = vec2u(ray_index_x, ray_index_y);
     // Panels are ordered such that the first panel is the closest to the observer
-    // Index 0 aligns with A
     for (var index = 0u; index < 2; index++) {
         var trig_1_intersection = intersection_panel(ray, true, panels[index]);
         var trig_2_intersection = intersection_panel(ray, false, panels[index]);
@@ -150,14 +155,13 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
 
         if trig_1_intersection.hit {
             let pixel_coords = trig_1_intersection.pixel_coords;
-            let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
 
             if index == 0 {
-                record_hit_A(current_pixel, pixel_coords, observer_index);
+                record_hit_A(ray_index, pixel_coords, observer_index);
 
             } else {
 
-                record_hit_B(current_pixel, pixel_coords, observer_index);
+                record_hit_B(ray_index, pixel_coords, observer_index);
 
             }
 
@@ -169,14 +173,13 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
         if trig_2_intersection.hit {
 
             let pixel_coords = trig_2_intersection.pixel_coords;
-            let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
 
             if index == 0 {
 
-                record_hit_A(current_pixel, pixel_coords, observer_index);
+                record_hit_A(ray_index, pixel_coords, observer_index);
             } else {
 
-                record_hit_B(current_pixel, pixel_coords, observer_index);
+                record_hit_B(ray_index, pixel_coords, observer_index);
             }
 
         }
@@ -191,9 +194,16 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
 
     let color = textureSampleLevel(t_diffuse, s_diffuse, current_pixel_float, 0.0);
     let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
-    record_hit_T(current_pixel, current_pixel, observer_index);
+    record_hit_T(ray_index, current_pixel, observer_index);
 
 //textureStore(color_buffer, current_pixel, color);
+}
+
+fn draw_red(screen_pos: vec2<u32>) {
+
+    let red = vec4f(1.0, 0.0, 0.0, 1.0);
+
+    textureStore(color_buffer, screen_pos, red);
 }
 
 fn record_hit_A(ray_index: vec2<u32>, a_coords: vec2<u32>, index: u32) {
