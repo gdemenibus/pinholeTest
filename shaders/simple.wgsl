@@ -142,7 +142,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         if panel_hit.hit == true {
             if panel_hit.border {
                 return FragmentOutput(border_color, border_color);
+
             }
+
             return FragmentOutput(
                 panel_hit.color * background_color,
                 panel_hit.color * background_color,
@@ -266,7 +268,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
             var out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
-            out = out * background_color;
+            //out = out * background_color;
             return FragmentOutput(out, out);
 
         }
@@ -283,7 +285,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
             var out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
-            out = out * background_color;
+            //out = out * background_color;
 
             return FragmentOutput(out, out);
         }

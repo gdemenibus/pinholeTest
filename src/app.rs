@@ -354,10 +354,10 @@ impl AppState {
         println!("Length of history is: {}", self.camera_history.len());
         self.compute_pass();
         let image_shape = self.scene.world.pixel_count;
-        println!("Target Pixel COunt is: {image_shape:?}");
-        let rays_cast = image_shape.x * image_shape.y * self.camera_history.history.len() as u32;
+        println!("Target Pixel Count is: {image_shape:?}");
+        let _rays_cast = image_shape.x * image_shape.y * self.camera_history.history.len() as u32;
 
-        self.stereoscope.verify_m_a(&self.device, rays_cast);
+        //self.stereoscope.verify_m_a(&self.device, rays_cast);
     }
 
     fn solver_light_field(&mut self) {
@@ -397,10 +397,11 @@ impl AppState {
                 target_size,
                 number_of_view_points,
             );
-            let ray_cast = (number_of_view_points * target_size.0, target_size.1);
             println!("Factorizing");
-            let images = self.factorizer.factorize(&ct_image, ray_cast);
-            let stereo_imgaes = self.stereoscope.factorize_stereo(
+            let images = self
+                .factorizer
+                .factorize(&ct_image, target_size, number_of_view_points);
+            let _stereo_imgaes = self.stereoscope.factorize_stereo(
                 (pixel_count_a.x, pixel_count_a.y),
                 (pixel_count_b.x, pixel_count_b.y),
             );
@@ -412,13 +413,13 @@ impl AppState {
             } else {
                 println!("No matrices were sampled")
             }
-            if let Some((steroe_image_0, stereo_image_1, error)) = stereo_imgaes {
-                self.update_panel(&steroe_image_0, 0);
-                self.update_panel(&stereo_image_1, 1);
-                self.image_cache.error = error;
-            } else {
-                println!("Error with stereo Process")
-            }
+            // if let Some((steroe_image_0, stereo_image_1, error)) = stereo_imgaes {
+            //     self.update_panel(&steroe_image_0, 0);
+            //     self.update_panel(&stereo_image_1, 1);
+            //     self.image_cache.error = error;
+            // } else {
+            //     println!("Error with stereo Process")
+            // }
         }
     }
 
