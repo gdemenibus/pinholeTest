@@ -100,6 +100,25 @@ impl TextureBinds {
         let label = Some("Target Texture");
         let texture = texture::Texture::from_image(device, queue, &img, label);
 
+        let copy = texture.texture.as_image_copy();
+        let default_img = image::open("./resources/textures/256.png").unwrap();
+        let img_dimensions = default_img.dimensions();
+
+        queue.write_texture(
+            copy,
+            &default_img.to_rgba8(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * img_dimensions.0),
+                rows_per_image: Some(img_dimensions.1),
+            },
+            wgpu::Extent3d {
+                width: img_dimensions.0,
+                height: img_dimensions.1,
+                depth_or_array_layers: 1,
+            },
+        );
+
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[

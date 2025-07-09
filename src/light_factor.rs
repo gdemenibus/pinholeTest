@@ -349,10 +349,7 @@ impl LFBuffers {
         target_size: (u32, u32),
         number_of_view_points: u32,
     ) {
-        let number_of_rays = (
-            target_size.0 * number_of_view_points,
-            target_size.1 * number_of_view_points,
-        );
+        let number_of_rays = (target_size.0 * number_of_view_points, target_size.1);
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
         let (ma_x, ma_y) = self.build_m_a(device, number_of_rays, panel_a_size);
@@ -376,24 +373,12 @@ impl LFBuffers {
         c_t: &DynamicImage,
         rays_cast: (u32, u32),
     ) -> Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)> {
-        let c_t = utils::image_to_matrix(c_t);
-        utils::verify_matrix(&c_t);
-
-        utils::matrix_to_image(&c_t)
-            .save_with_format(
-                "./resources/panel_compute/intermediate/C_T.png",
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-
         // Give 10 threads
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
         println!(
             "Global Parallelism is: {:?}",
             faer::get_global_parallelism()
         );
-
-        self.matrix_rep.as_ref()?;
 
         let matrices = self.matrix_rep.as_ref()?;
 
@@ -416,8 +401,18 @@ impl LFBuffers {
         println!("b_x shape: {:?}", m_b_x.shape());
         println!("t_y shape: {:?}", m_t_y.shape());
         println!("t_x shape: {:?}", m_t_x.shape());
-        println!("C_T shape: {:?}", c_t.shape());
         println!("Rays cast: {rays_cast:?}");
+
+        let c_t = utils::image_to_matrix(c_t);
+
+        println!("C_T shape: {:?}", c_t.shape());
+        utils::verify_matrix(&c_t);
+        utils::matrix_to_image(&c_t)
+            .save_with_format(
+                "./resources/panel_compute/intermediate/C_T.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
 
         let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
             if self.rng {
@@ -657,6 +652,7 @@ impl DrawUI for LFBuffers {
 mod test {
 
     use super::*;
+    use image::GenericImageView;
 
     #[test]
     fn image_around_the_world() {

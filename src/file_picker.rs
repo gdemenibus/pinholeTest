@@ -15,7 +15,7 @@ impl Clone for FilePicker {
         Self {
             texture_file: self.texture_file.clone(),
             file_dialog: FileDialog::open_file(Some(self.texture_file.clone())),
-            change_file: self.change_file.clone(),
+            change_file: self.change_file,
             default_texture: self.default_texture.clone(),
         }
     }
