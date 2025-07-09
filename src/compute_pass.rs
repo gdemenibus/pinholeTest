@@ -8,6 +8,7 @@ use crate::{
 
 pub struct ReverseProj {
     compute_pipeline: ComputePipeline,
+    diagonal_pipeline: ComputePipeline,
     debug_texture_buffer: Buffer,
     debug_texture_texture: Texture,
     debug_bind_group: BindGroup,
@@ -27,6 +28,11 @@ impl ReverseProj {
             source: wgpu::ShaderSource::Wgsl(
                 include_str!("../shaders/reverse_projection.wgsl").into(),
             ),
+        });
+
+        let diagonal_proj = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Diagonal Projection Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/diagonal.wgsl").into()),
         });
 
         let test_texture = wgpu::BindGroupLayoutEntry {
@@ -81,6 +87,15 @@ impl ReverseProj {
             compilation_options: Default::default(),
         });
 
+        let diagonal_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("Reverse Projection Ray Tracing"),
+            layout: Some(&compute_pipeline_layout),
+            cache: None,
+            module: &diagonal_proj,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+        });
+
         let u32_size = std::mem::size_of::<u32>() as u32;
 
         let output_buffer_size = (u32_size * texture_size * texture_size) as wgpu::BufferAddress;
@@ -93,6 +108,7 @@ impl ReverseProj {
         let output_buffer = device.create_buffer(&output_buffer_desc);
         ReverseProj {
             compute_pipeline,
+            diagonal_pipeline,
             debug_texture_buffer: output_buffer,
             debug_texture_texture: texture,
             debug_bind_group: bind_group,
@@ -105,6 +121,12 @@ impl ReverseProj {
             target_dimensions.y.div_ceil(8),
         )
     }
+    pub fn diagonal_work_group(target_dimensions: Vector2<u32>) -> u32 {
+        if target_dimensions.x != target_dimensions.y {
+            println!("WARNING, DIAGONAL CAST ON NONE DIAGONAL CONTENT");
+        }
+        target_dimensions.x.div_ceil(64)
+    }
     pub fn compute_pass(
         &self,
         encoder: &mut CommandEncoder,
@@ -113,14 +135,9 @@ impl ReverseProj {
         camera_history: &CameraHistory,
         stereoscope: &StereoscopeBuffer,
     ) {
-        let work_group_size = Self::work_group_size(scene.world.pixel_count);
-        println!("Dispatching a work group of size: {work_group_size:?}");
-
-        let texture_size = 256;
-
-        let u32_size = std::mem::size_of::<u32>() as u32;
-
         {
+            let work_group_size = Self::work_group_size(scene.world.pixel_count);
+            println!("Dispatching a work group of size: {work_group_size:?}");
             let compute_pass_desc = wgpu::ComputePassDescriptor {
                 label: Some("Compute pass"),
                 timestamp_writes: None,
@@ -136,8 +153,28 @@ impl ReverseProj {
 
             compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
         }
+        {
+            let work_group_size = Self::diagonal_work_group(scene.world.pixel_count);
+            let compute_pass_desc = wgpu::ComputePassDescriptor {
+                label: Some("Diagonal pass pass"),
+                timestamp_writes: None,
+            };
+            let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
+            compute_pass.set_pipeline(&self.diagonal_pipeline);
+            scene.compute_pass(&mut compute_pass);
+
+            compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
+            compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
+            compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
+            compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
+
+            compute_pass.dispatch_workgroups(work_group_size, 1, 1);
+        }
 
         {
+            let texture_size = 256;
+
+            let u32_size = std::mem::size_of::<u32>() as u32;
             encoder.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
                     aspect: wgpu::TextureAspect::All,
