@@ -13,6 +13,7 @@ use crate::FileWatcher;
 use cgmath::{Vector2, Vector3};
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
+use egui_notify::{Toast, Toasts};
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::{DynamicImage, GenericImageView};
@@ -221,7 +222,10 @@ impl AppState {
             &stereoscope,
             &camera_history,
         );
-        let image_cache = ImageCache::default();
+        let mut image_cache = ImageCache::default();
+        let target = scene.world.texture.load_texture();
+        image_cache.target_image = target;
+
         let save_manager = SaveManager::boot();
 
         Self {
@@ -359,19 +363,9 @@ impl AppState {
 
         //self.stereoscope.verify_m_a(&self.device, rays_cast);
     }
-
-    fn solver_light_field(&mut self) {
+    fn solve_stereo(&mut self) {
         self.compute_pass();
-        println!("Solving for light field!");
-        let mut path = &self.scene.world.texture.texture_file;
 
-        let file = File::open(path).unwrap();
-        if !file.metadata().unwrap().is_file() {
-            println!("Defaulting to 256 Texture");
-            path = self.scene.world.texture.default_texture();
-        }
-        //let reader = std::io::BufReader::new(file);
-        let ct_image = image::ImageReader::open(path).unwrap().decode().unwrap();
         {
             // Y here maps to additional rows and X to additional Columns
             let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
@@ -390,6 +384,42 @@ impl AppState {
                 target_size,
                 number_of_view_points,
             );
+            println!("Factorizing");
+            let imgs = self.stereoscope.factorize_stereo(
+                (pixel_count_a.x, pixel_count_a.y),
+                (pixel_count_b.x, pixel_count_b.y),
+            );
+            self.image_cache.cache_output(true, imgs);
+            self.update_panel(0);
+            self.update_panel(1);
+        }
+    }
+
+    fn solver_light_field(&mut self) {
+        self.compute_pass();
+
+        let ct_image = &self.image_cache.target_image;
+        // println!("Solving for light field!");
+        // let mut path = &self.scene.world.texture.texture_file;
+
+        // let file = File::open(path).unwrap();
+        // if !file.metadata().unwrap().is_file() {
+        //     println!("Defaulting to 256 Texture");
+        //     path = self.scene.world.texture.default_texture();
+        // }
+        // //let reader = std::io::BufReader::new(file);
+        // let ct_image = image::ImageReader::open(path).unwrap().decode().unwrap();
+        {
+            // Y here maps to additional rows and X to additional Columns
+            let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
+            let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
+
+            let target_size = (
+                self.scene.world.pixel_count.y,
+                self.scene.world.pixel_count.x,
+            );
+            println!("sampling!");
+            let number_of_view_points = self.camera_history.len() as u32;
             self.factorizer.sample_light_field(
                 &self.device,
                 pixel_count_a,
@@ -400,19 +430,12 @@ impl AppState {
             println!("Factorizing");
             let images = self
                 .factorizer
-                .factorize(&ct_image, target_size, number_of_view_points);
-            let _stereo_imgaes = self.stereoscope.factorize_stereo(
-                (pixel_count_a.x, pixel_count_a.y),
-                (pixel_count_b.x, pixel_count_b.y),
-            );
+                .factorize(ct_image, target_size, number_of_view_points);
 
-            if let Some((img_0, img_1, error)) = images {
-                self.update_panel(&img_0, 0);
-                self.update_panel(&img_1, 1);
-                self.image_cache.error = error;
-            } else {
-                println!("No matrices were sampled")
-            }
+            self.image_cache.cache_output(false, images);
+            self.update_panel(0);
+            self.update_panel(1);
+
             // if let Some((steroe_image_0, stereo_image_1, error)) = stereo_imgaes {
             //     self.update_panel(&steroe_image_0, 0);
             //     self.update_panel(&stereo_image_1, 1);
@@ -423,7 +446,8 @@ impl AppState {
         }
     }
 
-    fn update_panel(&mut self, image: &DynamicImage, panel_entry: usize) {
+    fn update_panel(&self, panel_entry: usize) {
+        let image = &self.image_cache.panels[panel_entry];
         let dimensions = image.dimensions();
 
         let copy = &self.scene.panel_binds.panel_texture.texture;
@@ -463,19 +487,15 @@ impl AppState {
                 depth_or_array_layers: 1,
             },
         );
-
-        self.image_cache.panels[panel_entry] = image.clone();
-        self.scene.panels[panel_entry].panel.pixel_count = Vector2::new(dimensions.0, dimensions.1);
     }
-    fn update_target_texture(&mut self, img: &DynamicImage) {
+    fn update_target_texture(&mut self) {
+        let img = &self.image_cache.target_image;
         if let Ok(_ok) = self
             .scene
             .texture_binds
             .update_target_texture(img, &self.queue)
         {
             self.scene.world.update_pixel_count(img.dimensions());
-            println!("New Dimensions are: {:#?}", img.dimensions());
-            self.image_cache.target_image = img.clone();
         }
     }
 
@@ -508,9 +528,10 @@ impl AppState {
             let new_cache = save.to_cache();
             let cameras = save.cameras.clone();
             save.update_scene(&mut self.scene);
-            self.update_target_texture(&new_cache.target_image);
-            self.update_panel(&new_cache.panels[0], 0);
-            self.update_panel(&new_cache.panels[1], 1);
+            self.image_cache = new_cache;
+            self.update_target_texture();
+            self.update_panel(0);
+            self.update_panel(1);
             self.displaying_panel_textures = true;
             self.camera_history.update_history(cameras);
         }
@@ -522,11 +543,12 @@ impl AppState {
             let cameras = save.cameras.clone();
 
             save.update_scene(&mut self.scene);
+            self.image_cache = new_cache;
 
             self.camera_history.update_history(cameras);
-            self.update_target_texture(&new_cache.target_image);
-            self.update_panel(&new_cache.panels[0], 0);
-            self.update_panel(&new_cache.panels[1], 1);
+            self.update_target_texture();
+            self.update_panel(0);
+            self.update_panel(1);
             self.displaying_panel_textures = true;
         }
     }
@@ -557,7 +579,9 @@ pub struct App {
     mouse_press: bool,
     mouse_on_ui: bool,
     disable_controls: bool,
+    cache_stereo: bool,
     pressed_keys: HashSet<KeyCode>,
+    toasts: Toasts,
 }
 
 impl App {
@@ -569,9 +593,11 @@ impl App {
         });
         Self {
             instance,
+            toasts: Toasts::default(),
             mouse_press: false,
             mouse_on_ui: false,
             disable_controls: false,
+            cache_stereo: false,
             state: None,
             window: None,
             camera: Camera::new(
@@ -602,18 +628,19 @@ impl App {
                 self.disable_controls = !self.disable_controls;
 
                 if self.disable_controls {
-                    println!("Controls Disabled!");
+                    self.toasts.info("Controls Disabled");
                 } else {
-                    println!("Controls Enabled");
+                    self.toasts.info("Controls Enabled");
                 }
             }
             PhysicalKey::Code(KeyCode::Backslash) => {
-                println!("DEBUG KEY PRESSED");
+                self.toasts.info("Saving Scene!");
                 if let Some(state) = self.state.as_mut() {
                     state.save();
                 }
             }
             PhysicalKey::Code(KeyCode::Enter) => {
+                self.toasts.info("Saving image");
                 if let Some(state) = self.state.as_mut() {
                     state.headless.retrieve_image = true;
                 }
@@ -624,6 +651,7 @@ impl App {
                     || self.pressed_keys.contains(&KeyCode::ShiftRight)
                 {
                     if let Some(state) = self.state.as_mut() {
+                        self.toasts.info("Loading next save");
                         state.load_next_save();
                         self.next_camera();
                     }
@@ -636,6 +664,8 @@ impl App {
                 {
                     if let Some(state) = self.state.as_mut() {
                         state.load_previous_save();
+
+                        self.toasts.info("Previous next save");
 
                         self.next_camera();
                     }
@@ -656,16 +686,50 @@ impl App {
                     self.next_camera();
                 }
             }
+
+            PhysicalKey::Code(KeyCode::KeyP) => {
+                if let Some(state) = self.state.as_mut() {
+                    self.cache_stereo = !self.cache_stereo;
+
+                    if state.image_cache.load_output(self.cache_stereo).is_ok() {
+                        if self.cache_stereo {
+                            self.toasts.info("Displaying stereo output");
+                            state.update_panel(0);
+                            state.update_panel(1);
+                        } else {
+                            self.toasts.info("Displaying Separable Output");
+
+                            state.update_panel(0);
+                            state.update_panel(1);
+                        }
+                    } else {
+                        self.toasts.warning("No output found in cache");
+
+                        self.cache_stereo = !self.cache_stereo;
+                    }
+                }
+            }
             PhysicalKey::Code(KeyCode::KeyM) => {
                 self.update_panel_texture();
                 if let Some(state) = self.state.as_mut() {
-                    state.displaying_panel_textures = !state.displaying_panel_textures
+                    state.displaying_panel_textures = !state.displaying_panel_textures;
+                    if state.displaying_panel_textures {
+                        self.toasts.info("Displaying Textures on Panels");
+                    } else {
+                        self.toasts.info("Panels are transparent");
+                    }
                 }
             }
 
             PhysicalKey::Code(KeyCode::KeyN) => {
                 if let Some(state) = self.state.as_mut() {
                     state.distort_rays = !state.distort_rays;
+
+                    if state.distort_rays {
+                        self.toasts.info("Applying nearest neighbour approximation");
+                    } else {
+                        self.toasts.info("No NN approximation");
+                    }
                 }
             }
 
@@ -710,16 +774,12 @@ impl App {
         }
 
         target.texture.change_file = false;
-        let path = &target.texture.texture_file;
 
-        let file = File::open(path).unwrap();
-        if file.metadata().unwrap().is_file() {
-            //let reader = std::io::BufReader::new(file);
-            let img = image::ImageReader::open(path).unwrap().decode().unwrap();
-            state.update_target_texture(&img);
+        let img = target.texture.load_texture();
+        state.image_cache.target_image = img;
+        state.update_target_texture();
 
-            //self.nmf_solver.reset();
-        }
+        //self.nmf_solver.reset();
     }
 
     /// This is highly inefficient, as it uses the os as the between layer. We can probably do
@@ -737,7 +797,8 @@ impl App {
             let file = File::open(path).unwrap();
             if file.metadata().unwrap().is_file() {
                 let img = image::ImageReader::open(path).unwrap().decode().unwrap();
-                state.update_panel(&img, x);
+                state.image_cache.cache_panel(x, img);
+                state.update_panel(x);
             }
             state.scene.panels[x].texture.change_file = false;
         }
@@ -805,7 +866,7 @@ impl App {
         let state = self.state.as_mut().unwrap();
 
         if state.factorizer.will_sample() {
-            println!("Saved Camera Point");
+            self.toasts.info("Saved Camera");
             state.camera_history.save_point(&self.camera);
             state.factorizer.has_sampled();
         }
@@ -813,6 +874,18 @@ impl App {
             state.solver_light_field();
             state.displaying_panel_textures = true;
             state.factorizer.has_solved();
+        }
+
+        if state.stereoscope.will_sample() {
+            self.toasts.info("Saved Camera");
+            state.camera_history.save_point(&self.camera);
+            state.stereoscope.has_sampled();
+        }
+
+        if state.stereoscope.will_solve() {
+            state.solve_stereo();
+            state.displaying_panel_textures = true;
+            state.stereoscope.has_solved();
         }
 
         let screen_descriptor = ScreenDescriptor {
@@ -917,6 +990,8 @@ impl App {
         state.egui_renderer.begin_frame(window);
 
         let context = state.egui_renderer.context();
+
+        self.toasts.show(context);
         // TODO: Make this slightly more elegant!
         // the ui pass
         {

@@ -24,8 +24,13 @@ pub struct LFBuffers {
     m_t_x_buffer: Buffer,
     m_t_y_buffer: Buffer,
 
+    matrix_rep: Option<LFMatrices>,
+
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
+    settings: LFSettings,
+}
+struct LFSettings {
     iter_count: usize,
     show_steps: bool,
     starting_values: (f32, f32),
@@ -35,7 +40,6 @@ pub struct LFBuffers {
     blend: bool,
     blend_sigma: f32,
     early_stop: bool,
-    matrix_rep: Option<LFMatrices>,
     filter: bool,
     save_error: bool,
 }
@@ -187,15 +191,7 @@ impl LFBuffers {
                 },
             ],
         });
-        Self {
-            m_a_y_buffer,
-            m_a_x_buffer,
-            m_b_y_buffer,
-            m_b_x_buffer,
-            m_t_y_buffer,
-            m_t_x_buffer,
-            bind_group_layout,
-            bind_group,
+        let settings = LFSettings {
             rng: false,
             iter_count: 50,
             show_steps: false,
@@ -204,24 +200,62 @@ impl LFBuffers {
             solve_next_redraw_flag: false,
             blend: false,
             blend_sigma: 0.1f32,
-            matrix_rep: None,
             early_stop: false,
             filter: false,
             save_error: true,
+        };
+        Self {
+            matrix_rep: None,
+            m_a_y_buffer,
+            m_a_x_buffer,
+            m_b_y_buffer,
+            m_b_x_buffer,
+            m_t_y_buffer,
+            m_t_x_buffer,
+            bind_group_layout,
+            bind_group,
+            settings,
         }
     }
 
     pub fn has_sampled(&mut self) {
-        self.sample_next_redraw_flag = false;
+        self.settings.sample_next_redraw_flag = false;
     }
     pub fn has_solved(&mut self) {
-        self.solve_next_redraw_flag = false;
+        self.settings.solve_next_redraw_flag = false;
     }
     pub fn will_sample(&self) -> bool {
-        self.sample_next_redraw_flag
+        self.settings.sample_next_redraw_flag
     }
     pub fn will_solve(&self) -> bool {
-        self.solve_next_redraw_flag
+        self.settings.solve_next_redraw_flag
+    }
+
+    pub fn build_sparse_matrix(
+        buffer: Vec<u32>,
+        rows: u32,
+        columns: u32,
+    ) -> SparseColMat<u32, f32> {
+        let mut triplets = buffer
+            .chunks(2)
+            .map(|x| (x[0], x[1]))
+            .enumerate()
+            .flat_map(|(index, entry)| {
+                if entry.1 == 0 {
+                    println!("Index {index} entry has a zero at entry {}", entry.1);
+                }
+                if entry.0 == 0 {
+                    println!("Index {index} entry has a zero at entry {}", entry.0);
+                }
+                vec![
+                    Triplet::new(index as u32, entry.0, 1.0f32),
+                    Triplet::new(index as u32, entry.1, 1.0f32),
+                ]
+            })
+            .collect();
+        utils::check_triplets(rows, columns, &mut triplets);
+
+        SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
     }
     pub fn build_m_t(
         &self,
@@ -229,7 +263,7 @@ impl LFBuffers {
         rays_cast: (u32, u32),
         target_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Building M_t");
+        println!("Building M_t_y");
 
         let m_t_y = {
             let vec_t_y = buffer_to_sparse_triplet(&self.m_t_y_buffer, device, rays_cast.0);
@@ -237,28 +271,16 @@ impl LFBuffers {
 
             let columns = target_size.0;
 
-            let mut triplets = vec_t_y
-                .into_iter()
-                .enumerate()
-                .map(|(index, entry)| Triplet::new(index as u32, entry, 1.0f32))
-                .collect();
-            utils::check_triplets(rows, columns, &mut triplets);
-
-            SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
+            Self::build_sparse_matrix(vec_t_y, rows, columns)
         };
+
+        println!("Building M_t_x");
         let m_t_x = {
             let vec_t_x = buffer_to_sparse_triplet(&self.m_t_x_buffer, device, rays_cast.1);
             let rows = rays_cast.1;
             let columns = target_size.1;
 
-            let mut triplets = vec_t_x
-                .into_iter()
-                .enumerate()
-                .map(|(index, entry)| Triplet::new(index as u32, entry, 1.0f32))
-                .collect();
-            utils::check_triplets(rows, columns, &mut triplets);
-
-            SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
+            Self::build_sparse_matrix(vec_t_x, rows, columns)
         };
         (m_t_x, m_t_y)
     }
@@ -269,7 +291,7 @@ impl LFBuffers {
         rays_cast: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Building M_A");
+        println!("Building M_A_Y");
 
         let m_a_y = {
             let vec_a_y = buffer_to_sparse_triplet(&self.m_a_y_buffer, device, rays_cast.0);
@@ -277,28 +299,16 @@ impl LFBuffers {
 
             let columns = panel_size.0;
 
-            let mut triplets = vec_a_y
-                .into_iter()
-                .enumerate()
-                .map(|(index, entry)| Triplet::new(index as u32, entry, 1.0f32))
-                .collect();
-            utils::check_triplets(rows, columns, &mut triplets);
-
-            SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
+            Self::build_sparse_matrix(vec_a_y, rows, columns)
         };
+
+        println!("Building M_A_X");
         let m_a_x = {
             let vec_a_x = buffer_to_sparse_triplet(&self.m_a_x_buffer, device, rays_cast.1);
             let rows = rays_cast.1;
             let columns = panel_size.1;
 
-            let mut triplets = vec_a_x
-                .into_iter()
-                .enumerate()
-                .map(|(index, entry)| Triplet::new(index as u32, entry, 1.0f32))
-                .collect();
-            utils::check_triplets(rows, columns, &mut triplets);
-
-            SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
+            Self::build_sparse_matrix(vec_a_x, rows, columns)
         };
         (m_a_x, m_a_y)
     }
@@ -309,35 +319,22 @@ impl LFBuffers {
         rays_cast: (u32, u32),
         panel_size: (u32, u32),
     ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Building M_B");
+        println!("Building M_B_Y");
         let m_b_y = {
             let vec_b_y = buffer_to_sparse_triplet(&self.m_b_y_buffer, device, rays_cast.0);
+
             let rows = rays_cast.0;
 
             let columns = panel_size.0;
-
-            let mut triplets = vec_b_y
-                .into_iter()
-                .enumerate()
-                .map(|(index, entry)| Triplet::new(index as u32, entry, 1.0f32))
-                .collect();
-            utils::check_triplets(rows, columns, &mut triplets);
-
-            SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
+            Self::build_sparse_matrix(vec_b_y, rows, columns)
         };
+        println!("Building M_B_X");
         let m_b_x = {
             let vec_b_x = buffer_to_sparse_triplet(&self.m_b_x_buffer, device, rays_cast.1);
             let rows = rays_cast.1;
             let columns = panel_size.1;
 
-            let mut triplets = vec_b_x
-                .into_iter()
-                .enumerate()
-                .map(|(index, entry)| Triplet::new(index as u32, entry, 1.0f32))
-                .collect();
-            utils::check_triplets(rows, columns, &mut triplets);
-
-            SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
+            Self::build_sparse_matrix(vec_b_x, rows, columns)
         };
         (m_b_x, m_b_y)
     }
@@ -380,6 +377,7 @@ impl LFBuffers {
             "Global Parallelism is: {:?}",
             faer::get_global_parallelism()
         );
+        let settings = &self.settings;
 
         let rays_cast = (target_size.0, target_size.1 * number_of_view_points);
 
@@ -419,17 +417,17 @@ impl LFBuffers {
             .unwrap();
 
         let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
-            if self.rng {
+            if self.settings.rng {
                 thread_rng().gen_range(0f32..1.0f32)
             } else {
-                self.starting_values.0
+                self.settings.starting_values.0
             }
         });
         let mut c_b = Mat::from_fn(h_b, w_b, |_x, _y| {
-            if self.rng {
+            if self.settings.rng {
                 thread_rng().gen_range(0f32..1.0f32)
             } else {
-                self.starting_values.1
+                self.settings.starting_values.1
             }
         });
 
@@ -447,12 +445,12 @@ impl LFBuffers {
 
         // Doesn't change
         let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
-        let progress_bar = indicatif::ProgressBar::new(self.iter_count as u64);
-        let mut error = VecDeque::with_capacity(self.iter_count);
-        for x in 0..self.iter_count {
+        let progress_bar = indicatif::ProgressBar::new(settings.iter_count as u64);
+        let mut error = VecDeque::with_capacity(settings.iter_count);
+        for x in 0..settings.iter_count {
             progress_bar.inc(1);
 
-            if self.show_steps {
+            if settings.show_steps {
                 let path_1 = format!(
                     "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
                     x, 1
@@ -515,7 +513,7 @@ impl LFBuffers {
                 });
             }
 
-            if self.save_error {
+            if settings.save_error {
                 let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
                 let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
                 zip!(&mut upper, &c_b_m_product, &c_a_m_product).for_each(
@@ -528,7 +526,7 @@ impl LFBuffers {
 
                 if let Some(previous) = error.back() {
                     let diff: f32 = error_norm - previous;
-                    if self.early_stop && diff.abs() < 0.0000001f32 {
+                    if settings.early_stop && diff.abs() < 0.0000001f32 {
                         break;
                     }
                 }
@@ -536,7 +534,7 @@ impl LFBuffers {
             }
         }
 
-        if self.filter {
+        if settings.filter {
             Self::filter_zeroes(c_a.as_mut(), &matrices.m_a_y_matrix, &matrices.m_a_x_matrix);
             Self::filter_zeroes(c_b.as_mut(), &matrices.m_b_y_matrix, &matrices.m_b_x_matrix);
         }
@@ -545,8 +543,8 @@ impl LFBuffers {
 
         let image_a = {
             let mut output = utils::matrix_to_image(&c_a);
-            if self.blend {
-                output = output.fast_blur(self.blend_sigma);
+            if settings.blend {
+                output = output.fast_blur(settings.blend_sigma);
             }
 
             output
@@ -560,8 +558,8 @@ impl LFBuffers {
 
         let image_b = {
             let mut output = utils::matrix_to_image(&c_b);
-            if self.blend {
-                output = output.fast_blur(self.blend_sigma);
+            if settings.blend {
+                output = output.fast_blur(settings.blend_sigma);
             }
             output
         };
@@ -572,11 +570,10 @@ impl LFBuffers {
                 image::ImageFormat::Png,
             )
             .unwrap();
-        self.solve_next_redraw_flag = false;
 
         println!("Errors is: {error:?}");
         let error = {
-            if self.save_error {
+            if settings.save_error {
                 Some(error.into())
             } else {
                 None
@@ -608,7 +605,7 @@ impl LFBuffers {
 
 impl DrawUI for LFBuffers {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
-        let title = title.unwrap_or("Light Field Sampler".to_string());
+        let title = title.unwrap_or("Separable Approach".to_string());
         let _ = ui;
 
         egui_winit::egui::Window::new(title)
@@ -618,33 +615,34 @@ impl DrawUI for LFBuffers {
             .default_open(false)
             .show(ctx, |ui| {
                 ui.label("Iteration count");
-                ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
-                ui.checkbox(&mut self.show_steps, "Print steps");
-                ui.checkbox(&mut self.early_stop, "Early stop?");
-                ui.checkbox(&mut self.filter, "Filter Columns");
-                ui.checkbox(&mut self.save_error, "Save Error");
+                let settings = &mut self.settings;
+                ui.add(egui::Slider::new(&mut settings.iter_count, 1..=1000));
+                ui.checkbox(&mut settings.show_steps, "Print steps");
+                ui.checkbox(&mut settings.early_stop, "Early stop?");
+                ui.checkbox(&mut settings.filter, "Filter Columns");
+                ui.checkbox(&mut settings.save_error, "Save Error");
 
                 if ui.button("Sample").clicked() {
-                    self.sample_next_redraw_flag = true;
+                    settings.sample_next_redraw_flag = true;
                 }
                 if ui.button("Solve").clicked() {
-                    self.solve_next_redraw_flag = true;
+                    settings.solve_next_redraw_flag = true;
                 }
                 if ui.button("Reset").clicked() {
                     self.matrix_rep = None;
                 }
-                ui.checkbox(&mut self.blend, "Blend Out Image");
+                ui.checkbox(&mut settings.blend, "Blend Out Image");
                 ui.label("Sigma");
-                ui.add(egui::Slider::new(&mut self.blend_sigma, 0.0..=1.0));
-                ui.checkbox(&mut self.rng, "Random starting values");
+                ui.add(egui::Slider::new(&mut settings.blend_sigma, 0.0..=1.0));
+                ui.checkbox(&mut settings.rng, "Random starting values");
                 ui.label("Initial guesses");
                 ui.add(egui::Slider::new(
-                    &mut self.starting_values.0,
+                    &mut settings.starting_values.0,
                     0.0f32..=1.0f32,
                 ));
 
                 ui.add(egui::Slider::new(
-                    &mut self.starting_values.1,
+                    &mut settings.starting_values.1,
                     0.0f32..=1.0f32,
                 ));
             });
