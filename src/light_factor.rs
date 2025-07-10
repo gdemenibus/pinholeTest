@@ -241,7 +241,8 @@ impl LFBuffers {
             .enumerate()
             .map(|(index, entry)| {
                 let ray_index = (index as u32) % columns;
-                Triplet::new(ray_index, *entry, 1.0)
+                //let real_entry = ()
+                Triplet::new(index as u32, *entry, 1.0)
             })
             .collect();
         utils::check_triplets(rows, columns, &mut triplets);
@@ -337,7 +338,10 @@ impl LFBuffers {
         target_size: (u32, u32),
         number_of_view_points: u32,
     ) {
-        let number_of_rays = (target_size.0, target_size.1 * number_of_view_points);
+        let number_of_rays = (
+            target_size.0 * number_of_view_points,
+            target_size.1 * number_of_view_points,
+        );
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
         let (ma_x, ma_y) = self.build_m_a(device, number_of_rays, panel_a_size);
@@ -370,7 +374,10 @@ impl LFBuffers {
         );
         let settings = &self.settings;
 
-        let rays_cast = (target_size.0, target_size.1 * number_of_view_points);
+        let rays_cast = (
+            target_size.0 * number_of_view_points,
+            target_size.1 * number_of_view_points,
+        );
 
         let matrices = self.matrix_rep.as_ref()?;
 

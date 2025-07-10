@@ -142,7 +142,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
 fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
 
-    let ray_index_x = current_pixel.x;
+    let ray_index_x = current_pixel.x + (scene.pixel_count.x * observer_index);
     // TODO: THIS ASSUMES SQUARE, BEWARE!
     let ray_index_y = current_pixel.y + (scene.pixel_count.y * observer_index);
     let ray_index = vec2u(ray_index_x, ray_index_y);
@@ -203,10 +203,10 @@ fn draw_red(screen_pos: vec2<u32>) {
 }
 
 fn record_hit_A(ray_index: vec2<u32>, a_coords: vec2<u32>, index: u32) {
-    let a_entry = ray_index + vec2u(index, index) * panels[0].pixel_count;
+    //let a_entry = ray_index + vec2u(index, index) * panels[0].pixel_count;
 
-    m_a_x_buffer[a_entry.x] = a_coords.x;
-    m_a_y_buffer[a_entry.y] = a_coords.y;
+    m_a_x_buffer[ray_index.x] = a_coords.x;
+    m_a_y_buffer[ray_index.y] = a_coords.y;
 
 }
 
@@ -214,16 +214,16 @@ fn record_hit_B(ray_index: vec2<u32>, b_coords: vec2<u32>, index: u32) {
 
     let b_entry = ray_index + vec2u(index, index) * panels[1].pixel_count;
 
-    m_b_x_buffer[b_entry.x] = b_coords.x;
-    m_b_y_buffer[b_entry.y] = b_coords.y;
+    m_b_x_buffer[ray_index.x] = b_coords.x;
+    m_b_y_buffer[ray_index.y] = b_coords.y;
 
 }
 fn record_hit_T(ray_index: vec2<u32>, t_coords: vec2<u32>, index: u32) {
 
     let t_entry = ray_index + vec2u(index, index) * scene.pixel_count;
 
-    m_t_x_buffer[t_entry.x] = t_coords.x;
-    m_t_y_buffer[t_entry.y] = t_coords.y;
+    m_t_x_buffer[ray_index.x] = t_coords.x;
+    m_t_y_buffer[ray_index.y] = t_coords.y;
 
 }
 
