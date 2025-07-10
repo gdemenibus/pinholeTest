@@ -21,6 +21,8 @@ pub struct StereoscopeBuffer {
     iter_count: usize,
     show_steps: bool,
     starting_values: (f32, f32),
+    sample_next_redraw_flag: bool,
+    solve_next_redraw_flag: bool,
     rng: bool,
     blend: bool,
     blend_sigma: f32,
@@ -130,6 +132,8 @@ impl StereoscopeBuffer {
             early_stop: false,
             filter: false,
             save_error: true,
+            sample_next_redraw_flag: false,
+            solve_next_redraw_flag: false,
         }
     }
 
@@ -223,6 +227,19 @@ impl StereoscopeBuffer {
             b_matrix,
         };
         self.matrix_rep = Some(stereo);
+    }
+
+    pub fn has_sampled(&mut self) {
+        self.sample_next_redraw_flag = false;
+    }
+    pub fn has_solved(&mut self) {
+        self.solve_next_redraw_flag = false;
+    }
+    pub fn will_sample(&self) -> bool {
+        self.sample_next_redraw_flag
+    }
+    pub fn will_solve(&self) -> bool {
+        self.solve_next_redraw_flag
     }
     pub fn factorize_stereo(
         &mut self,
@@ -346,6 +363,13 @@ impl DrawUI for StereoscopeBuffer {
                 ui.checkbox(&mut self.early_stop, "Early stop?");
                 ui.checkbox(&mut self.filter, "Filter Columns");
                 ui.checkbox(&mut self.save_error, "Save Error");
+
+                if ui.button("Sample").clicked() {
+                    self.sample_next_redraw_flag = true;
+                }
+                if ui.button("Solve").clicked() {
+                    self.solve_next_redraw_flag = true;
+                }
 
                 if ui.button("Reset").clicked() {
                     self.matrix_rep = None;

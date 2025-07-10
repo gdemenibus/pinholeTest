@@ -1,7 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use egui::{Context, Ui};
 use egui_file::FileDialog;
+use image::DynamicImage;
 
 use crate::scene::DrawUI;
 pub struct FilePicker {
@@ -47,6 +51,21 @@ impl FilePicker {
     }
     pub fn default_texture(&self) -> &PathBuf {
         &self.default_texture
+    }
+    pub fn load_texture(&self) -> DynamicImage {
+        let path = {
+            let path = &self.texture_file;
+
+            let file = File::open(path).unwrap();
+            if file.metadata().unwrap().is_file() {
+                path
+            } else {
+                println!("Default Texture ");
+                self.default_texture()
+            }
+        };
+
+        image::ImageReader::open(path).unwrap().decode().unwrap()
     }
 }
 impl Default for FilePicker {
