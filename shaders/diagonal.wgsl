@@ -74,17 +74,17 @@ var<uniform> panel_texture_size: vec2<u32>;
 // we need to give every x 3 entries.
 // WARNING: This needs to be double tested!
 @group(3) @binding(0)
-var<storage, read_write> m_a_y_buffer: array<u32>;
+var<storage, read_write> m_a_y_buffer: array<vec2<u32>>;
 @group(3) @binding(1)
-var<storage, read_write> m_a_x_buffer: array<u32>;
+var<storage, read_write> m_a_x_buffer: array<vec2<u32>>;
 @group(3) @binding(2)
-var<storage, read_write> m_b_y_buffer: array<u32>;
+var<storage, read_write> m_b_y_buffer: array<vec2<u32>>;
 @group(3) @binding(3)
-var<storage, read_write> m_b_x_buffer: array<u32>;
+var<storage, read_write> m_b_x_buffer: array<vec2<u32>>;
 @group(3) @binding(4)
-var<storage, read_write> m_t_y_buffer: array<u32>;
+var<storage, read_write> m_t_y_buffer: array<vec2<u32>>;
 @group(3) @binding(5)
-var<storage, read_write> m_t_x_buffer: array<u32>;
+var<storage, read_write> m_t_x_buffer: array<vec2<u32>>;
 
 @group(4) @binding(0) var color_buffer: texture_storage_2d<rgba8unorm, write>;
 
@@ -146,6 +146,8 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
     // TODO: THIS ASSUMES SQUARE, BEWARE!
     let ray_index_y = current_pixel.y + (scene.pixel_count.y * observer_index);
     let ray_index = vec2u(ray_index_x, ray_index_y);
+
+    record_hit_T(ray_index, current_pixel, observer_index);
     // Panels are ordered such that the first panel is the closest to the observer
     for (var index = 0u; index < 2; index++) {
         var trig_1_intersection = intersection_panel(ray, true, panels[index]);
@@ -188,13 +190,7 @@ fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) 
         }
 
     }
-    //
-
-    let current_pixel_float = vec2f(f32(current_pixel.x) / f32(tex_size.x), f32(current_pixel.y) / f32(tex_size.y));
-
-    let color = textureSampleLevel(t_diffuse, s_diffuse, current_pixel_float, 0.0);
-    let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
-    record_hit_T(ray_index, current_pixel, observer_index);
+//
 
 //textureStore(color_buffer, current_pixel, color);
 }
@@ -207,21 +203,46 @@ fn draw_red(screen_pos: vec2<u32>) {
 }
 
 fn record_hit_A(ray_index: vec2<u32>, a_coords: vec2<u32>, index: u32) {
-    m_a_x_buffer[ray_index.x] = a_coords.x;
-    m_a_y_buffer[ray_index.y] = a_coords.y;
+    if index == 0 {
+        m_a_x_buffer[ray_index.x].x = a_coords.x;
+        m_a_y_buffer[ray_index.y].x = a_coords.y;
+    }
+    if index == 1 {
+
+        m_a_x_buffer[ray_index.x].y = a_coords.x;
+        m_a_y_buffer[ray_index.y].y = a_coords.y;
+
+    }
 
 }
 
 fn record_hit_B(ray_index: vec2<u32>, b_coords: vec2<u32>, index: u32) {
+    if index == 0 {
 
-    m_b_x_buffer[ray_index.x] = b_coords.x;
-    m_b_y_buffer[ray_index.y] = b_coords.y;
+        m_b_x_buffer[ray_index.x].x = b_coords.x;
+        m_b_y_buffer[ray_index.y].x = b_coords.y;
+    }
+    if index == 1 {
+
+        m_b_x_buffer[ray_index.x].y = b_coords.x;
+        m_b_y_buffer[ray_index.y].y = b_coords.y;
+
+    }
 
 }
 fn record_hit_T(ray_index: vec2<u32>, t_coords: vec2<u32>, index: u32) {
 
-    m_t_x_buffer[ray_index.x] = t_coords.x;
-    m_t_y_buffer[ray_index.y] = t_coords.y;
+    if index == 0 {
+
+        m_t_x_buffer[ray_index.x].x = t_coords.x;
+        m_t_y_buffer[ray_index.y].x = t_coords.y;
+    }
+    if index == 1 {
+
+        m_t_x_buffer[ray_index.x].y = t_coords.x;
+        m_t_y_buffer[ray_index.y].y = t_coords.y;
+
+    }
 
 }
 
