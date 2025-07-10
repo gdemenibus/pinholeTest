@@ -74,17 +74,17 @@ var<uniform> panel_texture_size: vec2<u32>;
 // we need to give every x 3 entries.
 // WARNING: This needs to be double tested!
 @group(3) @binding(0)
-var<storage, read_write> m_a_y_buffer: array<vec2<u32>>;
+var<storage, read_write> m_a_y_buffer: array<u32>;
 @group(3) @binding(1)
-var<storage, read_write> m_a_x_buffer: array<vec2<u32>>;
+var<storage, read_write> m_a_x_buffer: array<u32>;
 @group(3) @binding(2)
-var<storage, read_write> m_b_y_buffer: array<vec2<u32>>;
+var<storage, read_write> m_b_y_buffer: array<u32>;
 @group(3) @binding(3)
-var<storage, read_write> m_b_x_buffer: array<vec2<u32>>;
+var<storage, read_write> m_b_x_buffer: array<u32>;
 @group(3) @binding(4)
-var<storage, read_write> m_t_y_buffer: array<vec2<u32>>;
+var<storage, read_write> m_t_y_buffer: array<u32>;
 @group(3) @binding(5)
-var<storage, read_write> m_t_x_buffer: array<vec2<u32>>;
+var<storage, read_write> m_t_x_buffer: array<u32>;
 
 @group(4) @binding(0) var color_buffer: texture_storage_2d<rgba8unorm, write>;
 
@@ -203,46 +203,27 @@ fn draw_red(screen_pos: vec2<u32>) {
 }
 
 fn record_hit_A(ray_index: vec2<u32>, a_coords: vec2<u32>, index: u32) {
-    if index == 0 {
-        m_a_x_buffer[ray_index.x].x = a_coords.x;
-        m_a_y_buffer[ray_index.y].x = a_coords.y;
-    }
-    if index == 1 {
+    let a_entry = ray_index + vec2u(index, index) * panels[0].pixel_count;
 
-        m_a_x_buffer[ray_index.x].y = a_coords.x;
-        m_a_y_buffer[ray_index.y].y = a_coords.y;
-
-    }
+    m_a_x_buffer[a_entry.x] = a_coords.x;
+    m_a_y_buffer[a_entry.y] = a_coords.y;
 
 }
 
 fn record_hit_B(ray_index: vec2<u32>, b_coords: vec2<u32>, index: u32) {
-    if index == 0 {
 
-        m_b_x_buffer[ray_index.x].x = b_coords.x;
-        m_b_y_buffer[ray_index.y].x = b_coords.y;
-    }
-    if index == 1 {
+    let b_entry = ray_index + vec2u(index, index) * panels[1].pixel_count;
 
-        m_b_x_buffer[ray_index.x].y = b_coords.x;
-        m_b_y_buffer[ray_index.y].y = b_coords.y;
-
-    }
+    m_b_x_buffer[b_entry.x] = b_coords.x;
+    m_b_y_buffer[b_entry.y] = b_coords.y;
 
 }
 fn record_hit_T(ray_index: vec2<u32>, t_coords: vec2<u32>, index: u32) {
 
-    if index == 0 {
+    let t_entry = ray_index + vec2u(index, index) * scene.pixel_count;
 
-        m_t_x_buffer[ray_index.x].x = t_coords.x;
-        m_t_y_buffer[ray_index.y].x = t_coords.y;
-    }
-    if index == 1 {
-
-        m_t_x_buffer[ray_index.x].y = t_coords.x;
-        m_t_y_buffer[ray_index.y].y = t_coords.y;
-
-    }
+    m_t_x_buffer[t_entry.x] = t_coords.x;
+    m_t_y_buffer[t_entry.y] = t_coords.y;
 
 }
 

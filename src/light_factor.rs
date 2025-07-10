@@ -237,20 +237,11 @@ impl LFBuffers {
         columns: u32,
     ) -> SparseColMat<u32, f32> {
         let mut triplets = buffer
-            .chunks(2)
-            .map(|x| (x[0], x[1]))
+            .iter()
             .enumerate()
-            .flat_map(|(index, entry)| {
-                if entry.1 == 0 {
-                    println!("Index {index} entry has a zero at entry {}", entry.1);
-                }
-                if entry.0 == 0 {
-                    println!("Index {index} entry has a zero at entry {}", entry.0);
-                }
-                vec![
-                    Triplet::new(index as u32, entry.0, 1.0f32),
-                    Triplet::new(index as u32, entry.1, 1.0f32),
-                ]
+            .map(|(index, entry)| {
+                let ray_index = (index as u32) % columns;
+                Triplet::new(ray_index, *entry, 1.0)
             })
             .collect();
         utils::check_triplets(rows, columns, &mut triplets);
