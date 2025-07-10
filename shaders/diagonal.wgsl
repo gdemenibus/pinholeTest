@@ -142,9 +142,9 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
 fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
 
-    let ray_index_x = current_pixel.x + (scene.pixel_count.x * observer_index);
+    let ray_index_x = current_pixel.x + (scene.pixel_count.y * observer_index);
     // TODO: THIS ASSUMES SQUARE, BEWARE!
-    let ray_index_y = current_pixel.y + (scene.pixel_count.y * observer_index);
+    let ray_index_y = current_pixel.y + (scene.pixel_count.x * observer_index);
     let ray_index = vec2u(ray_index_x, ray_index_y);
 
     record_hit_T(ray_index, current_pixel, observer_index);

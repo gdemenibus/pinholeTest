@@ -1,4 +1,4 @@
-use image::{DynamicImage, ImageReader};
+use image::{DynamicImage, GenericImageView, ImageReader, Rgba, RgbaImage};
 use plotters::{
     chart::ChartBuilder,
     prelude::{BitMapBackend, IntoDrawingArea},
@@ -84,8 +84,26 @@ impl ImageCache {
             Err(())
         }
     }
+
     pub fn cache_panel(&mut self, entry: usize, image: DynamicImage) {
         self.panels[entry] = image;
+    }
+    pub fn load_world(&mut self, img: DynamicImage) {
+        // let (width, height) = img.dimensions();
+        // let size = width.max(height); // target size for the square
+
+        // // Create a new white RGBA image of the target size
+        // let mut square = RgbaImage::from_pixel(size, size, Rgba([255, 255, 255, 255]));
+
+        // // Calculate top-left coordinates to place the original image centered
+        // let x_offset = (size - width) / 2;
+        // let y_offset = (size - height) / 2;
+
+        // // Copy the original image onto the new square image
+        // let rgba_img = img.to_rgba8();
+        // image::imageops::overlay(&mut square, &rgba_img, x_offset.into(), y_offset.into());
+
+        self.target_image = img;
     }
 }
 

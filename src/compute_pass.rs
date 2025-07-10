@@ -125,7 +125,9 @@ impl ReverseProj {
         if target_dimensions.x != target_dimensions.y {
             println!("WARNING, DIAGONAL CAST ON NONE DIAGONAL CONTENT");
         }
-        target_dimensions.x.div_ceil(64)
+
+        let target = u32::max(target_dimensions.x, target_dimensions.y);
+        target.div_ceil(64)
     }
     pub fn compute_pass(
         &self,
