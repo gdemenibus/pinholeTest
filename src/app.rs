@@ -399,16 +399,6 @@ impl AppState {
         self.compute_pass();
 
         let ct_image = &self.image_cache.target_image;
-        // println!("Solving for light field!");
-        // let mut path = &self.scene.world.texture.texture_file;
-
-        // let file = File::open(path).unwrap();
-        // if !file.metadata().unwrap().is_file() {
-        //     println!("Defaulting to 256 Texture");
-        //     path = self.scene.world.texture.default_texture();
-        // }
-        // //let reader = std::io::BufReader::new(file);
-        // let ct_image = image::ImageReader::open(path).unwrap().decode().unwrap();
         {
             // Y here maps to additional rows and X to additional Columns
             let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
@@ -776,7 +766,7 @@ impl App {
         target.texture.change_file = false;
 
         let img = target.texture.load_texture();
-        state.image_cache.target_image = img;
+        state.image_cache.load_world(img);
         state.update_target_texture();
 
         //self.nmf_solver.reset();

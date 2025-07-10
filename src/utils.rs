@@ -1,5 +1,6 @@
 use std::u32;
 
+use cgmath::Vector2;
 use egui::ahash::{HashMap, HashSet};
 use faer::{sparse::Triplet, Mat};
 use image::{DynamicImage, GenericImageView, ImageBuffer};
@@ -168,4 +169,39 @@ pub fn verify_matrix(mat: &Mat<f32>) {
             );
         }
     }
+}
+
+/// Generates a list of (x, y) coordinates along the diagonal using Bresenham's line algorithm.
+/// Starts at (0, 0) and ends at (width - 1, height - 1).
+pub fn bresenham_diagonal(width: u32, height: u32) -> Vec<Vector2<u32>> {
+    let (x0, y0) = (0i32, 0i32);
+    let (x1, y1) = ((width - 1) as i32, (height - 1) as i32);
+
+    let dx = (x1 - x0).abs();
+    let dy = -(y1 - y0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+
+    let mut x = x0;
+    let mut y = y0;
+    let mut points = Vec::new();
+
+    loop {
+        points.push(Vector2::new(x as u32, y as u32));
+        if x == x1 && y == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y += sy;
+        }
+    }
+
+    points
 }

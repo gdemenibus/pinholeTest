@@ -339,8 +339,8 @@ impl LFBuffers {
         number_of_view_points: u32,
     ) {
         let number_of_rays = (
-            target_size.0 * number_of_view_points,
             target_size.1 * number_of_view_points,
+            target_size.0 * number_of_view_points,
         );
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
@@ -375,8 +375,8 @@ impl LFBuffers {
         let settings = &self.settings;
 
         let rays_cast = (
-            target_size.0 * number_of_view_points,
             target_size.1 * number_of_view_points,
+            target_size.0 * number_of_view_points,
         );
 
         let matrices = self.matrix_rep.as_ref()?;
