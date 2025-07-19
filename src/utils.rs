@@ -1,9 +1,13 @@
-use std::u32;
-
 use cgmath::Vector2;
-use egui::ahash::{HashMap, HashSet};
-use faer::{sparse::Triplet, Mat};
+use egui::ahash::HashSet;
+use faer::{
+    sparse::{SparseColMat, SparseRowMat, Triplet},
+    ColRef, Mat, MatRef, RowRef,
+};
 use image::{DynamicImage, GenericImageView, ImageBuffer};
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, ParallelBridge, ParallelIterator,
+};
 use wgpu::Buffer;
 
 pub fn sample_buffer(sample_buffer: &Buffer, device: &wgpu::Device) -> Vec<u8> {
@@ -204,4 +208,100 @@ pub fn bresenham_diagonal(width: u32, height: u32) -> Vec<Vector2<u32>> {
     }
 
     points
+}
+
+pub fn select_rows(selection: &[usize], matrix: MatRef<f32>) -> Mat<f32> {
+    Mat::from_fn(selection.len(), matrix.ncols(), |i, j| {
+        matrix[(selection[i], j)]
+    })
+}
+
+pub fn select_row_par(selection: &[usize], matrix: MatRef<f32>) -> Mat<f32> {
+    let rows: Vec<RowRef<f32>> = selection.iter().map(|x| matrix.row(*x)).collect();
+    let mut output = Mat::zeros(selection.len(), matrix.ncols());
+    output
+        .par_row_chunks_mut(1)
+        .enumerate()
+        .for_each(|(entry, chunk)| {
+            chunk.row_mut(0).copy_from(rows[entry]);
+        });
+
+    output
+}
+
+pub fn selection_row_vec_from_matrix(
+    triplets: &[Triplet<u32, u32, f32>],
+    size: usize,
+) -> Vec<Option<usize>> {
+    let mut vec = vec![None; size];
+    for triplet in triplets {
+        //vec[triplet.row as usize] = Some(triplet.col as usize);
+    }
+
+    vec
+}
+pub fn selection_col_vec_from_matrix(
+    triplets: &[Triplet<u32, u32, f32>],
+    size: usize,
+) -> Vec<Option<usize>> {
+    let mut vec = vec![None; size];
+    for triplet in triplets {
+        //vec[triplet.col as usize] = Some(triplet.row as usize);
+    }
+
+    vec
+}
+
+pub fn build_tripltes(buffer: Vec<u32>, rows: u32, columns: u32) -> Vec<Triplet<u32, u32, f32>> {
+    let mut triplets = buffer
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            //let real_entry = ()
+            Triplet::new(index as u32, *entry, 1.0)
+        })
+        .collect();
+    check_triplets(rows, columns, &mut triplets);
+    triplets
+}
+
+#[cfg(test)]
+mod test {
+
+    use faer::*;
+
+    use super::*;
+
+    #[test]
+    fn image_around_the_world() {
+        let mut image = image::open("./resources/textures/Gibbon.jpg").unwrap();
+        image = image.grayscale();
+        let matrix = image_to_matrix(&image);
+        let new_image = matrix_to_image(&matrix);
+        let new_matrix = image_to_matrix(&new_image);
+        // Write both into
+        image.save("./resources/test/OG.png").unwrap();
+        new_image.save("./resources/test/NEW.png").unwrap();
+        for (og, new) in std::iter::zip(image.pixels(), new_image.pixels()) {
+            assert_eq!(og, new);
+        }
+
+        //assert_eq!(image, new_image);
+        assert_eq!(new_matrix, matrix);
+    }
+    #[test]
+    fn rearrange() {
+        let a = mat![
+            [10f32, 20f32, 30f32, 40f32],
+            [50f32, 60f32, 70f32, 80f32],
+            [90f32, 100f32, 110f32, 120f32]
+        ];
+        let column_list = vec![0, 0, 0, 1, 2];
+        let selected = select_rows(&column_list, a.as_ref());
+        //println!("Shape is {:?}, {selected:?}", selected.shape());
+        //
+        let other_selected = select_row_par(&column_list, a.as_ref());
+        // Ergo, we can test
+        assert_eq!(selected, other_selected);
+    }
 }

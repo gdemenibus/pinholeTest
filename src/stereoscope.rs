@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::num::NonZero;
+use std::time::{Duration, Instant};
 
 use cgmath::Vector2;
 use egui::Ui;
@@ -269,12 +270,15 @@ impl StereoscopeBuffer {
         // Precompute the transpose
         let m_a_trans = matrices.a_matrix.transpose();
         let m_b_trans = matrices.b_matrix.transpose();
+        let mut time_taken_total: Vec<Duration> = Vec::with_capacity(self.iter_count);
 
         let mut error = VecDeque::with_capacity(self.iter_count);
         println!("Computing Stereo Approach");
         let progress_bar = indicatif::ProgressBar::new(self.iter_count as u64);
         for _x in 0..self.iter_count {
             progress_bar.inc(1);
+
+            let start = Instant::now();
             {
                 let t2_rays = &matrices.b_matrix * &vec_b;
                 let t1_rays = &matrices.a_matrix * &vec_a;
@@ -323,11 +327,18 @@ impl StereoscopeBuffer {
                     error.push_back(norm);
                 }
             }
+
+            let end = Instant::now();
+            let time_taken = end.duration_since(start);
+            time_taken_total.push(time_taken);
         }
         utils::verify_matrix(&vec_a);
         utils::verify_matrix(&vec_b);
         let a = utils::vector_to_image(&vec_a, panel_a_size.0, panel_a_size.1);
         let b = utils::vector_to_image(&vec_b, panel_b_size.0, panel_b_size.1);
+        let total_time: Duration = time_taken_total.iter().sum();
+        let average_time = total_time / self.iter_count as u32;
+        println!("Average time per iteration: {average_time:?}");
 
         println!("Errors is: {error:?}");
         let error = {
