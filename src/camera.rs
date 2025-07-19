@@ -221,7 +221,7 @@ impl CameraHistory {
             visibility: wgpu::ShaderStages::all(),
             count: None,
             ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -244,7 +244,7 @@ impl CameraHistory {
             // Each camera position is 3 f32s. 12 bytes. 21 postions should be fine
             size: 1024,
             label: Some("Camera History Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: true,
         });
         let size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -253,7 +253,7 @@ impl CameraHistory {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Binding For Panel group"),
+            label: Some("Binding For Camera History"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {

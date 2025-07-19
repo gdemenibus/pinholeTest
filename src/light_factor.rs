@@ -52,9 +52,7 @@ struct LFSettings {
 
 #[derive(Clone)]
 pub struct MappingMatrix {
-    matrix: SparseColMat<u32, f32>,
-    mapping_col: Vec<Option<usize>>,
-    mapping_row: Vec<Option<usize>>,
+    matrix: Vec<SparseColMat<u32, f32>>,
 }
 
 #[derive(Clone)]
@@ -264,38 +262,44 @@ impl LFBuffers {
 
         let m_t_y = {
             let vec_t_y = buffer_to_sparse_triplet(&self.m_t_y_buffer, device, rays_cast.0);
-            let rows = rays_cast.0;
 
             let columns = target_size.0;
 
-            let triplets = utils::build_tripltes(vec_t_y, rows, columns);
-            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, rows as usize);
-            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, rows as usize);
+            let triplets = utils::build_tripltes(vec_t_y, target_size.0 as usize);
 
-            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
-            MappingMatrix {
-                matrix,
-                mapping_col,
-                mapping_row,
-            }
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        target_size.0 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
         };
 
         println!("Building M_t_x");
         let m_t_x = {
             let vec_t_x = buffer_to_sparse_triplet(&self.m_t_x_buffer, device, rays_cast.1);
-            let rows = rays_cast.1;
             let columns = target_size.1;
 
-            let triplets = utils::build_tripltes(vec_t_x, rows, columns);
-            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
-            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
+            let triplets = utils::build_tripltes(vec_t_x, target_size.1 as usize);
 
-            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
-            MappingMatrix {
-                matrix,
-                mapping_col,
-                mapping_row,
-            }
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        target_size.1 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
         };
 
         CompleteMapping { x: m_t_x, y: m_t_y }
@@ -305,44 +309,53 @@ impl LFBuffers {
         &self,
         device: &wgpu::Device,
         rays_cast: (u32, u32),
+        rays_cast_per_viewpoint: (u32, u32),
         panel_size: (u32, u32),
     ) -> CompleteMapping {
         println!("Building M_A_Y");
 
         let m_a_y = {
             let vec_a_y = buffer_to_sparse_triplet(&self.m_a_y_buffer, device, rays_cast.0);
-            let rows = rays_cast.0;
 
             let columns = panel_size.0;
-            let triplets = utils::build_tripltes(vec_a_y, rows, columns);
-            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
-            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
 
-            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
-            MappingMatrix {
-                matrix,
-                mapping_col,
-                mapping_row,
-            }
+            let triplets = utils::build_tripltes(vec_a_y, rays_cast_per_viewpoint.0 as usize);
+
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.0 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
         };
 
-        println!("Building M_A_X");
+        println!("Building M_a_x");
         let m_a_x = {
             let vec_a_x = buffer_to_sparse_triplet(&self.m_a_x_buffer, device, rays_cast.1);
-            let rows = rays_cast.1;
             let columns = panel_size.1;
 
-            let triplets = utils::build_tripltes(vec_a_x, rows, columns);
-            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
-            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
+            let triplets = utils::build_tripltes(vec_a_x, rays_cast_per_viewpoint.1 as usize);
 
-            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
-            MappingMatrix {
-                matrix,
-                mapping_col,
-                mapping_row,
-            }
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.1 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
         };
+
         CompleteMapping { x: m_a_x, y: m_a_y }
     }
 
@@ -350,45 +363,54 @@ impl LFBuffers {
         &self,
         device: &wgpu::Device,
         rays_cast: (u32, u32),
+        rays_cast_per_viewpoint: (u32, u32),
         panel_size: (u32, u32),
     ) -> CompleteMapping {
         println!("Building M_B_Y");
         let m_b_y = {
             let vec_b_y = buffer_to_sparse_triplet(&self.m_b_y_buffer, device, rays_cast.0);
 
-            let rows = rays_cast.0;
-
             let columns = panel_size.0;
-            let triplets = utils::build_tripltes(vec_b_y, rows, columns);
-            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
-            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
 
-            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
-            MappingMatrix {
-                matrix,
-                mapping_col,
-                mapping_row,
-            }
+            let triplets = utils::build_tripltes(vec_b_y, rays_cast_per_viewpoint.0 as usize);
+
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.0 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
         };
-        println!("Building M_B_X");
+
+        println!("Building M_b_x");
         let m_b_x = {
             let vec_b_x = buffer_to_sparse_triplet(&self.m_b_x_buffer, device, rays_cast.1);
-            let rows = rays_cast.1;
             let columns = panel_size.1;
 
-            let triplets = utils::build_tripltes(vec_b_x, rows, columns);
-            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
-            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
+            let triplets = utils::build_tripltes(vec_b_x, rays_cast_per_viewpoint.1 as usize);
 
-            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
-            MappingMatrix {
-                matrix,
-                mapping_col,
-                mapping_row,
-            }
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.1 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
         };
         CompleteMapping { x: m_b_x, y: m_b_y }
     }
+
     pub fn sample_light_field(
         &mut self,
         device: &wgpu::Device,
@@ -404,8 +426,8 @@ impl LFBuffers {
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
 
-        let a = self.build_m_a(device, number_of_rays, panel_a_size);
-        let b = self.build_m_b(device, number_of_rays, panel_b_size);
+        let a = self.build_m_a(device, number_of_rays, target_size, panel_a_size);
+        let b = self.build_m_b(device, number_of_rays, target_size, panel_b_size);
         // TO BE CHANGED SOON
         let t = self.build_m_t(device, number_of_rays, target_size);
         let matrices = LFMatrices { a, b, t };
