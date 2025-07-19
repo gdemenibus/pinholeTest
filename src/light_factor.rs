@@ -1,7 +1,13 @@
-use std::{collections::VecDeque, num::NonZero, sync::mpsc::channel, thread};
+use std::{
+    collections::VecDeque,
+    num::NonZero,
+    sync::mpsc::channel,
+    thread,
+    time::{Duration, Instant},
+};
 
 use cgmath::Vector2;
-use egui::Ui;
+use egui::{epaint::text::InsertFontFamily, Ui};
 use faer::{
     sparse::{SparseColMat, Triplet},
     stats::prelude::{thread_rng, Rng},
@@ -44,16 +50,26 @@ struct LFSettings {
     save_error: bool,
 }
 
+#[derive(Clone)]
+pub struct MappingMatrix {
+    matrix: SparseColMat<u32, f32>,
+    mapping_col: Vec<Option<usize>>,
+    mapping_row: Vec<Option<usize>>,
+}
+
+#[derive(Clone)]
+pub struct CompleteMapping {
+    x: MappingMatrix,
+    y: MappingMatrix,
+}
+
 /// Struct to hold the matrices that we will build.
 /// Observations will be
 #[derive(Clone)]
 pub struct LFMatrices {
-    m_a_y_matrix: SparseColMat<u32, f32>,
-    m_a_x_matrix: SparseColMat<u32, f32>,
-    m_b_y_matrix: SparseColMat<u32, f32>,
-    m_b_x_matrix: SparseColMat<u32, f32>,
-    m_t_y_matrix: SparseColMat<u32, f32>,
-    m_t_x_matrix: SparseColMat<u32, f32>,
+    a: CompleteMapping,
+    b: CompleteMapping,
+    t: CompleteMapping,
 }
 
 impl LFBuffers {
@@ -232,21 +248,10 @@ impl LFBuffers {
     }
 
     pub fn build_sparse_matrix(
-        buffer: Vec<u32>,
+        triplets: Vec<Triplet<u32, u32, f32>>,
         rows: u32,
         columns: u32,
     ) -> SparseColMat<u32, f32> {
-        let mut triplets = buffer
-            .iter()
-            .enumerate()
-            .map(|(index, entry)| {
-                let ray_index = (index as u32) % columns;
-                //let real_entry = ()
-                Triplet::new(index as u32, *entry, 1.0)
-            })
-            .collect();
-        utils::check_triplets(rows, columns, &mut triplets);
-
         SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
     }
     pub fn build_m_t(
@@ -254,7 +259,7 @@ impl LFBuffers {
         device: &wgpu::Device,
         rays_cast: (u32, u32),
         target_size: (u32, u32),
-    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
+    ) -> CompleteMapping {
         println!("Building M_t_y");
 
         let m_t_y = {
@@ -263,7 +268,16 @@ impl LFBuffers {
 
             let columns = target_size.0;
 
-            Self::build_sparse_matrix(vec_t_y, rows, columns)
+            let triplets = utils::build_tripltes(vec_t_y, rows, columns);
+            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, rows as usize);
+            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, rows as usize);
+
+            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
+            MappingMatrix {
+                matrix,
+                mapping_col,
+                mapping_row,
+            }
         };
 
         println!("Building M_t_x");
@@ -272,9 +286,19 @@ impl LFBuffers {
             let rows = rays_cast.1;
             let columns = target_size.1;
 
-            Self::build_sparse_matrix(vec_t_x, rows, columns)
+            let triplets = utils::build_tripltes(vec_t_x, rows, columns);
+            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
+            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
+
+            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
+            MappingMatrix {
+                matrix,
+                mapping_col,
+                mapping_row,
+            }
         };
-        (m_t_x, m_t_y)
+
+        CompleteMapping { x: m_t_x, y: m_t_y }
     }
 
     pub fn build_m_a(
@@ -282,7 +306,7 @@ impl LFBuffers {
         device: &wgpu::Device,
         rays_cast: (u32, u32),
         panel_size: (u32, u32),
-    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
+    ) -> CompleteMapping {
         println!("Building M_A_Y");
 
         let m_a_y = {
@@ -290,8 +314,16 @@ impl LFBuffers {
             let rows = rays_cast.0;
 
             let columns = panel_size.0;
+            let triplets = utils::build_tripltes(vec_a_y, rows, columns);
+            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
+            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
 
-            Self::build_sparse_matrix(vec_a_y, rows, columns)
+            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
+            MappingMatrix {
+                matrix,
+                mapping_col,
+                mapping_row,
+            }
         };
 
         println!("Building M_A_X");
@@ -300,9 +332,18 @@ impl LFBuffers {
             let rows = rays_cast.1;
             let columns = panel_size.1;
 
-            Self::build_sparse_matrix(vec_a_x, rows, columns)
+            let triplets = utils::build_tripltes(vec_a_x, rows, columns);
+            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
+            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
+
+            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
+            MappingMatrix {
+                matrix,
+                mapping_col,
+                mapping_row,
+            }
         };
-        (m_a_x, m_a_y)
+        CompleteMapping { x: m_a_x, y: m_a_y }
     }
 
     pub fn build_m_b(
@@ -310,7 +351,7 @@ impl LFBuffers {
         device: &wgpu::Device,
         rays_cast: (u32, u32),
         panel_size: (u32, u32),
-    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
+    ) -> CompleteMapping {
         println!("Building M_B_Y");
         let m_b_y = {
             let vec_b_y = buffer_to_sparse_triplet(&self.m_b_y_buffer, device, rays_cast.0);
@@ -318,7 +359,16 @@ impl LFBuffers {
             let rows = rays_cast.0;
 
             let columns = panel_size.0;
-            Self::build_sparse_matrix(vec_b_y, rows, columns)
+            let triplets = utils::build_tripltes(vec_b_y, rows, columns);
+            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
+            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
+
+            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
+            MappingMatrix {
+                matrix,
+                mapping_col,
+                mapping_row,
+            }
         };
         println!("Building M_B_X");
         let m_b_x = {
@@ -326,9 +376,18 @@ impl LFBuffers {
             let rows = rays_cast.1;
             let columns = panel_size.1;
 
-            Self::build_sparse_matrix(vec_b_x, rows, columns)
+            let triplets = utils::build_tripltes(vec_b_x, rows, columns);
+            let mapping_col = utils::selection_col_vec_from_matrix(&triplets, columns as usize);
+            let mapping_row = utils::selection_row_vec_from_matrix(&triplets, columns as usize);
+
+            let matrix = Self::build_sparse_matrix(triplets, rows, columns);
+            MappingMatrix {
+                matrix,
+                mapping_col,
+                mapping_row,
+            }
         };
-        (m_b_x, m_b_y)
+        CompleteMapping { x: m_b_x, y: m_b_y }
     }
     pub fn sample_light_field(
         &mut self,
@@ -344,19 +403,13 @@ impl LFBuffers {
         );
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
-        let (ma_x, ma_y) = self.build_m_a(device, number_of_rays, panel_a_size);
-        let (mb_x, mb_y) = self.build_m_b(device, number_of_rays, panel_b_size);
-        // TO BE CHANGED SOON
-        let (mt_x, mt_y) = self.build_m_t(device, number_of_rays, target_size);
 
-        let matrices = LFMatrices {
-            m_a_y_matrix: ma_y,
-            m_a_x_matrix: ma_x,
-            m_b_y_matrix: mb_y,
-            m_b_x_matrix: mb_x,
-            m_t_x_matrix: mt_x,
-            m_t_y_matrix: mt_y,
-        };
+        let a = self.build_m_a(device, number_of_rays, panel_a_size);
+        let b = self.build_m_b(device, number_of_rays, panel_b_size);
+        // TO BE CHANGED SOON
+        let t = self.build_m_t(device, number_of_rays, target_size);
+        let matrices = LFMatrices { a, b, t };
+
         self.matrix_rep = Some(matrices);
     }
 
@@ -381,13 +434,13 @@ impl LFBuffers {
 
         let matrices = self.matrix_rep.as_ref()?;
 
-        let m_a_y = &matrices.m_a_y_matrix.to_dense();
-        let m_a_x = &matrices.m_a_x_matrix.to_dense();
-        let m_b_y = &matrices.m_b_y_matrix.to_dense();
-        let m_b_x = &matrices.m_b_x_matrix.to_dense();
+        let m_a_y = &matrices.a.y.matrix;
+        let m_a_x = &matrices.a.x.matrix;
+        let m_b_y = &matrices.b.y.matrix;
+        let m_b_x = &matrices.b.x.matrix;
+        let m_t_y = &matrices.t.y.matrix;
 
-        let m_t_x = &matrices.m_t_x_matrix.to_dense();
-        let m_t_y = &matrices.m_t_y_matrix.to_dense();
+        let m_t_x = &matrices.t.x.matrix.to_dense();
 
         let h_a = m_a_y.shape().1;
         let h_b = m_b_y.shape().1;
@@ -445,7 +498,10 @@ impl LFBuffers {
         let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
         let progress_bar = indicatif::ProgressBar::new(settings.iter_count as u64);
         let mut error = VecDeque::with_capacity(settings.iter_count);
+
+        let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
         for x in 0..settings.iter_count {
+            let start = Instant::now();
             progress_bar.inc(1);
 
             if settings.show_steps {
@@ -530,11 +586,17 @@ impl LFBuffers {
                 }
                 error.push_back(error_norm);
             }
+            let end = Instant::now();
+            let time_taken = end.duration_since(start);
+            time_taken_total.push(time_taken);
         }
 
+        let total_time: Duration = time_taken_total.iter().sum();
+        let average_time = total_time / settings.iter_count as u32;
+        println!("Average time per iteration: {average_time:?}");
         if settings.filter {
-            Self::filter_zeroes(c_a.as_mut(), &matrices.m_a_y_matrix, &matrices.m_a_x_matrix);
-            Self::filter_zeroes(c_b.as_mut(), &matrices.m_b_y_matrix, &matrices.m_b_x_matrix);
+            Self::filter_zeroes(c_a.as_mut(), &matrices.a);
+            Self::filter_zeroes(c_b.as_mut(), &matrices.b);
         }
         utils::verify_matrix(&c_a);
         utils::verify_matrix(&c_b);
@@ -580,11 +642,271 @@ impl LFBuffers {
 
         Some((image_a, image_b, error))
     }
-    fn filter_zeroes(
-        mat: MatMut<f32, usize, usize>,
-        mat_y: &SparseColMat<u32, f32>,
-        mat_x: &SparseColMat<u32, f32>,
-    ) {
+
+    pub fn alternative_factorization(
+        &mut self,
+        c_t: &DynamicImage,
+        target_size: (u32, u32),
+        number_of_view_points: u32,
+    ) -> Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)> {
+        // Give 10 threads
+        faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
+        println!(
+            "Global Parallelism is: {:?}",
+            faer::get_global_parallelism()
+        );
+        let settings = &self.settings;
+
+        let rays_cast = (
+            target_size.1 * number_of_view_points,
+            target_size.0 * number_of_view_points,
+        );
+
+        let matrices = self.matrix_rep.as_ref()?;
+
+        let m_a_y = &matrices.a.y.matrix.to_dense();
+        let m_a_x = &matrices.a.x.matrix.to_dense();
+        let m_b_y = &matrices.b.y.matrix.to_dense();
+        let m_b_x = &matrices.b.x.matrix.to_dense();
+        let m_t_y = &matrices.t.y.matrix.to_dense();
+
+        let m_t_x = &matrices.t.x.matrix.to_dense();
+
+        let h_a = m_a_y.shape().1;
+        let h_b = m_b_y.shape().1;
+
+        let w_a = m_a_x.shape().1;
+        let w_b = m_b_x.shape().1;
+
+        println!("A_y shape: {:?}", m_a_y.shape());
+        println!("A_x shape: {:?}", m_a_x.shape());
+        println!("b_y shape: {:?}", m_b_y.shape());
+        println!("b_x shape: {:?}", m_b_x.shape());
+        println!("t_y shape: {:?}", m_t_y.shape());
+        println!("t_x shape: {:?}", m_t_x.shape());
+        println!("Rays cast: {rays_cast:?}");
+
+        let c_t = utils::image_to_matrix(c_t);
+
+        println!("C_T shape: {:?}", c_t.shape());
+        utils::verify_matrix(&c_t);
+        utils::matrix_to_image(&c_t)
+            .save_with_format(
+                "./resources/panel_compute/intermediate/C_T.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
+            if self.settings.rng {
+                thread_rng().gen_range(0f32..1.0f32)
+            } else {
+                self.settings.starting_values.0
+            }
+        });
+        let mut c_b = Mat::from_fn(h_b, w_b, |_x, _y| {
+            if self.settings.rng {
+                thread_rng().gen_range(0f32..1.0f32)
+            } else {
+                self.settings.starting_values.1
+            }
+        });
+        let single_pass_size = (
+            rays_cast.0 / number_of_view_points,
+            rays_cast.1 / number_of_view_points,
+        );
+
+        let mut upper = Mat::<f32>::zeros(single_pass_size.0 as usize, single_pass_size.1 as usize);
+
+        let mut lower = Mat::<f32>::zeros(single_pass_size.0 as usize, single_pass_size.1 as usize);
+
+        // Move IO out of loop and into dedicated thread
+        let (sender, receiver) = channel::<(String, DynamicImage)>();
+        thread::spawn(move || {
+            for (path, image) in receiver {
+                image.save_with_format(path, image::ImageFormat::Png).ok();
+            }
+        });
+
+        // Doesn't change
+
+        let progress_bar = indicatif::ProgressBar::new(settings.iter_count as u64);
+        let mut error = VecDeque::with_capacity(settings.iter_count);
+
+        let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
+
+        let mut numerator_a = Mat::zeros(c_a.nrows(), c_a.ncols());
+        let mut denominator_a = Mat::zeros(c_a.nrows(), c_a.ncols());
+
+        let mut numerator_b = Mat::zeros(c_b.nrows(), c_b.ncols());
+        let mut denominator_b = Mat::zeros(c_b.nrows(), c_b.ncols());
+        for x in 0..settings.iter_count {
+            let start = Instant::now();
+            progress_bar.inc(1);
+
+            if settings.show_steps {
+                let path_1 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 1
+                );
+                let path_2 = format!(
+                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+                    x, 2
+                );
+                let image_a = utils::matrix_to_image(&c_a);
+                let image_b = utils::matrix_to_image(&c_b);
+                sender.send((path_1, image_a)).unwrap();
+                sender.send((path_2, image_b)).unwrap();
+
+                // Dispatch a thread to do
+            }
+            // CA update
+            //
+            {
+                for view_point in 0..number_of_view_points {
+                    let start_row = view_point * single_pass_size.0;
+                    let end_row = (view_point + 1) * single_pass_size.0;
+
+                    let m_a_x = m_a_x.get(start_row as usize..end_row as usize, ..);
+                    let m_a_y = m_a_y.get(start_row as usize..end_row as usize, ..);
+
+                    let m_b_x = m_b_x.get(start_row as usize..end_row as usize, ..);
+                    let m_b_y = m_b_y.get(start_row as usize..end_row as usize, ..);
+
+                    let m_t_x = m_t_x.get(start_row as usize..end_row as usize, ..);
+                    let m_t_y = m_t_y.get(start_row as usize..end_row as usize, ..);
+
+                    let c_t_m_product = (m_t_y * &c_t) * m_t_x.transpose();
+                    let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                    let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+
+                    zip!(&mut upper, &c_b_m_product, &c_t_m_product).for_each(
+                        |unzip!(upper, c_b, c_t)| {
+                            *upper = *c_b * *c_t;
+                        },
+                    );
+
+                    zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                        |unzip!(lower, c_b, c_a)| {
+                            *lower = *c_a * *c_b * *c_b;
+                        },
+                    );
+
+                    numerator_a += m_a_y.transpose() * &upper * m_a_x;
+                    denominator_a += m_a_y.transpose() * &lower * m_a_x;
+                }
+
+                zip!(&mut c_a, &mut numerator_a, &mut denominator_a).for_each(
+                    |unzip!(c_a, n, d)| {
+                        *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32));
+                        *n = 0.0;
+                        *d = 0.0;
+                    },
+                );
+            }
+
+            {
+                for view_point in 0..number_of_view_points {
+                    let start_row = view_point * single_pass_size.0;
+                    let end_row = (view_point + 1) * single_pass_size.0;
+
+                    let m_a_x = m_a_x.get(start_row as usize..end_row as usize, ..);
+                    let m_a_y = m_a_y.get(start_row as usize..end_row as usize, ..);
+
+                    let m_b_x = m_b_x.get(start_row as usize..end_row as usize, ..);
+                    let m_b_y = m_b_y.get(start_row as usize..end_row as usize, ..);
+
+                    let m_t_x = m_t_x.get(start_row as usize..end_row as usize, ..);
+                    let m_t_y = m_t_y.get(start_row as usize..end_row as usize, ..);
+
+                    let c_t_m_product = (m_t_y * &c_t) * m_t_x.transpose();
+                    let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                    let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+
+                    zip!(&mut upper, &c_a_m_product, &c_t_m_product).for_each(
+                        |unzip!(upper, c_a, c_t)| {
+                            *upper = *c_a * *c_t;
+                        },
+                    );
+
+                    zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                        |unzip!(lower, c_b, c_a)| {
+                            *lower = *c_b * *c_a * *c_a;
+                        },
+                    );
+
+                    numerator_b += m_b_y.transpose() * &upper * m_b_x;
+                    denominator_b += m_b_y.transpose() * &lower * m_b_x;
+                }
+                zip!(&mut c_b, &mut numerator_b, &mut denominator_b).for_each(
+                    |unzip!(c_b, n, d)| {
+                        *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
+                        *n = 0.0;
+                        *d = 0.0;
+                    },
+                );
+            }
+
+            let end = Instant::now();
+            let time_taken = end.duration_since(start);
+            time_taken_total.push(time_taken);
+        }
+
+        let total_time: Duration = time_taken_total.iter().sum();
+        let average_time = total_time / settings.iter_count as u32;
+        println!("Average time per iteration: {average_time:?}");
+        if settings.filter {
+            Self::filter_zeroes(c_a.as_mut(), &matrices.a);
+            Self::filter_zeroes(c_b.as_mut(), &matrices.b);
+        }
+        utils::verify_matrix(&c_a);
+        utils::verify_matrix(&c_b);
+
+        let image_a = {
+            let mut output = utils::matrix_to_image(&c_a);
+            if settings.blend {
+                output = output.fast_blur(settings.blend_sigma);
+            }
+
+            output
+        };
+        image_a
+            .save_with_format(
+                "./resources/panel_compute/panel_1.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let image_b = {
+            let mut output = utils::matrix_to_image(&c_b);
+            if settings.blend {
+                output = output.fast_blur(settings.blend_sigma);
+            }
+            output
+        };
+
+        image_b
+            .save_with_format(
+                "./resources/panel_compute/panel_2.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        println!("Errors is: {error:?}");
+        let error = {
+            if settings.save_error {
+                Some(error.into())
+            } else {
+                None
+            }
+        };
+
+        Some((image_a, image_b, error))
+    }
+
+    fn filter_zeroes(mat: MatMut<f32, usize, usize>, mapping_mat: &CompleteMapping) {
+        let mat_x = &mapping_mat.x.matrix;
+        let mat_y = &mapping_mat.y.matrix;
         let x_ncols = mat_x.col_ptr();
         let y_ncols = mat_y.col_ptr();
         for (column, x) in mat.col_iter_mut().enumerate() {
@@ -644,30 +966,5 @@ impl DrawUI for LFBuffers {
                     0.0f32..=1.0f32,
                 ));
             });
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use super::*;
-    use image::GenericImageView;
-
-    #[test]
-    fn image_around_the_world() {
-        let mut image = image::open("./resources/textures/Gibbon.jpg").unwrap();
-        image = image.grayscale();
-        let matrix = utils::image_to_matrix(&image);
-        let new_image = utils::matrix_to_image(&matrix);
-        let new_matrix = utils::image_to_matrix(&new_image);
-        // Write both into
-        image.save("./resources/test/OG.png").unwrap();
-        new_image.save("./resources/test/NEW.png").unwrap();
-        for (og, new) in std::iter::zip(image.pixels(), new_image.pixels()) {
-            assert_eq!(og, new);
-        }
-
-        //assert_eq!(image, new_image);
-        assert_eq!(new_matrix, matrix);
     }
 }

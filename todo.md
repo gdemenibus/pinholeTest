@@ -407,6 +407,95 @@ Having a config file that gets turned into experiment
 Call with rafael on what we are seeing, and double check what 
 
 
-Test the resoltion, and then talk to rafael.
+Test the resolution, and then talk to rafael.
 
 
+
+## Todo:
+Focus on matrix free algorithm
+Writing, need to pivot
+Discussion on 
+
+
+## Todo:
+Place something in the background (World box!)
+Discuss with Vivian the matrix free approach
+Include a discussion on why we are seeing the results
+
+Simulate Object at a distance??
+
+
+## Plan of action:
+GPU acceleration?
+
+Ricardo:
+Focus that the results are clear:
+Nice show off scenes
+Different effects
+"Text message"
+Need to wow
+
+
+## Must 
+Methodology, Experiment, Results, Discussion
+Sphere in Raytracer (1 days)
+
+Collect my results 
+Design a couple examples
+Comparisons
+Different angles
+Different parameters
+
+Programming wise:
+
+
+## Could
+Expirment kernel size and kernel layout
+Matrix-free 
+Show the VR Render?
+
+## Should
+
+
+
+## When are we doing the defence:
+
+### Invite
+Good days for Marco:
+September 18th, anytime
+Tuesdau 23rd, afternoon
+
+Good days for Petr:
+Thursday 18th taken from 1-2 (morning )
+Tuesday 23rd completely free
+
+Once I have the date, I book the room
+Meeting room next door would also be good, can be done later
+Need to be set up
+2.5h should be good 
+
+Ricardo advice for writing:
+Keep it short (50 pages)
+No idea what you are talking about, but don't want to explain everything
+Motivation and Discussion is what maters most.
+Document disucssio
+"this was our first direction, but we noticed this and this"
+This is what is looked for 
+what went wrong
+Non negative matrix factorization.
+Make the story clear.
+
+Add thanks to rafael 
+and the library authors
+
+One more thing:
+Next meeting is the greenlight
+Send it as soon as possible
+
+Go over in thesis.
+Implementation details.
+Two paragraph
+Ray tracer and write back
+Place it in the results
+Why we picked these technologies
+Read me update.

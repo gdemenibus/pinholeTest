@@ -207,6 +207,8 @@ impl CameraController {
 // Struct to store camera positions, especially when sampling!
 pub struct CameraHistory {
     pub history: VecDeque<Camera>,
+    pub kernel_size: f32,
+    pub kernel: bool,
     pub bind_group_layout: BindGroupLayout,
     pub bind_group: BindGroup,
     pub history_buffer: Buffer,
@@ -268,9 +270,11 @@ impl CameraHistory {
 
         CameraHistory {
             bind_group_layout,
+            kernel: false,
             size_buffer,
             history_buffer,
             bind_group,
+            kernel_size: 0.01,
             history: VecDeque::new(),
         }
     }
@@ -279,7 +283,27 @@ impl CameraHistory {
     }
     pub fn save_point(&mut self, camera: &Camera) {
         if !self.history.contains(camera) {
-            self.history.push_back(camera.clone());
+            // Tiny kernel
+            let center_camera = camera.clone();
+
+            let mut top_camera = center_camera.clone();
+            top_camera.position += Vector3::new(0.00, self.kernel_size, 0.0);
+
+            let mut bottom_camera = center_camera.clone();
+            bottom_camera.position -= Vector3::new(0.00, self.kernel_size, 0.0);
+
+            let mut left_camera = center_camera.clone();
+            left_camera.position -= Vector3::new(self.kernel_size, 0.0, 0.0);
+            let mut right_camera = center_camera.clone();
+            right_camera.position += Vector3::new(self.kernel_size, 0.0, 0.0);
+
+            self.history.push_back(center_camera);
+            if self.kernel {
+                self.history.push_back(top_camera);
+                self.history.push_back(bottom_camera);
+                self.history.push_back(right_camera);
+                self.history.push_back(left_camera);
+            }
         }
     }
     pub fn next_save(&mut self) -> Option<&Camera> {
@@ -349,6 +373,10 @@ impl DrawUI for CameraHistory {
             if ui.button("Reset").clicked() {
                 self.history = VecDeque::new();
             };
+            ui.label("Kernel size:");
+
+            ui.add(egui::DragValue::new(&mut self.kernel_size).speed(0.01));
+            ui.checkbox(&mut self.kernel, "Use Kernl");
         } else {
             egui_winit::egui::Window::new(title)
                 .resizable(true)

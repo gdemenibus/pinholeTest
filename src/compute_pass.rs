@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use cgmath::Vector2;
-use wgpu::{BindGroup, Buffer, CommandEncoder, ComputePipeline, ComputePipelineDescriptor};
+use wgpu::{
+    BindGroup, Buffer, CommandEncoder, ComputePipeline, ComputePipelineDescriptor, QuerySet,
+};
 
 use crate::{
     camera::CameraHistory, light_factor::LFBuffers, scene, stereoscope::StereoscopeBuffer,
@@ -12,6 +16,8 @@ pub struct ReverseProj {
     debug_texture_buffer: Buffer,
     debug_texture_texture: Texture,
     debug_bind_group: BindGroup,
+    query_set: QuerySet,
+    query_buffer: Buffer,
 }
 
 impl ReverseProj {
@@ -28,6 +34,19 @@ impl ReverseProj {
             source: wgpu::ShaderSource::Wgsl(
                 include_str!("../shaders/reverse_projection.wgsl").into(),
             ),
+        });
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            count: 4, // start and end
+            ty: wgpu::QueryType::Timestamp,
+            label: Some("Compute Benchmark QuerySet"),
+        });
+        let query_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            size: 32, // 4 * u64
+            usage: wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::QUERY_RESOLVE
+                | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+            label: Some("Query Result Buffer"),
         });
 
         let diagonal_proj = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -107,6 +126,8 @@ impl ReverseProj {
         };
         let output_buffer = device.create_buffer(&output_buffer_desc);
         ReverseProj {
+            query_set,
+            query_buffer,
             compute_pipeline,
             diagonal_pipeline,
             debug_texture_buffer: output_buffer,
@@ -127,7 +148,7 @@ impl ReverseProj {
         }
 
         let target = u32::max(target_dimensions.x, target_dimensions.y);
-        target.div_ceil(64)
+        target.div_ceil(128)
     }
     pub fn compute_pass(
         &self,
@@ -139,35 +160,58 @@ impl ReverseProj {
     ) {
         {
             let work_group_size = Self::work_group_size(scene.world.pixel_count);
-            println!("Dispatching a work group of size: {work_group_size:?}");
+            println!("Dispatching Non-diagonal a work group of size: {work_group_size:?}");
             let compute_pass_desc = wgpu::ComputePassDescriptor {
                 label: Some("Compute pass"),
                 timestamp_writes: None,
             };
-            let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
-            compute_pass.set_pipeline(&self.compute_pipeline);
-            scene.compute_pass(&mut compute_pass);
 
-            compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
-            compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
-            compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
-            compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
+            {
+                encoder.write_timestamp(&self.query_set, 0);
+            }
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
+                compute_pass.set_pipeline(&self.compute_pipeline);
+                scene.compute_pass(&mut compute_pass);
 
-            compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
+                compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
+                compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
+                compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
+                compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
+
+                compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
+            }
 
             let work_group_size = Self::diagonal_work_group(scene.world.pixel_count);
-            println!("Dispatching Diagonal Work Group of size: {work_group_size}");
+            println!(
+                "Dispatching Diagonal Work Group of size: {work_group_size},  {}, 1",
+                camera_history.history.len()
+            );
+            {
+                encoder.write_timestamp(&self.query_set, 1);
+            }
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
 
-            compute_pass.set_pipeline(&self.diagonal_pipeline);
+                compute_pass.set_pipeline(&self.diagonal_pipeline);
 
-            scene.compute_pass(&mut compute_pass);
+                scene.compute_pass(&mut compute_pass);
 
-            compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
-            compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
-            compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
-            compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
+                compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
+                compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
+                compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
+                compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
 
-            compute_pass.dispatch_workgroups(work_group_size, 1, 1);
+                compute_pass.dispatch_workgroups(
+                    work_group_size,
+                    camera_history.history.len() as u32,
+                    1,
+                );
+            }
+            {
+                encoder.write_timestamp(&self.query_set, 2);
+            }
+            encoder.resolve_query_set(&self.query_set, 0..3, &self.query_buffer, 0);
         }
 
         {
@@ -216,6 +260,27 @@ impl ReverseProj {
             buffer.save("ComputePass Print.png").unwrap();
         }
         self.debug_texture_buffer.unmap();
+    }
+    pub fn time_taken(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        {
+            let buffer_slice = self.query_buffer.slice(..);
+            buffer_slice.map_async(wgpu::MapMode::Read, |_| ());
+            device.poll(wgpu::Maintain::Wait);
+
+            let data = buffer_slice.get_mapped_range();
+            let timestamps: &[u64] = bytemuck::cast_slice(&data);
+            let tick_duration = queue.get_timestamp_period();
+            let nanos_stereo = (timestamps[1] - timestamps[0]) as f32 * tick_duration;
+            let duration = Duration::from_nanos(nanos_stereo as u64);
+
+            println!("Stereo: {duration:?}");
+            let nanos_diagonal = (timestamps[2] - timestamps[1]) as f32 * tick_duration;
+
+            let second_duration = Duration::from_nanos(nanos_diagonal as u64);
+            println!("Diagonal: {second_duration:?}");
+        }
+
+        self.query_buffer.unmap();
     }
 }
 

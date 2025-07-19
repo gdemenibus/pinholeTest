@@ -76,8 +76,11 @@ impl AppState {
             | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
             | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgpu::Features::BGRA8UNORM_STORAGE
-            | wgpu::Features::MULTI_DRAW_INDIRECT;
+            | wgpu::Features::MULTI_DRAW_INDIRECT
+            | wgpu::Features::TIMESTAMP_QUERY
+            | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
         let limites = adapter.limits();
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
@@ -353,6 +356,7 @@ impl AppState {
         }
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::MaintainBase::Wait);
+        self.rev_proj.time_taken(&self.device, &self.queue);
     }
     fn verify_m_a(&mut self) {
         println!("Length of history is: {}", self.camera_history.len());
@@ -418,9 +422,11 @@ impl AppState {
                 number_of_view_points,
             );
             println!("Factorizing");
-            let images = self
-                .factorizer
-                .factorize(ct_image, target_size, number_of_view_points);
+            let images = self.factorizer.alternative_factorization(
+                ct_image,
+                target_size,
+                number_of_view_points,
+            );
 
             self.image_cache.cache_output(false, images);
             self.update_panel(0);

@@ -2663,6 +2663,7 @@ dependencies = [
  "notify",
  "plotters",
  "pollster",
+ "rayon",
  "ron",
  "serde",
  "walkdir",

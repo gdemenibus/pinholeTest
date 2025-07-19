@@ -122,6 +122,8 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     //let current_pixel_float = vec2f(f32(screen_pos.x) / f32(tex_size.x), f32(screen_pos.y) / f32(tex_size.y));
 
     //let color = textureSampleLevel(t_diffuse, s_diffuse, current_pixel_float, 0.0);
+    //let color = vec4f(current_pixel_float.x, current_pixel_float.y, 0.0, 1.0);
+
     //textureStore(color_buffer, screen_pos, color);
 
     } else {

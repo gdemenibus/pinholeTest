@@ -7,7 +7,7 @@ use crate::{
     camera::Camera,
     file_picker::FilePicker,
     raytracer::RayTraceInfo,
-    shape::{Quad, Shape, VWPanel},
+    shape::{Quad, Shape, Sphere, VWPanel},
     texture,
 };
 use cgmath::{vec4, Matrix4, Rad, SquareMatrix, Vector2, Vector3, Vector4};
@@ -32,6 +32,7 @@ Scene struct. Encapsulates UI and handles access to the raw quads
 */
 pub struct Scene {
     pub world: Target,
+    pub sphere: SphereHolder,
     pub panels: Vec<ScenePanel>,
     ray_tracer: RayTraceInfo,
     pub target_binds: TargetBinds,
@@ -58,6 +59,8 @@ pub struct TargetBinds {
     pub ray_tracer_buffer: Buffer,
     pub scene_buffer: Buffer,
     pub background_buffer: Buffer,
+    pub sphere_buffer: Buffer,
+    pub transparent_content_buffer: Buffer,
 }
 pub struct TextureBinds {
     pub bind_group: BindGroup,
@@ -74,6 +77,15 @@ pub struct PanelBinds {
     pub distort_rays_buffer: Buffer,
 }
 
+pub struct SphereHolder {
+    yaw: Rad<f32>,
+    pitch: Rad<f32>,
+    roll: Rad<f32>,
+    placement: Matrix4<f32>,
+    scale: Matrix4<f32>,
+    sphere: Sphere,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Target {
     yaw: Rad<f32>,
@@ -87,8 +99,36 @@ pub struct Target {
     pub size: Vector2<f32>,
     #[serde(skip)]
     pub texture: FilePicker,
-
     pub world_color: Vector4<f32>,
+    pub target_transparent: bool,
+}
+
+impl SphereHolder {
+    pub fn new(sphere: Sphere) -> Self {
+        let yaw = Rad(0.0);
+        let pitch = Rad(0.0);
+        let roll = Rad(0.0);
+        let mut placement = Matrix4::identity();
+        placement.w = Vector4::new(sphere.position.x, sphere.position.y, sphere.position.x, 1.0);
+        let scale = Matrix4::identity();
+        SphereHolder {
+            yaw,
+            pitch,
+            roll,
+            placement,
+            scale,
+            sphere,
+        }
+    }
+    pub fn place_sphere(&self) -> Sphere {
+        let yaw_matrix = Matrix4::from_angle_x(self.yaw);
+        let pitch_matrix = Matrix4::from_angle_y(self.pitch);
+        let roll_matrix = Matrix4::from_angle_z(self.roll);
+        // will need to double check this ordering
+        let placement_matrix =
+            self.placement * self.scale * yaw_matrix * pitch_matrix * roll_matrix;
+        self.sphere.place(&placement_matrix)
+    }
 }
 
 impl TextureBinds {
@@ -219,7 +259,7 @@ impl TextureBinds {
 }
 
 impl TargetBinds {
-    pub fn new(device: &wgpu::Device, buffer: &[u8], rt: &RayTraceInfo) -> Self {
+    pub fn new(device: &wgpu::Device, buffer: &[u8], rt: &RayTraceInfo, sphere: &Sphere) -> Self {
         let rt_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Ray trace buffer, contains info for shooting rays"),
             contents: rt.as_std140().as_bytes(),
@@ -238,6 +278,18 @@ impl TargetBinds {
             contents: bg_color.as_std140().as_bytes(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+
+        let sphere_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Buffer"),
+            contents: sphere.as_std140().as_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let transparent_content_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Setting Background Buffer"),
+                contents: 1u32.as_std140().as_bytes(),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         let scene_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -271,6 +323,26 @@ impl TargetBinds {
                         min_binding_size: None,
                     },
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::all(),
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::all(),
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
             ],
             label: Some("Binding group for Scene"),
         });
@@ -291,9 +363,19 @@ impl TargetBinds {
                     binding: 2,
                     resource: background_color.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: sphere_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: transparent_content_buffer.as_entire_binding(),
+                },
             ],
         });
         TargetBinds {
+            transparent_content_buffer,
+            sphere_buffer,
             background_buffer: background_color,
             bind_group: scene_bind,
             ray_tracer_buffer: rt_buffer,
@@ -462,6 +544,7 @@ impl Target {
 
         let world_color = vec4(0.5, 0.5, 0.5, 1.0);
         Target {
+            target_transparent: true,
             pixel_count,
             world_color,
             size,
@@ -522,11 +605,12 @@ impl DrawUI for Target {
                         .color(Color32::ORANGE),
                 );
                 let mut rgb = [self.world_color.x, self.world_color.y, self.world_color.z];
-                let response = egui::widgets::color_picker::color_edit_button_rgb(ui, &mut rgb);
+                let _response = egui::widgets::color_picker::color_edit_button_rgb(ui, &mut rgb);
                 self.world_color.x = rgb[0];
                 self.world_color.y = rgb[1];
                 self.world_color.z = rgb[2];
 
+                ui.checkbox(&mut self.target_transparent, "Content is transparent");
                 ui.label(RichText::new("Move x").color(Color32::RED));
                 ui.add(egui::Slider::new(&mut self.placement.w.x, -10.0..=10.0));
                 ui.label(RichText::new("Move y").color(Color32::GREEN));
@@ -602,11 +686,20 @@ impl Scene {
 
         let world_buffer = Self::world_as_bytes(&world, camera);
         let panels_buffer = Self::panels_as_bytes(&panels, camera);
-        let target_binds = TargetBinds::new(device, &world_buffer, &ray_tracer);
+        let position = Vector3::new(0.5, 0.5, -3.0);
+        let radius = 0.3f32;
+        let red = Vector4::new(1.0, 0.0, 0.0, 1.0);
+        let white = Vector4::new(1.0, 1.0, 1.0, 1.0);
+        let sphere_raw = Sphere::new(position, radius, red, white);
+
+        let target_binds = TargetBinds::new(device, &world_buffer, &ray_tracer, &sphere_raw);
+
+        let sphere = SphereHolder::new(sphere_raw);
         let panel_binds = PanelBinds::new(device, queue, &panels_buffer);
         let texture_binds = TextureBinds::new(device, queue);
 
         Scene {
+            sphere,
             world,
             panels,
             ray_tracer,
@@ -638,6 +731,24 @@ impl Scene {
             0,
             &Self::world_as_bytes(&self.world, camera),
         );
+        queue.write_buffer(
+            &self.target_binds.sphere_buffer,
+            0,
+            self.sphere.place_sphere().as_std140().as_bytes(),
+        );
+        if self.world.target_transparent {
+            queue.write_buffer(
+                &self.target_binds.transparent_content_buffer,
+                0,
+                1.as_std140().as_bytes(),
+            );
+        } else {
+            queue.write_buffer(
+                &self.target_binds.transparent_content_buffer,
+                0,
+                0.as_std140().as_bytes(),
+            );
+        }
 
         queue.write_buffer(
             &self.panel_binds.panel_buffer,
@@ -793,16 +904,52 @@ impl DrawUI for Scene {
     fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
         let _ = ui;
         let _title = title.unwrap_or("Scene".to_string());
-        let mut count = 1;
         let target = &mut self.world;
-        let title = Some(format!("Target Quad {count}"));
-        target.draw_ui(ctx, title, None);
-        count = 1;
+        let title = Some("Target Quad".to_string());
+        target.draw_ui(ctx, title.clone(), None);
+        self.sphere.draw_ui(ctx, title, ui);
+        let mut count = 1;
         for panel in self.panels.iter_mut() {
             let title = format!("VW Panel# {count} ");
             panel.draw_ui(ctx, Some(title), None);
 
             count += 1;
         }
+    }
+}
+impl DrawUI for SphereHolder {
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let _ = title;
+        let _ = ctx;
+        let _ = ui;
+        let title = "Sphere Controls".to_string();
+
+        egui_winit::egui::Window::new(&title)
+            .resizable(true)
+            .vscroll(true)
+            .default_size([150.0, 175.0])
+            .default_open(false)
+            .show(ctx, |ui| {
+                self.sphere.draw_ui(ctx, Some(title), Some(ui));
+
+                ui.label(RichText::new("Move x").color(Color32::RED));
+                ui.add(egui::Slider::new(&mut self.placement.w.x, -10.0..=10.0));
+                ui.label(RichText::new("Move y").color(Color32::GREEN));
+                ui.add(egui::Slider::new(&mut self.placement.w.y, -10.0..=10.0));
+                ui.label(RichText::new("Move z").color(Color32::LIGHT_BLUE));
+                ui.add(egui::Slider::new(&mut self.placement.w.z, -10.0..=10.0));
+                ui.label(RichText::new("Yaw").color(Color32::RED));
+                ui.add(egui::Slider::new(&mut self.yaw.0, -1.0..=1.0));
+                ui.label(RichText::new("Pitch").color(Color32::GREEN));
+                ui.add(egui::Slider::new(&mut self.pitch.0, -1.0..=1.0));
+                ui.label(RichText::new("Roll").color(Color32::LIGHT_BLUE));
+                ui.add(egui::Slider::new(&mut self.roll.0, -1.0..=1.0));
+
+                ui.label("Scale x");
+                ui.add(egui::DragValue::new(&mut self.scale.x.x).speed(1.0));
+
+                ui.label("Scale y");
+                ui.add(egui::DragValue::new(&mut self.scale.y.y).speed(1.0));
+            });
     }
 }

@@ -3,6 +3,8 @@ use std::cmp::Ordering;
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
 
+use crate::scene::DrawUI;
+
 pub trait Shape: crevice::std140::AsStd140 {
     /* Return a new shape at the position that the model matrix determined
      *
@@ -56,6 +58,72 @@ impl Quad {
             + self.d.distance2(point.to_vec())
     }
 }
+
+#[derive(crevice::std140::AsStd140, Clone, Serialize, Deserialize)]
+pub struct Sphere {
+    pub position: Vector3<f32>,
+    pub radius: f32,
+    pub color: Vector4<f32>,
+    pub swap_color: Vector4<f32>,
+}
+impl Shape for Sphere {
+    fn place(&self, model_matrix: &Matrix4<f32>) -> Self {
+        let position = (model_matrix
+            * Vector4::new(self.position.x, self.position.y, self.position.z, 1.0))
+        .xyz();
+        Sphere {
+            position,
+            radius: self.radius,
+            color: self.color,
+            swap_color: self.swap_color,
+        }
+    }
+}
+impl DrawUI for Sphere {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut egui::Ui>) {
+        let _ = title;
+        let _ = ctx;
+        if let Some(ui) = ui {
+            ui.label("Radius");
+            ui.add(egui::DragValue::new(&mut self.radius).speed(0.1));
+            if self.radius < 0.0 {
+                self.radius = 0.01;
+            }
+
+            ui.label("Main Color");
+            let mut rgb = [self.color.x, self.color.y, self.color.z];
+            let _response = egui::widgets::color_picker::color_edit_button_rgb(ui, &mut rgb);
+
+            self.color.x = rgb[0];
+            self.color.y = rgb[1];
+            self.color.z = rgb[2];
+            ui.label("Off Color");
+
+            let mut rgb = [self.swap_color.x, self.swap_color.y, self.swap_color.z];
+            let _response = egui::widgets::color_picker::color_edit_button_rgb(ui, &mut rgb);
+
+            self.swap_color.x = rgb[0];
+            self.swap_color.y = rgb[1];
+            self.swap_color.z = rgb[2];
+        }
+    }
+}
+impl Sphere {
+    pub fn new(
+        position: Vector3<f32>,
+        radius: f32,
+        color: Vector4<f32>,
+        swap_color: Vector4<f32>,
+    ) -> Self {
+        Sphere {
+            position,
+            radius,
+            color,
+            swap_color,
+        }
+    }
+}
+
 // Struct Representing video window Panel
 #[derive(crevice::std140::AsStd140, Serialize, Deserialize, Clone)]
 pub struct VWPanel {
