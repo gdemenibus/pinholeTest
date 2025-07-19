@@ -268,6 +268,8 @@ impl StereoscopeBuffer {
             }
         });
         // Precompute the transpose
+        let m_a = &matrices.a_matrix;
+        let m_b = &matrices.b_matrix;
         let m_a_trans = matrices.a_matrix.transpose();
         let m_b_trans = matrices.b_matrix.transpose();
         let mut time_taken_total: Vec<Duration> = Vec::with_capacity(self.iter_count);

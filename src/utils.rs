@@ -252,16 +252,24 @@ pub fn selection_col_vec_from_matrix(
     vec
 }
 
-pub fn build_tripltes(buffer: Vec<u32>, rows: u32, columns: u32) -> Vec<Triplet<u32, u32, f32>> {
-    let mut triplets = buffer
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| {
-            //let real_entry = ()
-            Triplet::new(index as u32, *entry, 1.0)
+pub fn build_tripltes(
+    buffer: Vec<u32>,
+    rays_per_view_point: usize,
+) -> Vec<Vec<Triplet<u32, u32, f32>>> {
+    let triplets = buffer
+        .chunks(rays_per_view_point)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    //let real_entry = ()
+                    Triplet::new(index as u32, *entry, 1.0)
+                })
+                .collect()
         })
         .collect();
-    check_triplets(rows, columns, &mut triplets);
+    //check_triplets(rows, columns, &mut triplets);
     triplets
 }
 
