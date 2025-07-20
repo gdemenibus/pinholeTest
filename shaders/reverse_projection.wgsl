@@ -91,7 +91,7 @@ var<storage, read_write> m_t_x_buffer: array<u32>;
 // Deals with camera history
 // We need to declare a maximum in order to handle this. 10 seems like a correct amount?
 // If we need more than 10, make this a x, y, z problem instead?
-@group(5) @binding(0) var<uniform> camera_positions: array<vec3<f32>, 10>;
+@group(5) @binding(0) var<storage, read> camera_positions: array<vec3<f32>>;
 @group(5) @binding(1) var<uniform> camera_count: u32;
 
 @group(6) @binding(0)

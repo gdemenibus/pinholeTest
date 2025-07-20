@@ -59,6 +59,7 @@ var<uniform> background_color: vec4<f32>;
 var<uniform> sphere: Sphere;
 @group(0) @binding(4)
 var<uniform> transparent_content: u32;
+
 // Panel Group
 
 // Texture group
@@ -68,6 +69,11 @@ var t_diffuse: texture_2d<f32>;
 var s_diffuse: sampler;
 @group(1) @binding(2)
 var<uniform> tex_size: vec2<u32>;
+
+@group(1) @binding(3)
+var cubeMap: texture_cube<f32>;
+@group(1) @binding(4)
+var cube_sampler: sampler;
 
 // Panel group!
 @group(2) @binding(0)
@@ -460,7 +466,7 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
     // At this stage we can compute t to find out where the intersection point is on the line.
     var t = inv_det * dot(s_cross_e1, e2);
 
-    if t > eps {
+    if t >= eps {
         hit = true;
         let bary_coords = vec3f(u, v, w);
 
@@ -634,7 +640,8 @@ fn sphere_intersection(ray: Ray, sphere: Sphere) -> vec4<f32> {
     let c = dot(s0_r0, s0_r0) - (sphere.radius * sphere.radius);
     let discriminant = b * b - 4.0 * a * c;
     if (b * b - 4.0 * a * c < 0.0) {
-        return background_color;
+        let direction = normalize(ray.direction);
+        return textureSample(cubeMap, cube_sampler, direction);
     }
 
     let coordinates = (-b - sqrt(discriminant)) / (2.0 * a);
