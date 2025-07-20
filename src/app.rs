@@ -750,6 +750,13 @@ impl App {
                 .clone();
         }
     }
+    pub fn play_animation(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            if let Some(new_camera) = state.camera_history.animate_camera() {
+                self.camera = new_camera;
+            }
+        }
+    }
     pub fn previous_camera(&mut self) {
         if let Some(state) = self.state.as_mut() {
             self.camera = state
@@ -855,6 +862,7 @@ impl App {
         }
 
         self.update_texture();
+        self.play_animation();
 
         //self.update_panel_texture();
         //

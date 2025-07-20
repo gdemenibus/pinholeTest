@@ -8,13 +8,21 @@ use crate::{
     file_picker::FilePicker,
     raytracer::RayTraceInfo,
     shape::{Quad, Shape, Sphere, VWPanel},
-    texture,
+    texture::{self, Texture},
 };
 use cgmath::{vec4, Matrix4, Rad, SquareMatrix, Vector2, Vector3, Vector4};
 use crevice::std140::{self, AsStd140, Std140, Writer};
 use egui::{Color32, RichText, Ui};
 use egui_winit::egui::{self, Context};
 use wgpu::{BindGroup, Buffer, Device};
+
+const BACK: &[u8] = include_bytes!("../resources/skybox/back.jpg");
+const BOTTOM: &[u8] = include_bytes!("../resources/skybox/bottom.jpg");
+const FRONT: &[u8] = include_bytes!("../resources/skybox/front.jpg");
+const LEFT: &[u8] = include_bytes!("../resources/skybox/left.jpg");
+const RIGHT: &[u8] = include_bytes!("../resources/skybox/right.jpg");
+const TOP: &[u8] = include_bytes!("../resources/skybox/top.jpg");
+
 pub trait DrawUI {
     /*
     Draw UI for this element
@@ -132,7 +140,7 @@ impl SphereHolder {
 }
 
 impl TextureBinds {
-    pub fn new(device: &wgpu::Device, queue: &Queue) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &Queue, cube_map: CubeMap) -> Self {
         //let texture_bytes = include_bytes!("../resources/textures/Aircraft_code.png");
 
         //let texture = texture::Texture::from_bytes(device, queue, texture_bytes, "Damn");
@@ -192,6 +200,24 @@ impl TextureBinds {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::all(),
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::Cube,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::all(),
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
                 label: Some("texture_bind_group_layout"),
             });
@@ -215,6 +241,14 @@ impl TextureBinds {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: text_size_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&cube_map.cube_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&cube_map.cube_texture.sampler),
                 },
             ],
             label: Some("diffuse_bind_group"),
@@ -696,7 +730,8 @@ impl Scene {
 
         let sphere = SphereHolder::new(sphere_raw);
         let panel_binds = PanelBinds::new(device, queue, &panels_buffer);
-        let texture_binds = TextureBinds::new(device, queue);
+        let cube_map = CubeMap::default(device, queue);
+        let texture_binds = TextureBinds::new(device, queue, cube_map);
 
         Scene {
             sphere,
@@ -891,6 +926,29 @@ impl DrawUI for ScenePanel {
                 ui.add(egui::DragValue::new(&mut self.scale.y.y).speed(1.0));
                 self.texture.button(ctx, ui);
             });
+    }
+}
+
+struct CubeMap {
+    cube_texture: Texture,
+}
+impl CubeMap {
+    fn default(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let right = image::load_from_memory(RIGHT).unwrap();
+        let left = image::load_from_memory(LEFT).unwrap();
+
+        let top = image::load_from_memory(TOP).unwrap();
+        let bottom = image::load_from_memory(BOTTOM).unwrap();
+
+        let front = image::load_from_memory(FRONT).unwrap();
+        let back = image::load_from_memory(BACK).unwrap();
+
+        let images = vec![right, left, top, bottom, front, back];
+        let texture = Texture::cube_map(device, queue, &images, Some("CubeMap"));
+
+        Self {
+            cube_texture: texture,
+        }
     }
 }
 

@@ -91,7 +91,7 @@ var<storage, read_write> m_t_x_buffer: array<u32>;
 // Deals with camera history
 // We need to declare a maximum in order to handle this. 10 seems like a correct amount?
 // If we need more than 10, make this a x, y, z problem instead?
-@group(5) @binding(0) var<uniform> camera_positions: array<vec3<f32>>;
+@group(5) @binding(0) var<storage, read> camera_positions: array<vec3<f32>>;
 @group(5) @binding(1) var<uniform> camera_count: u32;
 
 @group(6) @binding(0)
@@ -121,7 +121,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
         let current_pixel_float = vec2f(f32(screen_pos.x) / f32(tex_size.x), f32(screen_pos.y) / f32(tex_size.y));
 
-        let color = textureSampleLevel(t_diffuse, s_diffuse, current_pixel_float, 0.0);
+        //let color = textureSampleLevel(t_diffuse, s_diffuse, current_pixel_float, 0.0);
         let color = vec4f(current_pixel_float.x, current_pixel_float.y, 0.0, 1.0);
 
         textureStore(color_buffer, screen_pos, color);

@@ -11,6 +11,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
+use std::time::Instant;
 use wgpu::util::DeviceExt;
 use wgpu::BindGroup;
 use wgpu::BindGroupLayout;
@@ -24,6 +25,18 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::scene::DrawUI;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
+fn lerp_vec3(a: Point3<f32>, b: Point3<f32>, t: f32) -> Point3<f32> {
+    a + (b - a) * t
+}
+fn lerp_angle(a: Rad<f32>, b: Rad<f32>, t: f32) -> Rad<f32> {
+    let mut delta = b.0 - a.0;
+    if delta > std::f32::consts::PI {
+        delta -= 2.0 * std::f32::consts::PI;
+    } else if delta < -std::f32::consts::PI {
+        delta += 2.0 * std::f32::consts::PI;
+    }
+    Rad(a.0 + delta * t)
+}
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Camera {
     pub position: Point3<f32>,
@@ -50,6 +63,14 @@ impl Camera {
         let (sin_yaw, cos_yaw) = self.yaw.0.sin_cos();
 
         Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize()
+    }
+    fn interpolate_camera(a: &Camera, b: &Camera, t: f32) -> Camera {
+        Camera {
+            position: lerp_vec3(a.position, b.position, t),
+            yaw: lerp_angle(a.yaw, b.yaw, t),
+            pitch: lerp_angle(a.pitch, b.pitch, t),
+            fov: Rad(a.fov.0 + (b.fov.0 - a.fov.0) * t), // or use same angle lerp
+        }
     }
 }
 impl DrawUI for Camera {
@@ -213,6 +234,9 @@ pub struct CameraHistory {
     pub bind_group: BindGroup,
     pub history_buffer: Buffer,
     pub size_buffer: Buffer,
+    pub animate: bool,
+    pub animation_duration: f32,
+    pub animation_start: Option<Instant>,
 }
 impl CameraHistory {
     pub fn new(device: &Device) -> Self {
@@ -269,8 +293,11 @@ impl CameraHistory {
         history_buffer.unmap();
 
         CameraHistory {
+            animation_start: None,
             bind_group_layout,
             kernel: false,
+            animate: false,
+            animation_duration: 2.0,
             size_buffer,
             history_buffer,
             bind_group,
@@ -347,6 +374,20 @@ impl CameraHistory {
     pub fn reset(&mut self) {
         self.history = VecDeque::new();
     }
+
+    pub fn animate_camera(&self) -> Option<Camera> {
+        let time = self.animation_start?.elapsed().as_secs_f32();
+        let duration = self.animation_duration;
+        let keyframes = &self.history;
+        let num_segments = keyframes.len() - 1;
+        let total_time = duration * num_segments as f32;
+        let t = (time % total_time) / duration;
+        let i = ((time % total_time) / duration).floor() as usize;
+
+        let current = &keyframes[i];
+        let next = &keyframes[i + 1];
+        Some(Camera::interpolate_camera(current, next, t.fract()))
+    }
 }
 impl DrawUI for CameraController {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
@@ -369,6 +410,20 @@ impl DrawUI for CameraHistory {
                 "Current camera positions saved:{}",
                 self.history.len()
             ));
+
+            self.animate = ui.button("Play Animation").clicked();
+            if self.animate {
+                self.animation_start = Some(Instant::now());
+            } else if let Some(start) = self.animation_start {
+                if start.elapsed().as_secs_f32()
+                    > (self.animation_duration * (self.history.len() - 1) as f32)
+                {
+                    self.animation_start = None;
+                }
+            }
+
+            ui.label("Animation Position duration:");
+            ui.add(egui::DragValue::new(&mut self.animation_duration).speed(0.1));
 
             if ui.button("Reset").clicked() {
                 self.history = VecDeque::new();

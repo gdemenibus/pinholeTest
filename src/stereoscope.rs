@@ -250,6 +250,14 @@ impl StereoscopeBuffer {
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
 
         let matrices = self.matrix_rep.as_ref()?;
+        println!(
+            "Size of A Stereo Matrix is: {:?}",
+            matrices.a_matrix.shape()
+        );
+        println!(
+            "Size of B Stereo Matrix is: {:?}",
+            matrices.b_matrix.shape()
+        );
         let rows_a = panel_a_size.0 * panel_a_size.1;
         let rows_b = panel_b_size.0 * panel_b_size.1;
         let mut vec_a = Mat::from_fn(rows_a as usize, 1, |_x, _y| {
@@ -268,8 +276,6 @@ impl StereoscopeBuffer {
             }
         });
         // Precompute the transpose
-        let m_a = &matrices.a_matrix;
-        let m_b = &matrices.b_matrix;
         let m_a_trans = matrices.a_matrix.transpose();
         let m_b_trans = matrices.b_matrix.transpose();
         let mut time_taken_total: Vec<Duration> = Vec::with_capacity(self.iter_count);
