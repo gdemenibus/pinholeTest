@@ -3,7 +3,7 @@ use std::num::NonZero;
 
 // Library File that exposes and will be used to import as well
 //
-use faer::sparse::SparseColMat;
+use faer::sparse::{SparseColMat, SparseColMatRef, Triplet};
 use utils::DrawUI;
 
 use std::{
@@ -18,10 +18,70 @@ use faer::{
     unzip, zip, Mat,
 };
 use image::DynamicImage;
+use serde::{ser::SerializeSeq, Deserialize, Serialize};
+
+#[derive(Deserialize)]
+enum SparsePass {
+    List(Vec<SparseAsList>),
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct SparseAsList {
+    shape: (usize, usize),
+    triplet_list: Vec<(usize, usize, f32)>,
+}
+impl Into<SparseColMat<u32, f32>> for &SparseAsList {
+    fn into(self) -> SparseColMat<u32, f32> {
+        let entries: Vec<Triplet<u32, u32, f32>> = self
+            .triplet_list
+            .iter()
+            .map(|(row, col, val)| Triplet::new(*row as u32, *col as u32, *val))
+            .collect();
+        SparseColMat::<u32, f32>::try_new_from_triplets(self.shape.0, self.shape.1, &entries)
+            .unwrap()
+    }
+}
+impl From<SparseColMatRef<'_, u32, f32>> for SparseAsList {
+    fn from(value: SparseColMatRef<u32, f32>) -> Self {
+        let shape = value.shape();
+        let triplet_list = value
+            .triplet_iter()
+            .map(|triplet| (triplet.row, triplet.col, *triplet.val))
+            .collect();
+        SparseAsList {
+            triplet_list,
+            shape,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct MappingMatrix {
     pub matrix: Vec<SparseColMat<u32, f32>>,
+}
+impl Serialize for MappingMatrix {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.matrix.len()))?;
+
+        for matrix in self.matrix.iter() {
+            let list = SparseAsList::from(matrix.as_ref());
+            sequence.serialize_element(&list)?;
+        }
+        sequence.end()
+    }
+}
+impl<'de> Deserialize<'de> for MappingMatrix {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match SparsePass::deserialize(deserializer)? {
+            SparsePass::List(x) => Ok(MappingMatrix::new(x.iter().map(|x| x.into()).collect())),
+        }
+    }
 }
 impl MappingMatrix {
     pub fn new(matrix: Vec<SparseColMat<u32, f32>>) -> Self {
@@ -29,7 +89,7 @@ impl MappingMatrix {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CompleteMapping {
     pub x: MappingMatrix,
     pub size: (u32, u32),
@@ -43,12 +103,13 @@ impl CompleteMapping {
 
 /// Struct to hold the matrices that we will build.
 /// Observations will be
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct LFMatrices {
     pub a: CompleteMapping,
     pub b: CompleteMapping,
     pub t: CompleteMapping,
 }
+
 impl LFMatrices {
     pub fn new(a: CompleteMapping, b: CompleteMapping, t: CompleteMapping) -> Self {
         LFMatrices { a, b, t }
@@ -56,10 +117,41 @@ impl LFMatrices {
 }
 
 #[derive(Clone)]
+pub struct StereoSparseWrapper {
+    pub matrix: SparseColMat<u32, f32>,
+}
+
+impl From<SparseColMat<u32, f32>> for StereoSparseWrapper {
+    fn from(value: SparseColMat<u32, f32>) -> Self {
+        StereoSparseWrapper { matrix: value }
+    }
+}
+
+impl Serialize for StereoSparseWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SparseAsList::from(self.matrix.as_ref()).serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for StereoSparseWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let matrix = &SparseAsList::deserialize(deserializer)?;
+        Ok(StereoSparseWrapper {
+            matrix: matrix.into(),
+        })
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 pub struct StereoMatrix {
     pub l_vec: Mat<f32>,
-    pub a_matrix: SparseColMat<u32, f32>,
-    pub b_matrix: SparseColMat<u32, f32>,
+    pub a_matrix: StereoSparseWrapper,
+    pub b_matrix: StereoSparseWrapper,
 
     pub panel_a_size: (u32, u32),
     pub panel_b_size: (u32, u32),
@@ -409,11 +501,11 @@ impl Lff for StereoMatrix {
         let matrices = self;
         println!(
             "Size of A Stereo Matrix is: {:?}",
-            matrices.a_matrix.shape()
+            matrices.a_matrix.matrix.shape()
         );
         println!(
             "Size of B Stereo Matrix is: {:?}",
-            matrices.b_matrix.shape()
+            matrices.b_matrix.matrix.shape()
         );
         let rows_a = self.panel_a_size.0 * self.panel_a_size.1;
         let rows_b = self.panel_b_size.0 * self.panel_b_size.1;
@@ -433,8 +525,8 @@ impl Lff for StereoMatrix {
             }
         });
         // Precompute the transpose
-        let m_a_trans = matrices.a_matrix.transpose();
-        let m_b_trans = matrices.b_matrix.transpose();
+        let m_a_trans = matrices.a_matrix.matrix.transpose();
+        let m_b_trans = matrices.b_matrix.matrix.transpose();
         let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
 
         let mut error = VecDeque::with_capacity(settings.iter_count);
@@ -445,8 +537,8 @@ impl Lff for StereoMatrix {
 
             let start = Instant::now();
             {
-                let t2_rays = &matrices.b_matrix * &vec_b;
-                let t1_rays = &matrices.a_matrix * &vec_a;
+                let t2_rays = &matrices.b_matrix.matrix * &vec_b;
+                let t1_rays = &matrices.a_matrix.matrix * &vec_a;
 
                 let upper = zip!(&t1_rays, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
                 let numerator = m_b_trans * upper;
@@ -461,8 +553,8 @@ impl Lff for StereoMatrix {
             // Step for A
             {
                 // Upper area
-                let t2_rays = &matrices.b_matrix * &vec_b;
-                let t1_rays = &matrices.a_matrix * &vec_a;
+                let t2_rays = &matrices.b_matrix.matrix * &vec_b;
+                let t1_rays = &matrices.a_matrix.matrix * &vec_a;
 
                 let upper = zip!(&t2_rays, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
                 let numerator = m_a_trans * upper;
@@ -477,8 +569,8 @@ impl Lff for StereoMatrix {
             {
                 // Compute error
                 if settings.save_error {
-                    let t2_rays = &matrices.b_matrix * &vec_b;
-                    let t1_rays = &matrices.a_matrix * &vec_a;
+                    let t2_rays = &matrices.b_matrix.matrix * &vec_b;
+                    let t1_rays = &matrices.a_matrix.matrix * &vec_a;
                     let total = zip!(&t1_rays, &t2_rays, &matrices.l_vec)
                         .map(|unzip!(t1, t2, l)| *l - (*t1 * *t2));
                     let norm = total.norm_l2();
