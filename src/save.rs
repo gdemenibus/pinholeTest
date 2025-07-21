@@ -129,8 +129,10 @@ pub struct Save {
     pub target: Target,
     panel_1: ScenePanel,
     panel_2: ScenePanel,
-    panel_1_texture: PathBuf,
-    panel_2_texture: PathBuf,
+    panel_1_texture_sep: PathBuf,
+    panel_2_texture_sep: PathBuf,
+    panel_1_texture_stereo: PathBuf,
+    panel_2_texture_stereo: PathBuf,
     name: String,
 }
 
@@ -141,8 +143,7 @@ impl Save {
         cache: &ImageCache,
         scene: &Scene,
     ) -> Self {
-        todo!("Change save to include outputs for both");
-        let path_core = PathBuf::from(format!("./saves/{}/", name));
+        let path_core = PathBuf::from(format!("./saves/scene_capture/{name}/"));
 
         if !path_core.exists() {
             std::fs::create_dir(&path_core).unwrap();
@@ -168,8 +169,11 @@ impl Save {
             cameras: cameras.clone(),
             name,
             target_path: target_image_path,
-            panel_1_texture: panel_1_image_path,
-            panel_2_texture: panel_2_image_path,
+            panel_1_texture_sep: panel_1_image_path.clone(),
+            panel_2_texture_sep: panel_2_image_path.clone(),
+
+            panel_1_texture_stereo: panel_1_image_path,
+            panel_2_texture_stereo: panel_2_image_path,
             panel_1: scene.panels[0].clone(),
             panel_2: scene.panels[1].clone(),
         };
@@ -179,7 +183,7 @@ impl Save {
     pub fn save_settings(&self) {
         let content = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default()).unwrap();
 
-        let path_core = PathBuf::from(format!("./saves/{}/save.ro", self.name));
+        let path_core = PathBuf::from(format!("./saves/scene_capture/{}/save.ro", self.name));
         fs::write(path_core, content).unwrap();
     }
 
@@ -217,7 +221,7 @@ pub struct SaveManager {
 }
 impl SaveManager {
     pub fn boot() -> SaveManager {
-        let path = PathBuf::from("./saves/");
+        let path = PathBuf::from("./saves/scene_capture/");
         let mut saves: VecDeque<Save> = VecDeque::new();
         for entry in WalkDir::new(path) {
             let mut save_path = entry.unwrap().into_path();
