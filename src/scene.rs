@@ -140,7 +140,7 @@ impl SphereHolder {
 }
 
 impl TextureBinds {
-    pub fn new(device: &wgpu::Device, queue: &Queue, cube_map: CubeMap) -> Self {
+    fn new(device: &wgpu::Device, queue: &Queue, cube_map: CubeMap) -> Self {
         //let texture_bytes = include_bytes!("../resources/textures/Aircraft_code.png");
 
         //let texture = texture::Texture::from_bytes(device, queue, texture_bytes, "Damn");
