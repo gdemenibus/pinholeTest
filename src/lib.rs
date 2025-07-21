@@ -1,5 +1,5 @@
 pub mod utils;
-use std::num::NonZero;
+use std::{fs, num::NonZero, path::PathBuf};
 
 // Library File that exposes and will be used to import as well
 //
@@ -114,6 +114,17 @@ impl LFMatrices {
     pub fn new(a: CompleteMapping, b: CompleteMapping, t: CompleteMapping) -> Self {
         LFMatrices { a, b, t }
     }
+    pub fn save(&self, path: String) {
+        let path_core = PathBuf::from(path);
+
+        let content = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default()).unwrap();
+
+        fs::write(path_core, content).unwrap();
+    }
+    pub fn load(path: String) -> Self {
+        let path_core = PathBuf::from(path);
+        ron::de::from_str(&fs::read_to_string(path_core).unwrap()).unwrap()
+    }
 }
 
 #[derive(Clone)]
@@ -156,6 +167,19 @@ pub struct StereoMatrix {
     pub panel_a_size: (u32, u32),
     pub panel_b_size: (u32, u32),
 }
+impl StereoMatrix {
+    pub fn save(&self, path: String) {
+        let path_core = PathBuf::from(path);
+
+        let content = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default()).unwrap();
+
+        fs::write(path_core, content).unwrap();
+    }
+    pub fn load(path: String) -> Self {
+        let path_core = PathBuf::from(path);
+        ron::de::from_str(&fs::read_to_string(path_core).unwrap()).unwrap()
+    }
+}
 
 pub struct LFSettings {
     pub iter_count: usize,
@@ -170,6 +194,7 @@ pub struct LFSettings {
     pub filter: bool,
     pub save_error: bool,
     pub debug_prints: bool,
+    pub save_to: String,
 }
 impl Default for LFSettings {
     fn default() -> Self {
@@ -186,6 +211,7 @@ impl Default for LFSettings {
             filter: false,
             save_error: true,
             debug_prints: true,
+            save_to: "Default".to_string(),
         }
     }
 }
@@ -222,6 +248,7 @@ impl DrawUI for LFSettings {
                 &mut self.starting_values.1,
                 0.0f32..=1.0f32,
             ));
+            ui.text_edit_singleline(&mut self.save_to);
         }
     }
 }
