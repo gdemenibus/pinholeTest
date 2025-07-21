@@ -1,7 +1,6 @@
 pub mod utils;
-use std::{fs, num::NonZero, path::PathBuf};
+use std::{num::NonZero, path::PathBuf};
 
-use cgmath::num_traits;
 // Library File that exposes and will be used to import as well
 //
 use faer::sparse::{SparseColMat, SparseColMatRef, Triplet};
@@ -19,7 +18,7 @@ use faer::{
     unzip, zip, Mat,
 };
 use image::DynamicImage;
-use serde::{ser::SerializeSeq, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
 enum SparsePass {
@@ -239,8 +238,6 @@ pub struct LFSettings {
     pub rng: bool,
     pub sample_next_redraw_flag: bool,
     pub solve_next_redraw_flag: bool,
-    pub blend: bool,
-    pub blend_sigma: f32,
     pub early_stop: bool,
     pub filter: bool,
     pub save_error: bool,
@@ -256,8 +253,6 @@ impl Default for LFSettings {
             starting_values: (0.5, 0.5),
             sample_next_redraw_flag: false,
             solve_next_redraw_flag: false,
-            blend: false,
-            blend_sigma: 0.1f32,
             early_stop: false,
             filter: false,
             save_error: true,
@@ -286,9 +281,6 @@ impl DrawUI for LFSettings {
                 self.solve_next_redraw_flag = true;
             }
 
-            ui.checkbox(&mut self.blend, "Blend Out Image");
-            ui.label("Sigma");
-            ui.add(egui::Slider::new(&mut self.blend_sigma, 0.0..=1.0));
             ui.checkbox(&mut self.rng, "Random starting values");
             ui.label("Initial guesses");
             ui.add(egui::Slider::new(
@@ -528,14 +520,7 @@ impl Lff for LFMatrices {
         utils::verify_matrix(&c_a);
         utils::verify_matrix(&c_b);
 
-        let image_a = {
-            let mut output = utils::matrix_to_image(&c_a);
-            if settings.blend {
-                output = output.fast_blur(settings.blend_sigma);
-            }
-
-            output
-        };
+        let image_a = utils::matrix_to_image(&c_a);
         image_a
             .save_with_format(
                 "./resources/panel_compute/panel_1.png",
@@ -543,13 +528,7 @@ impl Lff for LFMatrices {
             )
             .unwrap();
 
-        let image_b = {
-            let mut output = utils::matrix_to_image(&c_b);
-            if settings.blend {
-                output = output.fast_blur(settings.blend_sigma);
-            }
-            output
-        };
+        let image_b = utils::matrix_to_image(&c_b);
 
         image_b
             .save_with_format(
