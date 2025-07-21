@@ -6,8 +6,8 @@ use std::{
 use egui::{Context, Ui};
 use egui_file::FileDialog;
 use image::DynamicImage;
+use light_field_test::utils::DrawUI;
 
-use crate::scene::DrawUI;
 pub struct FilePicker {
     pub texture_file: PathBuf,
     pub file_dialog: FileDialog,

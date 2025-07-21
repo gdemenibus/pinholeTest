@@ -1,4 +1,4 @@
-use image::{DynamicImage, GenericImageView, ImageReader, Rgba, RgbaImage};
+use image::{DynamicImage, ImageReader};
 use plotters::{
     chart::ChartBuilder,
     prelude::{BitMapBackend, IntoDrawingArea},
@@ -11,8 +11,9 @@ use walkdir::WalkDir;
 
 use crate::{
     camera::Camera,
-    scene::{DrawUI, Scene, ScenePanel, Target},
+    scene::{Scene, ScenePanel, Target},
 };
+use light_field_test::utils::DrawUI;
 
 type OutCache = Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)>;
 /// Cache the current textures if they need to be saved

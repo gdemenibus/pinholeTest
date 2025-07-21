@@ -5,18 +5,19 @@ use crate::headless::HeadlessImage;
 use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
 use crate::save::{ImageCache, Save, SaveManager};
-use crate::scene::{DrawUI, Scene};
+use crate::scene::Scene;
 use crate::shape::Quad;
 use crate::stereoscope::StereoscopeBuffer;
 use crate::vertex;
 use crate::FileWatcher;
-use cgmath::{Vector2, Vector3};
+use cgmath::Vector3;
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
-use egui_notify::{Toast, Toasts};
+use egui_notify::Toasts;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
-use image::{DynamicImage, GenericImageView};
+use image::GenericImageView;
+use light_field_test::utils::DrawUI;
 use std::fs::{self, File};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
@@ -370,6 +371,7 @@ impl AppState {
     fn solve_stereo(&mut self) {
         self.compute_pass();
 
+        let ct_image = &self.image_cache.target_image;
         {
             // Y here maps to additional rows and X to additional Columns
             let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
@@ -389,10 +391,9 @@ impl AppState {
                 number_of_view_points,
             );
             println!("Factorizing");
-            let imgs = self.stereoscope.factorize_stereo(
-                (pixel_count_a.x, pixel_count_a.y),
-                (pixel_count_b.x, pixel_count_b.y),
-            );
+            let imgs =
+                self.stereoscope
+                    .factorize_stereo(ct_image, target_size, number_of_view_points);
             self.image_cache.cache_output(true, imgs);
             self.update_panel(0);
             self.update_panel(1);

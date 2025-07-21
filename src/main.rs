@@ -1,5 +1,5 @@
 #[macro_use]
-mod stereoscope;
+pub mod vertex;
 mod app;
 mod camera;
 mod compute_pass;
@@ -11,10 +11,9 @@ mod raytracer;
 mod save;
 mod scene;
 mod shape;
+mod stereoscope;
 mod texture;
-mod utils;
-mod vertex;
-use app::App;
+use crate::app::App;
 use notify::Watcher;
 use winit::event_loop::{EventLoop, EventLoopProxy};
 
