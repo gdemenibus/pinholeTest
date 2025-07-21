@@ -192,11 +192,11 @@ impl Save {
             .unwrap()
             .decode()
             .unwrap();
-        let panel_1 = ImageReader::open(&self.panel_1_texture)
+        let panel_1 = ImageReader::open(&self.panel_1_texture_sep)
             .unwrap()
             .decode()
             .unwrap();
-        let panel_2 = ImageReader::open(&self.panel_2_texture)
+        let panel_2 = ImageReader::open(&self.panel_2_texture_sep)
             .unwrap()
             .decode()
             .unwrap();

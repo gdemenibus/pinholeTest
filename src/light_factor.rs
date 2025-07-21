@@ -370,6 +370,8 @@ impl LFBuffers {
         device: &wgpu::Device,
         pixel_count_a: Vector2<u32>,
         pixel_count_b: Vector2<u32>,
+
+        c_t: &DynamicImage,
         target_size: (u32, u32),
         number_of_view_points: u32,
     ) {
@@ -384,19 +386,23 @@ impl LFBuffers {
         let b = self.build_m_b(device, number_of_rays, target_size, panel_b_size);
         // TO BE CHANGED SOON
         let t = self.build_m_t(device, number_of_rays, target_size);
-        let matrices = LFMatrices { a, b, t };
+        let matrices = LFMatrices {
+            a,
+            b,
+            t,
+            c_t: c_t.clone(),
+            target_size,
+            number_of_view_points,
+        };
 
         self.matrix_rep = Some(matrices);
     }
 
     pub fn alternative_factorization(
         &self,
-        c_t: &DynamicImage,
-        target_size: (u32, u32),
-        number_of_view_points: u32,
     ) -> Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)> {
         if let Some(rep) = &self.matrix_rep {
-            rep.factorize(c_t, target_size, number_of_view_points, &self.settings)
+            rep.factorize(&self.settings)
         } else {
             None
         }
@@ -416,6 +422,11 @@ impl DrawUI for LFBuffers {
             .show(ctx, |ui| {
                 if ui.button("Reset").clicked() {
                     self.matrix_rep = None;
+                }
+                if ui.button("Save").clicked() {
+                    if let Some(rep) = self.matrix_rep.as_ref() {
+                        rep.save(self.settings.save_to.clone());
+                    }
                 }
                 self.settings.draw_ui(ctx, Some(title), Some(ui));
             });

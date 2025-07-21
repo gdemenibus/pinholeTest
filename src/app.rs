@@ -371,7 +371,6 @@ impl AppState {
     fn solve_stereo(&mut self) {
         self.compute_pass();
 
-        let ct_image = &self.image_cache.target_image;
         {
             // Y here maps to additional rows and X to additional Columns
             let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
@@ -391,9 +390,7 @@ impl AppState {
                 number_of_view_points,
             );
             println!("Factorizing");
-            let imgs =
-                self.stereoscope
-                    .factorize_stereo(ct_image, target_size, number_of_view_points);
+            let imgs = self.stereoscope.factorize_stereo();
             self.image_cache.cache_output(true, imgs);
             self.update_panel(0);
             self.update_panel(1);
@@ -419,27 +416,16 @@ impl AppState {
                 &self.device,
                 pixel_count_a,
                 pixel_count_b,
-                target_size,
-                number_of_view_points,
-            );
-            println!("Factorizing");
-            let images = self.factorizer.alternative_factorization(
                 ct_image,
                 target_size,
                 number_of_view_points,
             );
+            println!("Factorizing");
+            let images = self.factorizer.alternative_factorization();
 
             self.image_cache.cache_output(false, images);
             self.update_panel(0);
             self.update_panel(1);
-
-            // if let Some((steroe_image_0, stereo_image_1, error)) = stereo_imgaes {
-            //     self.update_panel(&steroe_image_0, 0);
-            //     self.update_panel(&stereo_image_1, 1);
-            //     self.image_cache.error = error;
-            // } else {
-            //     println!("Error with stereo Process")
-            // }
         }
     }
 
