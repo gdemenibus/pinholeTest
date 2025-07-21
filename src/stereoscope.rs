@@ -181,9 +181,9 @@ impl StereoscopeBuffer {
         }
 
         println!("Building Stereo A");
-        let a_matrix = self.build_m_a(device, rays_cast, panel_a_size);
+        let a_matrix = self.build_m_a(device, rays_cast, panel_a_size).into();
         println!("Building Stereo B");
-        let b_matrix = self.build_m_b(device, rays_cast, panel_b_size);
+        let b_matrix = self.build_m_b(device, rays_cast, panel_b_size).into();
         let stereo = StereoMatrix {
             panel_a_size: (pixel_count_a.x, pixel_count_a.y),
             panel_b_size: (pixel_count_b.x, pixel_count_b.y),
