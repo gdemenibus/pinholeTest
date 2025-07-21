@@ -1,14 +1,16 @@
 use cgmath::Vector2;
-use egui::ahash::HashSet;
+use egui::{ahash::HashSet, Context, Ui};
 use faer::{
     sparse::{SparseColMat, SparseRowMat, Triplet},
-    ColRef, Mat, MatRef, RowRef,
+    ColRef, Mat, MatMut, MatRef, RowRef,
 };
 use image::{DynamicImage, GenericImageView, ImageBuffer};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, ParallelBridge, ParallelIterator,
 };
 use wgpu::Buffer;
+
+use crate::CompleteMapping;
 
 pub fn sample_buffer(sample_buffer: &Buffer, device: &wgpu::Device) -> Vec<u8> {
     let buffer_slice = sample_buffer.slice(..);
@@ -271,6 +273,46 @@ pub fn build_tripltes(
         .collect();
     //check_triplets(rows, columns, &mut triplets);
     triplets
+}
+
+pub trait DrawUI {
+    /*
+    Draw UI for this element
+    */
+    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let _ = title;
+        let _ = ctx;
+        let _ = ui;
+    }
+}
+
+pub fn filter_zeroes(mat: &mut Mat<f32, usize, usize>, mapping_mat: &CompleteMapping) {
+    for x in 0..mapping_mat.x.matrix.len() {
+        let mat_x = &mapping_mat.x.matrix[x];
+        let mat_y = &mapping_mat.y.matrix[x];
+        filter_helper(mat.as_mut(), mat_x, mat_y);
+    }
+}
+
+fn filter_helper(
+    mat: MatMut<f32, usize, usize>,
+    mat_x: &SparseColMat<u32, f32>,
+    mat_y: &SparseColMat<u32, f32>,
+) {
+    let x_ncols = mat_x.col_ptr();
+    let y_ncols = mat_y.col_ptr();
+
+    for (column, x) in mat.col_iter_mut().enumerate() {
+        for (row, y) in x.iter_mut().enumerate() {
+            if *y != 0.0 {
+                //break;
+            }
+            // This means there are no entries for this column
+            if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
+                *y = 1.0;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,9 +1,8 @@
 use std::cmp::Ordering;
 
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
+use light_field_test::utils::DrawUI;
 use serde::{Deserialize, Serialize};
-
-use crate::scene::DrawUI;
 
 pub trait Shape: crevice::std140::AsStd140 {
     /* Return a new shape at the position that the model matrix determined

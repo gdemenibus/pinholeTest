@@ -1,4 +1,5 @@
 use image::{DynamicImage, GenericImageView};
+use light_field_test::utils::DrawUI;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use wgpu::{util::DeviceExt, BindGroupLayout, ComputePass, Queue, RenderPass};
@@ -22,17 +23,6 @@ const FRONT: &[u8] = include_bytes!("../resources/skybox/front.jpg");
 const LEFT: &[u8] = include_bytes!("../resources/skybox/left.jpg");
 const RIGHT: &[u8] = include_bytes!("../resources/skybox/right.jpg");
 const TOP: &[u8] = include_bytes!("../resources/skybox/top.jpg");
-
-pub trait DrawUI {
-    /*
-    Draw UI for this element
-    */
-    fn draw_ui(&mut self, ctx: &Context, title: Option<String>, ui: Option<&mut Ui>) {
-        let _ = title;
-        let _ = ctx;
-        let _ = ui;
-    }
-}
 
 /*
 TODO: SCENE ONLY USES QUAD, MIGHT WANT MORE?
