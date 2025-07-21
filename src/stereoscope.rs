@@ -190,6 +190,8 @@ impl StereoscopeBuffer {
             l_vec,
             a_matrix,
             b_matrix,
+            target_size,
+            number_of_view_points,
         };
         self.matrix_rep = Some(stereo);
     }
@@ -206,15 +208,8 @@ impl StereoscopeBuffer {
     pub fn will_solve(&self) -> bool {
         self.settings.solve_next_redraw_flag
     }
-    pub fn factorize_stereo(
-        &self,
-        c_t: &DynamicImage,
-        target_size: (u32, u32),
-        number_of_view_points: u32,
-    ) -> Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)> {
-        self.matrix_rep
-            .as_ref()?
-            .factorize(c_t, target_size, number_of_view_points, &self.settings)
+    pub fn factorize_stereo(&self) -> Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)> {
+        self.matrix_rep.as_ref()?.factorize(&self.settings)
     }
 }
 
@@ -231,6 +226,12 @@ impl DrawUI for StereoscopeBuffer {
             .show(ctx, |ui| {
                 if ui.button("Reset").clicked() {
                     self.matrix_rep = None;
+                }
+
+                if ui.button("Save").clicked() {
+                    if let Some(rep) = &self.matrix_rep {
+                        rep.save(self.settings.save_to.clone());
+                    }
                 }
                 self.settings.draw_ui(ctx, Some(title), Some(ui));
             });

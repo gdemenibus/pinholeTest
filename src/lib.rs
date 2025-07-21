@@ -1,6 +1,7 @@
 pub mod utils;
 use std::{fs, num::NonZero, path::PathBuf};
 
+use cgmath::num_traits;
 // Library File that exposes and will be used to import as well
 //
 use faer::sparse::{SparseColMat, SparseColMatRef, Triplet};
@@ -20,7 +21,7 @@ use faer::{
 use image::DynamicImage;
 use serde::{ser::SerializeSeq, Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 enum SparsePass {
     List(Vec<SparseAsList>),
 }
@@ -30,6 +31,7 @@ pub struct SparseAsList {
     shape: (usize, usize),
     triplet_list: Vec<(usize, usize, f32)>,
 }
+
 impl Into<SparseColMat<u32, f32>> for &SparseAsList {
     fn into(self) -> SparseColMat<u32, f32> {
         let entries: Vec<Triplet<u32, u32, f32>> = self
@@ -41,6 +43,7 @@ impl Into<SparseColMat<u32, f32>> for &SparseAsList {
             .unwrap()
     }
 }
+
 impl From<SparseColMatRef<'_, u32, f32>> for SparseAsList {
     fn from(value: SparseColMatRef<u32, f32>) -> Self {
         let shape = value.shape();
@@ -64,13 +67,8 @@ impl Serialize for MappingMatrix {
     where
         S: serde::Serializer,
     {
-        let mut sequence = serializer.serialize_seq(Some(self.matrix.len()))?;
-
-        for matrix in self.matrix.iter() {
-            let list = SparseAsList::from(matrix.as_ref());
-            sequence.serialize_element(&list)?;
-        }
-        sequence.end()
+        SparsePass::List(self.matrix.iter().map(|x| x.as_ref().into()).collect())
+            .serialize(serializer)
     }
 }
 impl<'de> Deserialize<'de> for MappingMatrix {
@@ -108,22 +106,55 @@ pub struct LFMatrices {
     pub a: CompleteMapping,
     pub b: CompleteMapping,
     pub t: CompleteMapping,
+    #[serde(skip)]
+    pub c_t: DynamicImage,
+    pub target_size: (u32, u32),
+    pub number_of_view_points: u32,
 }
 
 impl LFMatrices {
-    pub fn new(a: CompleteMapping, b: CompleteMapping, t: CompleteMapping) -> Self {
-        LFMatrices { a, b, t }
+    pub fn new(
+        a: CompleteMapping,
+        b: CompleteMapping,
+        t: CompleteMapping,
+        c_t: DynamicImage,
+        target_size: (u32, u32),
+        number_of_view_points: u32,
+    ) -> Self {
+        LFMatrices {
+            a,
+            b,
+            t,
+            c_t,
+            target_size,
+            number_of_view_points,
+        }
     }
     pub fn save(&self, path: String) {
-        let path_core = PathBuf::from(path);
-
-        let content = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default()).unwrap();
-
-        fs::write(path_core, content).unwrap();
+        let path = {
+            if !path.ends_with(".ro") {
+                format!("{path}.ro")
+            } else {
+                path
+            }
+        };
+        let path_core = PathBuf::from(format!("./saves/matrix_capture/sep/{path}"));
+        let mut file = std::fs::File::create(&path_core).unwrap();
+        let config = bincode::config::standard();
+        bincode::serde::encode_into_std_write(self, &mut file, config).unwrap();
     }
     pub fn load(path: String) -> Self {
-        let path_core = PathBuf::from(path);
-        ron::de::from_str(&fs::read_to_string(path_core).unwrap()).unwrap()
+        let path = {
+            if !path.ends_with(".ro") {
+                format!("{path}.ro")
+            } else {
+                path
+            }
+        };
+        let path_core = PathBuf::from(format!("./saves/matrix_capture/sep/{path}"));
+        let mut file = std::fs::File::open(path_core).unwrap();
+        let config = bincode::config::standard();
+        bincode::serde::decode_from_std_read(&mut file, config).unwrap()
     }
 }
 
@@ -166,18 +197,38 @@ pub struct StereoMatrix {
 
     pub panel_a_size: (u32, u32),
     pub panel_b_size: (u32, u32),
+
+    pub target_size: (u32, u32),
+    pub number_of_view_points: u32,
 }
 impl StereoMatrix {
     pub fn save(&self, path: String) {
-        let path_core = PathBuf::from(path);
+        let path = {
+            if !path.ends_with(".ro") {
+                format!("{path}.ro")
+            } else {
+                path
+            }
+        };
 
-        let content = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default()).unwrap();
-
-        fs::write(path_core, content).unwrap();
+        let path_core = PathBuf::from(format!("./saves/matrix_capture/stereo/{path}"));
+        let mut file = std::fs::File::create(&path_core).unwrap();
+        let config = bincode::config::standard();
+        bincode::serde::encode_into_std_write(self, &mut file, config).unwrap();
     }
     pub fn load(path: String) -> Self {
-        let path_core = PathBuf::from(path);
-        ron::de::from_str(&fs::read_to_string(path_core).unwrap()).unwrap()
+        let path = {
+            if !path.ends_with(".ro") {
+                format!("{path}.ro")
+            } else {
+                path
+            }
+        };
+
+        let path_core = PathBuf::from(format!("./saves/matrix_capture/stereo/{path}"));
+        let mut file = std::fs::File::open(path_core).unwrap();
+        let config = bincode::config::standard();
+        bincode::serde::decode_from_std_read(&mut file, config).unwrap()
     }
 }
 
@@ -200,7 +251,7 @@ impl Default for LFSettings {
     fn default() -> Self {
         LFSettings {
             rng: false,
-            iter_count: 50,
+            iter_count: 10,
             show_steps: false,
             starting_values: (0.5, 0.5),
             sample_next_redraw_flag: false,
@@ -215,6 +266,7 @@ impl Default for LFSettings {
         }
     }
 }
+
 impl DrawUI for LFSettings {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut egui::Ui>) {
         let _ = title;
@@ -257,14 +309,8 @@ type L2Norm = Vec<f32>;
 pub trait Lff {
     fn factorize(
         &self,
-        c_t: &DynamicImage,
-        target_size: (u32, u32),
-        number_of_view_points: u32,
         settings: &LFSettings,
     ) -> Option<(DynamicImage, DynamicImage, Option<L2Norm>)> {
-        let _ = c_t;
-        let _ = target_size;
-        let _ = number_of_view_points;
         let _ = settings;
         let _ = self;
         None
@@ -274,12 +320,12 @@ pub trait Lff {
 impl Lff for LFMatrices {
     fn factorize(
         &self,
-        c_t: &DynamicImage,
-        target_size: (u32, u32),
-        number_of_view_points: u32,
         settings: &LFSettings,
     ) -> Option<(DynamicImage, DynamicImage, Option<L2Norm>)> {
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
+        let target_size = self.target_size;
+        let number_of_view_points = self.number_of_view_points;
+        let c_t = &self.c_t;
         if settings.debug_prints {
             println!(
                 "Global Parallelism is: {:?}",
@@ -291,13 +337,17 @@ impl Lff for LFMatrices {
             target_size.1 * number_of_view_points,
             target_size.0 * number_of_view_points,
         );
-        println!("Rays Cast is: {rays_cast:?}");
+        if settings.debug_prints {
+            println!("Rays Cast is: {rays_cast:?}");
+        }
 
         let matrices = self;
 
         let c_t = utils::image_to_matrix(c_t);
+        if settings.debug_prints {
+            println!("C_T shape: {:?}", c_t.shape());
+        }
 
-        println!("C_T shape: {:?}", c_t.shape());
         utils::verify_matrix(&c_t);
         utils::matrix_to_image(&c_t)
             .save_with_format(
@@ -344,7 +394,13 @@ impl Lff for LFMatrices {
 
         // Doesn't change
 
-        let progress_bar = indicatif::ProgressBar::new(settings.iter_count as u64);
+        let mut progress_bar = {
+            if settings.debug_prints {
+                Some(indicatif::ProgressBar::new(settings.iter_count as u64))
+            } else {
+                None
+            }
+        };
         let mut error = VecDeque::with_capacity(settings.iter_count);
 
         let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
@@ -356,7 +412,7 @@ impl Lff for LFMatrices {
         let mut denominator_b = Mat::zeros(c_b.nrows(), c_b.ncols());
         for _x in 0..settings.iter_count {
             let start = Instant::now();
-            progress_bar.inc(1);
+            progress_bar.as_mut().inspect(|x| x.inc(1));
 
             // if settings.show_steps {
             //     let path_1 = format!(
@@ -461,7 +517,10 @@ impl Lff for LFMatrices {
 
         let total_time: Duration = time_taken_total.iter().sum();
         let average_time = total_time / settings.iter_count as u32;
-        println!("Average time per iteration: {average_time:?}");
+        if settings.debug_prints {
+            println!("Average time per iteration: {average_time:?}");
+        }
+
         if settings.filter {
             utils::filter_zeroes(&mut c_a, &matrices.a);
             utils::filter_zeroes(&mut c_b, &matrices.b);
@@ -499,7 +558,9 @@ impl Lff for LFMatrices {
             )
             .unwrap();
 
-        println!("Errors is: {error:?}");
+        if settings.debug_prints {
+            println!("Errors is: {error:?}");
+        }
         let error = {
             if settings.save_error {
                 Some(error.into())
@@ -515,25 +576,21 @@ impl Lff for LFMatrices {
 impl Lff for StereoMatrix {
     fn factorize(
         &self,
-        c_t: &DynamicImage,
-        target_size: (u32, u32),
-        number_of_view_points: u32,
         settings: &LFSettings,
     ) -> Option<(DynamicImage, DynamicImage, Option<L2Norm>)> {
-        let _ = c_t;
-        let _ = target_size;
-        let _ = number_of_view_points;
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
 
         let matrices = self;
-        println!(
-            "Size of A Stereo Matrix is: {:?}",
-            matrices.a_matrix.matrix.shape()
-        );
-        println!(
-            "Size of B Stereo Matrix is: {:?}",
-            matrices.b_matrix.matrix.shape()
-        );
+        if settings.debug_prints {
+            println!(
+                "Size of A Stereo Matrix is: {:?}",
+                matrices.a_matrix.matrix.shape()
+            );
+            println!(
+                "Size of B Stereo Matrix is: {:?}",
+                matrices.b_matrix.matrix.shape()
+            );
+        }
         let rows_a = self.panel_a_size.0 * self.panel_a_size.1;
         let rows_b = self.panel_b_size.0 * self.panel_b_size.1;
         let mut vec_a = Mat::from_fn(rows_a as usize, 1, |_x, _y| {
@@ -557,10 +614,18 @@ impl Lff for StereoMatrix {
         let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
 
         let mut error = VecDeque::with_capacity(settings.iter_count);
-        println!("Computing Stereo Approach");
-        let progress_bar = indicatif::ProgressBar::new(settings.iter_count as u64);
+        if settings.debug_prints {
+            println!("Computing Stereo Approach");
+        }
+        let mut progress_bar = {
+            if settings.debug_prints {
+                Some(indicatif::ProgressBar::new(settings.iter_count as u64))
+            } else {
+                None
+            }
+        };
         for _x in 0..settings.iter_count {
-            progress_bar.inc(1);
+            progress_bar.as_mut().inspect(|x| x.inc(1));
 
             let start = Instant::now();
             {
@@ -622,9 +687,11 @@ impl Lff for StereoMatrix {
         let b = utils::vector_to_image(&vec_b, self.panel_b_size.0, self.panel_b_size.1);
         let total_time: Duration = time_taken_total.iter().sum();
         let average_time = total_time / settings.iter_count as u32;
-        println!("Average time per iteration: {average_time:?}");
+        if settings.debug_prints {
+            println!("Average time per iteration: {average_time:?}");
 
-        println!("Errors is: {error:?}");
+            println!("Errors is: {error:?}");
+        }
         let error = {
             if settings.save_error {
                 Some(error.into())
