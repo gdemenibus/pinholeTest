@@ -1,7 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use egui::{Context, Ui};
 use egui_file::FileDialog;
+use image::DynamicImage;
 
 use crate::scene::DrawUI;
 pub struct FilePicker {
@@ -15,7 +19,7 @@ impl Clone for FilePicker {
         Self {
             texture_file: self.texture_file.clone(),
             file_dialog: FileDialog::open_file(Some(self.texture_file.clone())),
-            change_file: self.change_file.clone(),
+            change_file: self.change_file,
             default_texture: self.default_texture.clone(),
         }
     }
@@ -47,6 +51,21 @@ impl FilePicker {
     }
     pub fn default_texture(&self) -> &PathBuf {
         &self.default_texture
+    }
+    pub fn load_texture(&self) -> DynamicImage {
+        let path = {
+            let path = &self.texture_file;
+
+            let file = File::open(path).unwrap();
+            if file.metadata().unwrap().is_file() {
+                path
+            } else {
+                println!("Default Texture ");
+                self.default_texture()
+            }
+        };
+
+        image::ImageReader::open(path).unwrap().decode().unwrap()
     }
 }
 impl Default for FilePicker {

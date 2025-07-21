@@ -35,18 +35,31 @@ struct Panel {
     pixel_count: vec2u,
     size: vec2f,
 }
+struct Sphere {
+    center: vec3<f32>,
+    radius: f32,
+    color: vec4<f32>,
+    swap_color: vec4<f32>,
+}
 
 const eps = 0.00001;
 const scene_size: u32 = 1;
 const miss_color: vec4f = vec4(0.0, 0.0, 0.0, 0.0);
 const border_color: vec4f = vec4(1.0, 0.0, 0.0, 1.0);
-const background_color: vec4f = vec4(1.0, 1.0, 1.3, 1.0);
+const PI: f32 = 3.141592653589793;
 
 // Scene group
 @group(0) @binding(0)
 var<uniform> scene: Target;
 @group(0) @binding(1)
 var<uniform> rt: RayTraceInfo;
+@group(0) @binding(2)
+var<uniform> background_color: vec4<f32>;
+@group(0) @binding(3)
+var<uniform> sphere: Sphere;
+@group(0) @binding(4)
+var<uniform> transparent_content: u32;
+
 // Panel Group
 
 // Texture group
@@ -56,6 +69,11 @@ var t_diffuse: texture_2d<f32>;
 var s_diffuse: sampler;
 @group(1) @binding(2)
 var<uniform> tex_size: vec2<u32>;
+
+@group(1) @binding(3)
+var cubeMap: texture_cube<f32>;
+@group(1) @binding(4)
+var cube_sampler: sampler;
 
 // Panel group!
 @group(2) @binding(0)
@@ -82,14 +100,6 @@ var<uniform> distort_rays: u32;
 // (x + y * column) * 3
 // we need to give every x 3 entries.
 // WARNING: This needs to be double tested!
-@group(3) @binding(0)
-var<storage, read_write> m_a_y_buffer: array<u32>;
-@group(3) @binding(1)
-var<storage, read_write> m_a_x_buffer: array<u32>;
-@group(3) @binding(2)
-var<storage, read_write> m_b_y_buffer: array<u32>;
-@group(3) @binding(3)
-var<storage, read_write> m_b_x_buffer: array<u32>;
 struct VertexOutput {
     // Like gl_position
     // Gives us the pixel that we are drawing for
@@ -120,6 +130,8 @@ struct FragmentOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
 
+    let trans_content = bool(transparent_content);
+
     // THE OLD FAITHFUL
 
     // Clip position tells us the fragment location
@@ -134,6 +146,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     ray_dir = normalize(ray_dir);
 
+    let sphere_or_background = sphere_intersection(ray, sphere);
+
     // If panels are involved, means we are going to hit something
     //
     if panels_use_texture != 0 {
@@ -141,10 +155,12 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         if panel_hit.hit == true {
             if panel_hit.border {
                 return FragmentOutput(border_color, border_color);
+
             }
+
             return FragmentOutput(
-                panel_hit.color * background_color,
-                panel_hit.color * background_color,
+                panel_hit.color * sphere_or_background,
+                panel_hit.color * sphere_or_background,
             );
 
         }
@@ -179,13 +195,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         let trig_2 = intersection_panel(&ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
 
         if trig_1.border {
-            clean_up_record(position);
             return FragmentOutput(border_color, border_color);
         }
 
         if trig_2.border {
 
-            clean_up_record(position);
             return FragmentOutput(border_color, border_color);
         }
     }
@@ -198,13 +212,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
         let trig_2 = intersection_panel(&ray, panel.quad.b, panel.quad.c, panel.quad.d, false, panel);
 
         if trig_1.border {
-            clean_up_record(position);
             return FragmentOutput(border_color, border_color);
         }
 
         if trig_2.border {
 
-            clean_up_record(position);
             return FragmentOutput(border_color, border_color);
         }
 
@@ -265,7 +277,10 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
             var out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
-            out = out * background_color;
+            if trans_content {
+
+                out = out * sphere_or_background;
+            }
             return FragmentOutput(out, out);
 
         }
@@ -282,15 +297,17 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
             let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
 
             var out = vec4f(gray_scale, gray_scale, gray_scale, color.a);
-            out = out * background_color;
+            if trans_content {
+
+                out = out * sphere_or_background;
+            }
 
             return FragmentOutput(out, out);
         }
         return FragmentOutput(color, color);
     }
 
-    clean_up_record(position);
-    return FragmentOutput(background_color, background_color);
+    return FragmentOutput(sphere_or_background, sphere_or_background);
 }
 
 struct PanelHit {
@@ -348,54 +365,6 @@ fn panels_texture_hit(ray: ptr<function, Ray>) -> PanelHit {
 }
 
 
-fn record_light_field_sample(position: vec2<f32>, panel_1_coords: vec2<u32>, panel_2_coords: vec2<u32>, targets_coords: vec2<u32>, sample: f32) {
-    // First location
-    //
-    // (x + y * column) * 3
-    //
-    let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
-    // There is padding from the border. The pixel count should be 2 less
-    // And remove one from pixel panel coordinates
-
-    //  1.0 means there was an intersection.
-    //  0.0 means we didn't hit
-
-    // ROW, COLUMN, ENTRY
-    // There is an unusual problem, sometimes we record hits that are outside the panel?
-    m_a_y_buffer[array_coordination] = min(targets_coords.y, scene.pixel_count.y);
-    m_a_y_buffer[array_coordination + 1] = min(panel_1_coords.y, panels[0].pixel_count.y);
-    m_a_y_buffer[array_coordination + 2] = 1;
-
-    m_a_x_buffer[array_coordination] = min(targets_coords.x, scene.pixel_count.x);
-    m_a_x_buffer[array_coordination + 1] = min(panel_1_coords.x, panels[0].pixel_count.x);
-    m_a_x_buffer[array_coordination + 2] = 1;
-
-    m_b_y_buffer[array_coordination] = min(targets_coords.y, scene.pixel_count.y);
-    m_b_y_buffer[array_coordination + 1] = min(panel_2_coords.y, panels[1].pixel_count.y);
-    m_b_y_buffer[array_coordination + 2] = 1;
-
-    m_b_x_buffer[array_coordination] = min(targets_coords.x, scene.pixel_count.x);
-    m_b_x_buffer[array_coordination + 1] = min(panel_2_coords.x, panels[1].pixel_count.x);
-    m_b_x_buffer[array_coordination + 2] = 1;
-}
-fn clean_up_record(position: vec2<f32>) {
-    let array_coordination = (u32(position.x) + u32(position.y) * 2560) * 3;
-    m_a_y_buffer[array_coordination] = 0;
-    m_a_y_buffer[array_coordination + 1] = 0;
-    m_a_y_buffer[array_coordination + 2] = 0;
-
-    m_a_x_buffer[array_coordination] = 0;
-    m_a_x_buffer[array_coordination + 1] = 0;
-    m_a_x_buffer[array_coordination + 2] = 0;
-
-    m_b_y_buffer[array_coordination] = 0;
-    m_b_y_buffer[array_coordination + 1] = 0;
-    m_b_y_buffer[array_coordination + 2] = 0;
-
-    m_b_x_buffer[array_coordination] = 0;
-    m_b_x_buffer[array_coordination + 1] = 0;
-    m_b_x_buffer[array_coordination + 2] = 0;
-}
 // Distortion of Ray caused by limits of the panel
 // Change the Ray that will be used for other intersections
 fn light_field_distortion(ray: ptr<function, Ray>, new_origin: vec3f, new_direction: vec3f) {
@@ -497,7 +466,7 @@ fn intersection_panel(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc
     // At this stage we can compute t to find out where the intersection point is on the line.
     var t = inv_det * dot(s_cross_e1, e2);
 
-    if t > eps {
+    if t >= eps {
         hit = true;
         let bary_coords = vec3f(u, v, w);
 
@@ -660,6 +629,40 @@ fn intersection(ray: ptr<function, Ray>, a: vec3f, b: vec3f, c: vec3f, abc: bool
         miss_color,
         vec2u(0, 0),
     );
+}
+
+
+fn sphere_intersection(ray: Ray, sphere: Sphere) -> vec4<f32> {
+
+    let a = dot(ray.direction, ray.direction);
+    let s0_r0 = ray.origin - sphere.center;
+    let b = 2.0 * dot(ray.direction, s0_r0);
+    let c = dot(s0_r0, s0_r0) - (sphere.radius * sphere.radius);
+    let discriminant = b * b - 4.0 * a * c;
+    if (b * b - 4.0 * a * c < 0.0) {
+        let direction = normalize(ray.direction);
+        return textureSample(cubeMap, cube_sampler, direction);
+    }
+
+    let coordinates = (-b - sqrt(discriminant)) / (2.0 * a);
+    return checkerboard(coordinates, ray, sphere);
+
+}
+fn ray_at(ray: Ray, t: f32) -> vec3<f32> {
+    return ray.origin + t * ray.direction;
+}
+fn checkerboard(intersection: f32, ray: Ray, sphere: Sphere) -> vec4<f32> {
+    let p = normalize(ray_at(ray, intersection) - sphere.center);
+    let u = 0.5 + atan2(p.z, p.x) / (2.0 * PI);
+    let v = 0.5 - asin(p.y) / PI;
+    let scale = 10.0;
+    let checker = i32(floor(u * scale) + floor(v * scale)) % 2;
+    if checker == 0 {
+        return sphere.color;
+    } else {
+        return sphere.swap_color;
+    }
+
 }
 
 // Texture is upside down for Shader? why?

@@ -38,9 +38,6 @@ const eps = 0.00001;
 var<uniform> scene: Target;
 @group(0) @binding(1)
 var<uniform> rt: RayTraceInfo;
-
-@group(0) @binding(2)
-var<uniform> background_color: vec4<f32>;
 // Panel Group
 
 // Texture group
@@ -48,8 +45,8 @@ var<uniform> background_color: vec4<f32>;
 var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1)
 var s_diffuse: sampler;
-@group(1) @binding(2)
-var<uniform> tex_size: vec2<u32>;
+@group(0) @binding(2)
+var<uniform> background_color: vec4<f32>;
 
 // Panel group!
 @group(2) @binding(0)
@@ -90,9 +87,9 @@ var<storage, read_write> m_t_x_buffer: array<u32>;
 
 // Deals with camera history
 // We need to declare a maximum in order to handle this. 10 seems like a correct amount?
-// If we need more than 10, make this a x, y, z problem instead?
-@group(5) @binding(0) var<storage, read> camera_positions: array<vec3<f32>>;
+@group(5) @binding(0) var<uniform> camera_positions: array<vec3<f32>, 10>;
 @group(5) @binding(1) var<uniform> camera_count: u32;
+
 
 @group(6) @binding(0)
 var<storage, read_write> a_buffer: array<u32>;
@@ -104,135 +101,118 @@ var<storage, read_write> l_buffer: array<f32>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
     let screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, GlobalInvocationID.y);
+    let panel_projection = panels[1];
 
-    if screen_pos.x <= scene.pixel_count.x && screen_pos.y <= scene.pixel_count.y {
-        let pixel_location = pixel_to_world_location(scene, screen_pos);
-        let origin = pixel_location;
+    if screen_pos.x < panel_projection.pixel_count.x && screen_pos.y < panel_projection.pixel_count.y {
+
+        let pixel_location = pixel_to_world_location(panel_projection, screen_pos);
+
         for (var camera_index = 0u; camera_index < camera_count; camera_index++) {
             let observer = camera_positions[camera_index];
 
-            let direction = normalize(observer - pixel_location);
+            let direction = normalize(pixel_location - observer);
 
             // Build the ray
-            let ray = Ray(origin, direction);
-            double_intersection(ray, screen_pos, camera_index);
+            let ray = Ray(observer, direction);
+            // Check Panel A
+            panel_other_intersection(ray, screen_pos, camera_index);
+            target_intersection(ray, screen_pos, camera_index);
+            record_hit_B(screen_pos, screen_pos, camera_index);
 
-        }
+        // Check Target
 
-    //let current_pixel_float = vec2f(f32(screen_pos.x) / f32(tex_size.x), f32(screen_pos.y) / f32(tex_size.y));
-
-    //let color = textureSampleLevel(t_diffuse, s_diffuse, current_pixel_float, 0.0);
-    //let color = vec4f(current_pixel_float.x, current_pixel_float.y, 0.0, 1.0);
-
-    //textureStore(color_buffer, screen_pos, color);
-
-    } else {
-        let red = vec4f(1.0, 0.0, 0.0, 1.0);
-
-        textureStore(color_buffer, screen_pos, red);
-
-    }
-    // ensure everyone has written??
-    storageBarrier();
-
-}
-
-fn double_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
-
-    // Pixel count is width by height
-    let ray_index = current_pixel.x + (scene.pixel_count.x * current_pixel.y) + (observer_index * scene.pixel_count.x * scene.pixel_count.y);
-
-    // Panels are ordered such that the first panel is the closest to the observer
-    // Index 0 aligns with A
-    for (var index = 0u; index < 2; index++) {
-        var trig_1_intersection = intersection_panel(ray, true, panels[index]);
-        var trig_2_intersection = intersection_panel(ray, false, panels[index]);
-
-        let pixel_count = panels[index].pixel_count;
-
-        if trig_1_intersection.hit {
-            let pixel_coords = trig_1_intersection.pixel_coords;
-            let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
-
-            if index == 0 {
-                //record_hit_A(ray_index, pixel_coords, observer_index);
-                record_hit_Theta_A(ray_index, pixel_coords);
-
-            } else {
-
-                //record_hit_B(ray_index, pixel_coords, observer_index);
-                record_hit_Theta_B(ray_index, pixel_coords);
-
-            }
-
-        //color = vec4f(hit_relative, 0.0, 1.0);
-        }
-        if trig_1_intersection.border {
-        }
-
-        if trig_2_intersection.hit {
-
-            let pixel_coords = trig_2_intersection.pixel_coords;
-            let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
-
-            if index == 0 {
-
-                //record_hit_A(current_pixel, pixel_coords, observer_index);
-                record_hit_Theta_A(ray_index, pixel_coords);
-            } else {
-
-                //record_hit_B(current_pixel, pixel_coords, observer_index);
-                record_hit_Theta_B(ray_index, pixel_coords);
-            }
-
-        }
-
-        if trig_2_intersection.border {
         }
 
     }
-    //
-
-    let current_pixel_float = vec2f(f32(current_pixel.x) / f32(tex_size.x), f32(current_pixel.y) / f32(tex_size.y));
-
-    let color = textureSampleLevel(t_diffuse, s_diffuse, current_pixel_float, 0.0);
-    let gray_scale = color.r * 0.299 + 0.587 * color.g + 0.114 * color.b;
-    //record_hit_T(ray_index, current_pixel, observer_index);
-    record_hit_l(ray_index, gray_scale);
-
-//textureStore(color_buffer, current_pixel, color);
-}
-
-fn record_hit_A(ray_index: vec2<u32>, a_coords: vec2<u32>, index: u32) {
 
 }
 
-fn record_hit_B(ray_index: vec2<u32>, b_coords: vec2<u32>, index: u32) {
+fn panel_other_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
+    let ray_index_x = current_pixel.x + (panels[1].pixel_count.x * observer_index);
+    let ray_index_y = current_pixel.y + (panels[1].pixel_count.y * observer_index);
+    let ray_index = vec2u(ray_index_x, ray_index_y);
+    let trig_1_intersection = intersection_panel(ray, true, panels[0]);
+    let trig_2_intersection = intersection_panel(ray, false, panels[0]);
+    let pixel_count = panels[0].pixel_count;
+    if trig_1_intersection.hit {
+        let pixel_coords = trig_1_intersection.pixel_coords;
+        let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
+        record_hit_A(ray_index, pixel_coords, observer_index);
+
+    }
+    if trig_2_intersection.hit {
+
+        let pixel_coords = trig_2_intersection.pixel_coords;
+        let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
+        record_hit_A(ray_index, pixel_coords, observer_index);
+    }
 
 }
-fn record_hit_T(ray_index: vec2<u32>, t_coords: vec2<u32>, index: u32) {
+
+fn target_intersection(ray: Ray, current_pixel: vec2<u32>, observer_index: u32) {
+    let ray_index_x = current_pixel.x + (panels[1].pixel_count.x * observer_index);
+    let ray_index_y = current_pixel.y + (panels[1].pixel_count.y * observer_index);
+    let ray_index = vec2u(ray_index_x, ray_index_y);
+    let target_as_panel = Panel(scene.quad, scene.pixel_count, scene.size);
+    let trig_1_intersection = intersection_panel(ray, true, target_as_panel);
+    let trig_2_intersection = intersection_panel(ray, false, target_as_panel);
+    let pixel_count = scene.pixel_count;
+
+    if trig_1_intersection.hit {
+        let pixel_coords = trig_1_intersection.pixel_coords;
+        let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
+        record_hit_T(ray_index, pixel_coords, observer_index);
+
+    }
+    if trig_2_intersection.hit {
+
+        let pixel_coords = trig_2_intersection.pixel_coords;
+        let hit_relative = vec2f(f32(pixel_coords.x) / f32(pixel_count.x), f32(pixel_coords.y) / f32(pixel_count.y));
+        record_hit_T(ray_index, pixel_coords, observer_index);
+    }
 
 }
 
-// Flatten rays. This should just match the array coordinate
-// Place the sample in location
-fn record_hit_l(ray_index: u32, sample: f32) {
-    l_buffer[ray_index] = sample;
+
+fn record_hit_A(global_coordinat: vec2<u32>, a_coords: vec2<u32>, index: u32) {
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (panels[1].pixel_count.y * (index + 1))) * 3;
+
+    m_a_y_buffer[array_coordinate] = global_coordinat.y;
+    m_a_y_buffer[array_coordinate + 1] = a_coords.y;
+    m_a_y_buffer[array_coordinate + 2] = 1;
+
+    m_a_x_buffer[array_coordinate] = global_coordinat.x;
+    m_a_x_buffer[array_coordinate + 1] = a_coords.x;
+    m_a_x_buffer[array_coordinate + 2] = 1;
 
 }
 
-fn record_hit_Theta_A(ray_index: u32, a_coords: vec2<u32>) {
-    let vectorized_a_coords = a_coords.x + a_coords.y * panels[0].pixel_count.x;
-    a_buffer[ray_index] = vectorized_a_coords;
+fn record_hit_B(global_coordinat: vec2<u32>, b_coords: vec2<u32>, index: u32) {
+
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (panels[1].pixel_count.y * (index + 1))) * 3;
+
+    m_b_y_buffer[array_coordinate] = global_coordinat.y;
+    m_b_y_buffer[array_coordinate + 1] = b_coords.y;
+    m_b_y_buffer[array_coordinate + 2] = 1;
+
+    m_b_x_buffer[array_coordinate] = global_coordinat.x;
+    m_b_x_buffer[array_coordinate + 1] = b_coords.x;
+    m_b_x_buffer[array_coordinate + 2] = 1;
 
 }
+fn record_hit_T(global_coordinat: vec2<u32>, t_coords: vec2<u32>, index: u32) {
 
-fn record_hit_Theta_B(ray_index: u32, b_coords: vec2<u32>) {
-    let vectorized_b_coords = b_coords.x + b_coords.y * panels[1].pixel_count.x;
-    b_buffer[ray_index] = vectorized_b_coords;
+    let array_coordinate = (global_coordinat.x + global_coordinat.y * (panels[1].pixel_count.y * (index + 1))) * 3;
+
+    m_t_y_buffer[array_coordinate] = global_coordinat.y;
+    m_t_y_buffer[array_coordinate + 1] = t_coords.y;
+    m_t_y_buffer[array_coordinate + 2] = 1;
+
+    m_t_x_buffer[array_coordinate] = global_coordinat.x;
+    m_t_x_buffer[array_coordinate + 1] = t_coords.x;
+    m_t_x_buffer[array_coordinate + 2] = 1;
+
 }
-
-
 struct PanelIntersection {
     hit: bool,
     border: bool,
@@ -372,7 +352,7 @@ fn LerpPoint(a: vec3f, b: vec3f, t: f32) -> vec3f {
 
 }
 
-fn pixel_to_world_location(source: Target, pixel_pos: vec2<u32>) -> vec3<f32> {
+fn pixel_to_world_location(source: Panel, pixel_pos: vec2<u32>) -> vec3<f32> {
 
     let pixel_size = source.size / vec2f(source.pixel_count);
 

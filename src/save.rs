@@ -1,4 +1,4 @@
-use image::{DynamicImage, ImageReader};
+use image::{DynamicImage, GenericImageView, ImageReader, Rgba, RgbaImage};
 use plotters::{
     chart::ChartBuilder,
     prelude::{BitMapBackend, IntoDrawingArea},
@@ -14,15 +14,28 @@ use crate::{
     scene::{DrawUI, Scene, ScenePanel, Target},
 };
 
+type OutCache = Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)>;
 /// Cache the current textures if they need to be saved
 pub struct ImageCache {
     pub target_image: DynamicImage,
     pub panels: Vec<DynamicImage>,
-    pub error: Option<Vec<f32>>,
+    pub stereo_out: OutCache,
+    pub separable_out: OutCache,
 }
 impl ImageCache {
-    pub fn plot_error(&self, location: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(error) = self.error.as_ref() {
+    pub fn plot_error(
+        &self,
+        location: PathBuf,
+        stereo: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let out = {
+            if stereo {
+                &self.stereo_out
+            } else {
+                &self.separable_out
+            }
+        };
+        if let Some((x, y, Some(error))) = out {
             let max = error.clone().into_iter().reduce(f32::max).unwrap();
 
             let root = BitMapBackend::new(&location, (640, 480)).into_drawing_area();
@@ -43,6 +56,55 @@ impl ImageCache {
         }
         Err("No Errors in this cache".into())
     }
+
+    pub fn cache_output(&mut self, stereo: bool, out: OutCache) {
+        if stereo {
+            self.stereo_out = out;
+            let _ = self.load_output(stereo);
+        } else {
+            self.separable_out = out;
+            let _ = self.load_output(stereo);
+        }
+    }
+    pub fn load_output(&mut self, stereo: bool) -> Result<(), ()> {
+        if stereo {
+            if let Some((image_1, image_2, _)) = self.stereo_out.as_ref() {
+                let images = vec![image_1.clone(), image_2.clone()];
+                self.panels = images;
+                Ok(())
+            } else {
+                Err(())
+            }
+        } else if let Some((image_1, image_2, _)) = self.separable_out.as_ref() {
+            let images = vec![image_1.clone(), image_2.clone()];
+            self.panels = images;
+
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn cache_panel(&mut self, entry: usize, image: DynamicImage) {
+        self.panels[entry] = image;
+    }
+    pub fn load_world(&mut self, img: DynamicImage) {
+        // let (width, height) = img.dimensions();
+        // let size = width.max(height); // target size for the square
+
+        // // Create a new white RGBA image of the target size
+        // let mut square = RgbaImage::from_pixel(size, size, Rgba([255, 255, 255, 255]));
+
+        // // Calculate top-left coordinates to place the original image centered
+        // let x_offset = (size - width) / 2;
+        // let y_offset = (size - height) / 2;
+
+        // // Copy the original image onto the new square image
+        // let rgba_img = img.to_rgba8();
+        // image::imageops::overlay(&mut square, &rgba_img, x_offset.into(), y_offset.into());
+
+        self.target_image = img;
+    }
 }
 
 impl Default for ImageCache {
@@ -52,7 +114,8 @@ impl Default for ImageCache {
         Self {
             target_image: Default::default(),
             panels: vec![img_1, img_2],
-            error: None,
+            stereo_out: None,
+            separable_out: None,
         }
     }
 }
@@ -77,6 +140,7 @@ impl Save {
         cache: &ImageCache,
         scene: &Scene,
     ) -> Self {
+        todo!("Change save to include outputs for both");
         let path_core = PathBuf::from(format!("./saves/{}/", name));
 
         if !path_core.exists() {
@@ -85,7 +149,7 @@ impl Save {
 
         let mut plot_core = path_core.clone();
         plot_core.push("Errors.png");
-        let _ = cache.plot_error(plot_core);
+        //let _ = cache.plot_error(plot_core);
 
         let mut target_image_path = path_core.clone();
         target_image_path.push("target.png");
@@ -134,7 +198,9 @@ impl Save {
         ImageCache {
             target_image: target,
             panels: vec![panel_1, panel_2],
-            error: None,
+
+            stereo_out: None,
+            separable_out: None,
         }
     }
     pub fn update_scene(&self, scene: &mut Scene) {
@@ -159,10 +225,15 @@ impl SaveManager {
 
             if let Ok(string) = s {
                 let save = ron::from_str::<Save>(string.as_str());
-                if let Ok(mut save_struct) = save {
-                    save_struct.target.texture.texture_file = save_struct.target_path.clone();
+                match save {
+                    Ok(mut save_struct) => {
+                        save_struct.target.texture.texture_file = save_struct.target_path.clone();
 
-                    saves.push_back(save_struct);
+                        saves.push_back(save_struct);
+                    }
+                    Err(err) => {
+                        println!("Error with save: {err}")
+                    }
                 }
             }
         }

@@ -1,52 +1,27 @@
-use std::{collections::VecDeque, num::NonZero, sync::mpsc::channel, thread};
+use std::{
+    collections::VecDeque,
+    num::NonZero,
+    sync::mpsc::channel,
+    thread,
+    time::{Duration, Instant},
+};
 
 use cgmath::Vector2;
-use egui::{ahash::HashSet, Ui};
+use egui::{epaint::text::InsertFontFamily, Ui};
 use faer::{
     sparse::{SparseColMat, Triplet},
     stats::prelude::{thread_rng, Rng},
     unzip, zip, Mat, MatMut,
 };
-use image::{DynamicImage, GenericImageView, ImageBuffer};
+use image::DynamicImage;
 use wgpu::{util::DeviceExt, Buffer};
 
-use crate::{scene::DrawUI, utils};
+use crate::{
+    scene::DrawUI,
+    utils::{self, buffer_to_sparse_triplet},
+};
 
 /// Objective is to implement the write up
-pub fn image_to_matrix(image: &DynamicImage) -> Mat<f32> {
-    let rows = image.height() as usize;
-    let column = image.width() as usize;
-    let image = image.grayscale();
-
-    Mat::from_fn(rows, column, |x, y| {
-        // Pixel is in RGBA
-        let pixel = image.get_pixel(y as u32, x as u32).0;
-        // Transform to floating point
-        let pixel = pixel.map(|pixel| pixel as f32 / 255.0);
-        for x in pixel.iter() {
-            assert!(*x <= 1.0, "Pixel value is {}", x);
-        }
-
-        pixel[0] * 0.299 + 0.587 * pixel[1] + 0.114 * pixel[2]
-    })
-}
-
-pub fn matrix_to_image(mat: &Mat<f32, usize, usize>) -> DynamicImage {
-    let (height, width) = mat.shape();
-    let image_buffer = ImageBuffer::from_par_fn(width as u32, height as u32, |x, y| {
-        let value = mat[(y as usize, x as usize)];
-
-        assert!(value <= 1.0, "Pixel value is {}", x);
-
-        image::Rgba::<u8>([
-            (value * 255.0) as u8,
-            (value * 255.0) as u8,
-            (value * 255.0) as u8,
-            (255.0) as u8,
-        ])
-    });
-    DynamicImage::ImageRgba8(image_buffer)
-}
 pub struct LFBuffers {
     m_a_y_buffer: Buffer,
     m_a_x_buffer: Buffer,
@@ -55,8 +30,13 @@ pub struct LFBuffers {
     m_t_x_buffer: Buffer,
     m_t_y_buffer: Buffer,
 
+    matrix_rep: Option<LFMatrices>,
+
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
+    settings: LFSettings,
+}
+struct LFSettings {
     iter_count: usize,
     show_steps: bool,
     starting_values: (f32, f32),
@@ -66,21 +46,29 @@ pub struct LFBuffers {
     blend: bool,
     blend_sigma: f32,
     early_stop: bool,
-    matrix_rep: Option<LFMatrices>,
     filter: bool,
     save_error: bool,
+}
+
+#[derive(Clone)]
+pub struct MappingMatrix {
+    matrix: Vec<SparseColMat<u32, f32>>,
+}
+
+#[derive(Clone)]
+pub struct CompleteMapping {
+    x: MappingMatrix,
+    size: (u32, u32),
+    y: MappingMatrix,
 }
 
 /// Struct to hold the matrices that we will build.
 /// Observations will be
 #[derive(Clone)]
 pub struct LFMatrices {
-    m_a_y_matrix: SparseColMat<u32, f32>,
-    m_a_x_matrix: SparseColMat<u32, f32>,
-    m_b_y_matrix: SparseColMat<u32, f32>,
-    m_b_x_matrix: SparseColMat<u32, f32>,
-    m_t_y_matrix: SparseColMat<u32, f32>,
-    m_t_x_matrix: SparseColMat<u32, f32>,
+    a: CompleteMapping,
+    b: CompleteMapping,
+    t: CompleteMapping,
 }
 
 impl LFBuffers {
@@ -218,15 +206,7 @@ impl LFBuffers {
                 },
             ],
         });
-        Self {
-            m_a_y_buffer,
-            m_a_x_buffer,
-            m_b_y_buffer,
-            m_b_x_buffer,
-            m_t_y_buffer,
-            m_t_x_buffer,
-            bind_group_layout,
-            bind_group,
+        let settings = LFSettings {
             rng: false,
             iter_count: 50,
             show_steps: false,
@@ -235,181 +215,215 @@ impl LFBuffers {
             solve_next_redraw_flag: false,
             blend: false,
             blend_sigma: 0.1f32,
-            matrix_rep: None,
             early_stop: false,
             filter: false,
             save_error: true,
+        };
+        Self {
+            matrix_rep: None,
+            m_a_y_buffer,
+            m_a_x_buffer,
+            m_b_y_buffer,
+            m_b_x_buffer,
+            m_t_y_buffer,
+            m_t_x_buffer,
+            bind_group_layout,
+            bind_group,
+            settings,
         }
     }
 
-    pub fn buffer_to_triplet(buffer: &Buffer, device: &wgpu::Device) -> HashSet<(u32, u32)> {
-        let raw_bytes = utils::sample_buffer(buffer, device);
-        let entries: Vec<u32> = raw_bytes
-            .chunks(4)
-            .map(|x| u32::from_ne_bytes(x[0..4].try_into().unwrap()))
-            .collect();
-        let mut seen: HashSet<(u32, u32)> = HashSet::default();
-        let mut triplet_list: Vec<(u32, u32, u32)> = entries
-            .chunks(3)
-            .filter_map(|x| {
-                // no recording done
-                if x[2] == 0 {
-                    None
-                } else {
-                    Some((x[0], x[1], x[2]))
-                }
-            })
-            .collect();
-        // Remove duplicates!
-        triplet_list.retain(|(x, y, _entry)| seen.insert((*x, *y)));
-        let max_index = triplet_list.iter().max();
-        println!("Max seen is: {:?}", max_index);
-        seen
-    }
     pub fn has_sampled(&mut self) {
-        self.sample_next_redraw_flag = false;
+        self.settings.sample_next_redraw_flag = false;
     }
     pub fn has_solved(&mut self) {
-        self.solve_next_redraw_flag = false;
+        self.settings.solve_next_redraw_flag = false;
     }
     pub fn will_sample(&self) -> bool {
-        self.sample_next_redraw_flag
+        self.settings.sample_next_redraw_flag
     }
     pub fn will_solve(&self) -> bool {
-        self.solve_next_redraw_flag
+        self.settings.solve_next_redraw_flag
     }
-    fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u32, f32>>) {
-        let pre_filter = triplets.len();
-        triplets.retain(|x| x.row < rows && x.col < columns);
-        let post_filer = triplets.len();
-        let diff = pre_filter - post_filer;
-        println!("Filtered {}, entries", diff);
-        println!("Triplet size is: {}", triplets.len());
-        if triplets.len() < 5 {
-            println!("Triplets are: {:#?}", triplets);
-        }
+
+    pub fn build_sparse_matrix(
+        triplets: Vec<Triplet<u32, u32, f32>>,
+        rows: u32,
+        columns: u32,
+    ) -> SparseColMat<u32, f32> {
+        SparseColMat::try_new_from_triplets(rows as usize, columns as usize, &triplets).unwrap()
     }
     pub fn build_m_t(
         &self,
         device: &wgpu::Device,
         rays_cast: (u32, u32),
         target_size: (u32, u32),
-    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Building M_t");
-        let tripltets_m_t_x = Self::buffer_to_triplet(&self.m_t_x_buffer, device);
-        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_t_x
-            .iter()
-            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
-            .collect();
-        Self::check_triplets(rays_cast.1, target_size.1, &mut triplet_list);
+    ) -> CompleteMapping {
+        println!("Building M_t_y");
 
-        // Height t times height a
-        let matrix_m_t_x = SparseColMat::try_new_from_triplets(
-            rays_cast.1 as usize,
-            target_size.1 as usize,
-            &triplet_list,
-        )
-        .unwrap();
+        let m_t_y = {
+            let vec_t_y = buffer_to_sparse_triplet(&self.m_t_y_buffer, device, rays_cast.0);
 
-        let tripltets_m_t_y = Self::buffer_to_triplet(&self.m_t_y_buffer, device);
-        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_t_y
-            .iter()
-            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
-            .collect();
+            let columns = target_size.0;
 
-        Self::check_triplets(rays_cast.0, target_size.0, &mut triplet_list);
-        // Height t times height a
-        let matrix_m_t_y = SparseColMat::try_new_from_triplets(
-            rays_cast.0 as usize,
-            target_size.0 as usize,
-            &triplet_list,
-        )
-        .unwrap();
+            let triplets = utils::build_tripltes(vec_t_y, target_size.0 as usize);
 
-        (matrix_m_t_x, matrix_m_t_y)
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        target_size.0 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
+        };
+
+        println!("Building M_t_x");
+        let m_t_x = {
+            let vec_t_x = buffer_to_sparse_triplet(&self.m_t_x_buffer, device, rays_cast.1);
+            let columns = target_size.1;
+
+            let triplets = utils::build_tripltes(vec_t_x, target_size.1 as usize);
+
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        target_size.1 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
+        };
+
+        CompleteMapping {
+            x: m_t_x,
+            y: m_t_y,
+            size: target_size,
+        }
     }
 
     pub fn build_m_a(
         &self,
         device: &wgpu::Device,
         rays_cast: (u32, u32),
+        rays_cast_per_viewpoint: (u32, u32),
         panel_size: (u32, u32),
-    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Building M_A");
+    ) -> CompleteMapping {
+        println!("Building M_A_Y");
 
-        let tripltets_m_a_x = Self::buffer_to_triplet(&self.m_a_x_buffer, device);
-        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_x
-            .iter()
-            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
-            .collect();
-        Self::check_triplets(rays_cast.1, panel_size.1, &mut triplet_list);
+        let m_a_y = {
+            let vec_a_y = buffer_to_sparse_triplet(&self.m_a_y_buffer, device, rays_cast.0);
 
-        // Height t times height a
-        let matrix_m_a_x = SparseColMat::try_new_from_triplets(
-            rays_cast.1 as usize,
-            panel_size.1 as usize,
-            &triplet_list,
-        )
-        .unwrap();
+            let columns = panel_size.0;
 
-        let tripltets_m_a_y = Self::buffer_to_triplet(&self.m_a_y_buffer, device);
-        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_a_y
-            .iter()
-            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
-            .collect();
+            let triplets = utils::build_tripltes(vec_a_y, rays_cast_per_viewpoint.0 as usize);
 
-        Self::check_triplets(rays_cast.0, panel_size.0, &mut triplet_list);
-        // Height t times height a
-        let matrix_m_a_y = SparseColMat::try_new_from_triplets(
-            rays_cast.0 as usize,
-            panel_size.0 as usize,
-            &triplet_list,
-        )
-        .unwrap();
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.0 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
+        };
 
-        (matrix_m_a_x, matrix_m_a_y)
+        println!("Building M_a_x");
+        let m_a_x = {
+            let vec_a_x = buffer_to_sparse_triplet(&self.m_a_x_buffer, device, rays_cast.1);
+            let columns = panel_size.1;
+
+            let triplets = utils::build_tripltes(vec_a_x, rays_cast_per_viewpoint.1 as usize);
+
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.1 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
+        };
+
+        CompleteMapping {
+            x: m_a_x,
+            y: m_a_y,
+            size: panel_size,
+        }
     }
 
     pub fn build_m_b(
         &self,
         device: &wgpu::Device,
         rays_cast: (u32, u32),
+        rays_cast_per_viewpoint: (u32, u32),
         panel_size: (u32, u32),
-    ) -> (SparseColMat<u32, f32>, SparseColMat<u32, f32>) {
-        println!("Building M_B");
-        let tripltets_m_b_x = Self::buffer_to_triplet(&self.m_b_x_buffer, device);
+    ) -> CompleteMapping {
+        println!("Building M_B_Y");
+        let m_b_y = {
+            let vec_b_y = buffer_to_sparse_triplet(&self.m_b_y_buffer, device, rays_cast.0);
 
-        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltets_m_b_x
-            .iter()
-            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
-            .collect();
+            let columns = panel_size.0;
 
-        Self::check_triplets(rays_cast.1, panel_size.1, &mut triplet_list);
-        // Height t times height a
-        let matrix_m_b_x = SparseColMat::try_new_from_triplets(
-            rays_cast.1 as usize,
-            panel_size.1 as usize,
-            &triplet_list,
-        )
-        .unwrap();
+            let triplets = utils::build_tripltes(vec_b_y, rays_cast_per_viewpoint.0 as usize);
 
-        let tripltes_m_b_y = Self::buffer_to_triplet(&self.m_b_y_buffer, device);
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.0 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
+        };
 
-        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = tripltes_m_b_y
-            .iter()
-            .map(|(x, y)| Triplet::new(*x, *y, 1.0f32))
-            .collect();
+        println!("Building M_b_x");
+        let m_b_x = {
+            let vec_b_x = buffer_to_sparse_triplet(&self.m_b_x_buffer, device, rays_cast.1);
+            let columns = panel_size.1;
 
-        Self::check_triplets(rays_cast.0, panel_size.0, &mut triplet_list);
-        let matrix_m_b_y = SparseColMat::try_new_from_triplets(
-            rays_cast.0 as usize,
-            panel_size.0 as usize,
-            &triplet_list,
-        )
-        .unwrap();
+            let triplets = utils::build_tripltes(vec_b_x, rays_cast_per_viewpoint.1 as usize);
 
-        (matrix_m_b_x, matrix_m_b_y)
+            let matrix = triplets
+                .iter()
+                .map(|triplet_list| {
+                    SparseColMat::try_new_from_triplets(
+                        rays_cast_per_viewpoint.1 as usize,
+                        columns as usize,
+                        triplet_list,
+                    )
+                    .unwrap()
+                })
+                .collect();
+            MappingMatrix { matrix }
+        };
+        CompleteMapping {
+            x: m_b_x,
+            y: m_b_y,
+            size: panel_size,
+        }
     }
+
     pub fn sample_light_field(
         &mut self,
         device: &wgpu::Device,
@@ -419,104 +433,81 @@ impl LFBuffers {
         number_of_view_points: u32,
     ) {
         let number_of_rays = (
-            target_size.0 * number_of_view_points,
             target_size.1 * number_of_view_points,
+            target_size.0 * number_of_view_points,
         );
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
-        let (ma_x, ma_y) = self.build_m_a(device, number_of_rays, panel_a_size);
-        let (mb_x, mb_y) = self.build_m_b(device, number_of_rays, panel_b_size);
-        // TO BE CHANGED SOON
-        let (mt_x, mt_y) = self.build_m_t(device, number_of_rays, target_size);
 
-        let matrices = LFMatrices {
-            m_a_y_matrix: ma_y,
-            m_a_x_matrix: ma_x,
-            m_b_y_matrix: mb_y,
-            m_b_x_matrix: mb_x,
-            m_t_x_matrix: mt_x,
-            m_t_y_matrix: mt_y,
-        };
+        let a = self.build_m_a(device, number_of_rays, target_size, panel_a_size);
+        let b = self.build_m_b(device, number_of_rays, target_size, panel_b_size);
+        // TO BE CHANGED SOON
+        let t = self.build_m_t(device, number_of_rays, target_size);
+        let matrices = LFMatrices { a, b, t };
+
         self.matrix_rep = Some(matrices);
     }
 
-    pub fn verify_matrix(mat: &Mat<f32>) {
-        for col in mat.col_iter() {
-            for entry in col.iter() {
-                assert!(
-                    *entry <= 1.0,
-                    "Entry in this matrix is too high, entry: {}",
-                    entry
-                );
-            }
-        }
-    }
-    pub fn factorize(
+    pub fn alternative_factorization(
         &mut self,
         c_t: &DynamicImage,
-        rays_cast: (u32, u32),
+        target_size: (u32, u32),
+        number_of_view_points: u32,
     ) -> Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)> {
-        let c_t = image_to_matrix(c_t);
-        Self::verify_matrix(&c_t);
-
-        matrix_to_image(&c_t)
-            .save_with_format(
-                "./resources/panel_compute/intermediate/C_T.png",
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-
         // Give 10 threads
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
         println!(
             "Global Parallelism is: {:?}",
             faer::get_global_parallelism()
         );
+        let settings = &self.settings;
 
-        self.matrix_rep.as_ref()?;
+        let rays_cast = (
+            target_size.1 * number_of_view_points,
+            target_size.0 * number_of_view_points,
+        );
+        println!("Rays Cast is: {rays_cast:?}");
 
         let matrices = self.matrix_rep.as_ref()?;
 
-        let m_a_y = &matrices.m_a_y_matrix.to_dense();
-        let m_a_x = &matrices.m_a_x_matrix.to_dense();
-        let m_b_y = &matrices.m_b_y_matrix.to_dense();
-        let m_b_x = &matrices.m_b_x_matrix.to_dense();
-        let m_t_x = &matrices.m_t_x_matrix.to_dense();
-        let m_t_y = &matrices.m_t_y_matrix.to_dense();
+        let c_t = utils::image_to_matrix(c_t);
 
-        let h_a = m_a_y.shape().1;
-        let h_b = m_b_y.shape().1;
-
-        let w_a = m_a_x.shape().1;
-        let w_b = m_b_x.shape().1;
-
-        println!("A_y shape: {:?}", m_a_y.shape());
-        println!("A_x shape: {:?}", m_a_x.shape());
-        println!("b_y shape: {:?}", m_b_y.shape());
-        println!("b_x shape: {:?}", m_b_x.shape());
-        println!("t_y shape: {:?}", m_t_y.shape());
-        println!("t_x shape: {:?}", m_t_x.shape());
         println!("C_T shape: {:?}", c_t.shape());
-        println!("Rays cast: {:?}", rays_cast);
+        utils::verify_matrix(&c_t);
+        utils::matrix_to_image(&c_t)
+            .save_with_format(
+                "./resources/panel_compute/intermediate/C_T.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
 
+        let h_a = matrices.a.size.0 as usize;
+        let w_a = matrices.a.size.1 as usize;
         let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
-            if self.rng {
+            if self.settings.rng {
                 thread_rng().gen_range(0f32..1.0f32)
             } else {
-                self.starting_values.0
+                self.settings.starting_values.0
             }
         });
+
+        let h_b = matrices.b.size.0 as usize;
+        let w_b = matrices.b.size.1 as usize;
         let mut c_b = Mat::from_fn(h_b, w_b, |_x, _y| {
-            if self.rng {
+            if self.settings.rng {
                 thread_rng().gen_range(0f32..1.0f32)
             } else {
-                self.starting_values.1
+                self.settings.starting_values.1
             }
         });
+        let single_pass_size = (
+            rays_cast.0 / number_of_view_points,
+            rays_cast.1 / number_of_view_points,
+        );
 
-        let mut upper = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
+        let mut upper = Mat::<f32>::zeros(single_pass_size.0 as usize, single_pass_size.1 as usize);
 
-        let mut lower = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
+        let mut lower = Mat::<f32>::zeros(single_pass_size.0 as usize, single_pass_size.1 as usize);
 
         // Move IO out of loop and into dedicated thread
         let (sender, receiver) = channel::<(String, DynamicImage)>();
@@ -527,108 +518,136 @@ impl LFBuffers {
         });
 
         // Doesn't change
-        let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
-        let progress_bar = indicatif::ProgressBar::new(self.iter_count as u64);
-        let mut error = VecDeque::with_capacity(self.iter_count);
-        for x in 0..self.iter_count {
+
+        let progress_bar = indicatif::ProgressBar::new(settings.iter_count as u64);
+        let mut error = VecDeque::with_capacity(settings.iter_count);
+
+        let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
+
+        let mut numerator_a = Mat::zeros(c_a.nrows(), c_a.ncols());
+        let mut denominator_a = Mat::zeros(c_a.nrows(), c_a.ncols());
+
+        let mut numerator_b = Mat::zeros(c_b.nrows(), c_b.ncols());
+        let mut denominator_b = Mat::zeros(c_b.nrows(), c_b.ncols());
+        for _x in 0..settings.iter_count {
+            let start = Instant::now();
             progress_bar.inc(1);
 
-            if self.show_steps {
-                let path_1 = format!(
-                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-                    x, 1
-                );
-                let path_2 = format!(
-                    "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-                    x, 2
-                );
-                let image_a = matrix_to_image(&c_a);
-                let image_b = matrix_to_image(&c_b);
-                sender.send((path_1, image_a)).unwrap();
-                sender.send((path_2, image_b)).unwrap();
+            // if settings.show_steps {
+            //     let path_1 = format!(
+            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+            //         x, 1
+            //     );
+            //     let path_2 = format!(
+            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+            //         x, 2
+            //     );
+            //     let image_a = utils::matrix_to_image(&c_a);
+            //     let image_b = utils::matrix_to_image(&c_b);
+            //     sender.send((path_1, image_a)).unwrap();
+            //     sender.send((path_2, image_b)).unwrap();
 
-                // Dispatch a thread to do
-            }
+            //     // Dispatch a thread to do
+            // }
             // CA update
             //
             {
-                let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
-                let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+                for view_point in 0..number_of_view_points as usize {
+                    let m_a_x = matrices.a.x.matrix[view_point].as_ref();
+                    let m_a_y = matrices.a.y.matrix[view_point].as_ref();
 
-                zip!(&mut upper, &c_b_m_product, &c_t_m_product).for_each(
-                    |unzip!(upper, c_b, c_t)| {
-                        *upper = *c_b * *c_t;
-                    },
-                );
+                    let m_b_x = matrices.b.x.matrix[view_point].as_ref();
+                    let m_b_y = matrices.b.y.matrix[view_point].as_ref();
 
-                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
-                    |unzip!(lower, c_b, c_a)| {
-                        *lower = *c_a * *c_b * *c_b;
-                    },
-                );
-                let numerator = m_a_y.transpose() * &upper * m_a_x;
-                let denominator = m_a_y.transpose() * &lower * m_a_x;
-                zip!(&mut c_a, &numerator, &denominator).for_each(|unzip!(c_a, n, d)| {
-                    *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32))
-                });
+                    let m_t_x = matrices.t.x.matrix[view_point].as_ref();
+                    let m_t_y = matrices.t.y.matrix[view_point].as_ref();
 
-                if self.save_error {
-                    zip!(&mut upper, &c_b_m_product, &c_a_m_product).for_each(
-                        |unzip!(upper, c_b, c_a)| {
-                            *upper = *c_b * *c_a;
+                    let c_t_m_product = (m_t_y * &c_t) * m_t_x.transpose();
+                    let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                    let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+
+                    zip!(&mut upper, &c_b_m_product, &c_t_m_product).for_each(
+                        |unzip!(upper, c_b, c_t)| {
+                            *upper = *c_b * *c_t;
                         },
                     );
-                    let iter_error = &c_t_m_product - &upper;
-                    let cross = iter_error.transpose() * iter_error.clone();
-                    let eigen_norm = cross.self_adjoint_eigenvalues(faer::Side::Upper).unwrap();
-                    let eigen_max = eigen_norm[eigen_norm.len() - 1];
 
-                    let ret = eigen_max.sqrt();
-                    if let Some(previous) = error.back() {
-                        let diff: f32 = ret - previous;
-                        if self.early_stop && diff.abs() < 0.0000001f32 {
-                            break;
-                        }
-                    }
-                    error.push_back(ret);
+                    zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                        |unzip!(lower, c_b, c_a)| {
+                            *lower = *c_a * *c_b * *c_b;
+                        },
+                    );
+
+                    numerator_a += m_a_y.transpose() * &upper * m_a_x;
+                    denominator_a += m_a_y.transpose() * &lower * m_a_x;
                 }
+
+                zip!(&mut c_a, &mut numerator_a, &mut denominator_a).for_each(
+                    |unzip!(c_a, n, d)| {
+                        *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32));
+                        *n = 0.0;
+                        *d = 0.0;
+                    },
+                );
             }
-            // C_B Update
+
             {
-                let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
-                let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+                for view_point in 0..number_of_view_points as usize {
+                    let m_a_x = matrices.a.x.matrix[view_point].as_ref();
+                    let m_a_y = matrices.a.y.matrix[view_point].as_ref();
 
-                zip!(&mut upper, &c_a_m_product, &c_t_m_product).for_each(
-                    |unzip!(upper, c_a, c_t)| {
-                        *upper = *c_a * *c_t;
+                    let m_b_x = matrices.b.x.matrix[view_point].as_ref();
+                    let m_b_y = matrices.b.y.matrix[view_point].as_ref();
+
+                    let m_t_x = matrices.t.x.matrix[view_point].as_ref();
+                    let m_t_y = matrices.t.y.matrix[view_point].as_ref();
+                    let c_t_m_product = (m_t_y * &c_t) * m_t_x.transpose();
+                    let c_b_m_product = m_b_y * &c_b * m_b_x.transpose();
+                    let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
+
+                    zip!(&mut upper, &c_a_m_product, &c_t_m_product).for_each(
+                        |unzip!(upper, c_a, c_t)| {
+                            *upper = *c_a * *c_t;
+                        },
+                    );
+
+                    zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                        |unzip!(lower, c_b, c_a)| {
+                            *lower = *c_b * *c_a * *c_a;
+                        },
+                    );
+
+                    numerator_b += m_b_y.transpose() * &upper * m_b_x;
+                    denominator_b += m_b_y.transpose() * &lower * m_b_x;
+                }
+                zip!(&mut c_b, &mut numerator_b, &mut denominator_b).for_each(
+                    |unzip!(c_b, n, d)| {
+                        *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
+                        *n = 0.0;
+                        *d = 0.0;
                     },
                 );
-
-                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
-                    |unzip!(lower, c_b, c_a)| {
-                        *lower = *c_b * *c_a * *c_a;
-                    },
-                );
-
-                let numerator = m_b_y.transpose() * &upper * m_b_x;
-                let denominator = m_b_y.transpose() * &lower * m_b_x;
-                zip!(&mut c_b, &numerator, &denominator).for_each(|unzip!(c_b, n, d)| {
-                    *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
-                });
             }
+
+            let end = Instant::now();
+            let time_taken = end.duration_since(start);
+            time_taken_total.push(time_taken);
         }
 
-        if self.filter {
-            Self::filter_zeroes(c_a.as_mut(), &matrices.m_a_y_matrix, &matrices.m_a_x_matrix);
-            Self::filter_zeroes(c_b.as_mut(), &matrices.m_b_y_matrix, &matrices.m_b_x_matrix);
+        let total_time: Duration = time_taken_total.iter().sum();
+        let average_time = total_time / settings.iter_count as u32;
+        println!("Average time per iteration: {average_time:?}");
+        if settings.filter {
+            Self::filter_zeroes(&mut c_a, &matrices.a);
+            Self::filter_zeroes(&mut c_b, &matrices.b);
         }
-        Self::verify_matrix(&c_a);
-        Self::verify_matrix(&c_b);
+        utils::verify_matrix(&c_a);
+        utils::verify_matrix(&c_b);
 
         let image_a = {
-            let mut output = matrix_to_image(&c_a);
-            if self.blend {
-                output = output.fast_blur(self.blend_sigma);
+            let mut output = utils::matrix_to_image(&c_a);
+            if settings.blend {
+                output = output.fast_blur(settings.blend_sigma);
             }
 
             output
@@ -641,9 +660,9 @@ impl LFBuffers {
             .unwrap();
 
         let image_b = {
-            let mut output = matrix_to_image(&c_b);
-            if self.blend {
-                output = output.fast_blur(self.blend_sigma);
+            let mut output = utils::matrix_to_image(&c_b);
+            if settings.blend {
+                output = output.fast_blur(settings.blend_sigma);
             }
             output
         };
@@ -654,11 +673,10 @@ impl LFBuffers {
                 image::ImageFormat::Png,
             )
             .unwrap();
-        self.solve_next_redraw_flag = false;
 
-        println!("Errors is: {:?}", error);
+        println!("Errors is: {error:?}");
         let error = {
-            if self.save_error {
+            if settings.save_error {
                 Some(error.into())
             } else {
                 None
@@ -667,13 +685,22 @@ impl LFBuffers {
 
         Some((image_a, image_b, error))
     }
-    fn filter_zeroes(
+
+    fn filter_zeroes(mat: &mut Mat<f32, usize, usize>, mapping_mat: &CompleteMapping) {
+        for x in 0..mapping_mat.x.matrix.len() {
+            let mat_x = &mapping_mat.x.matrix[x];
+            let mat_y = &mapping_mat.y.matrix[x];
+            Self::filter_helper(mat.as_mut(), mat_x, mat_y);
+        }
+    }
+    fn filter_helper(
         mat: MatMut<f32, usize, usize>,
-        mat_y: &SparseColMat<u32, f32>,
         mat_x: &SparseColMat<u32, f32>,
+        mat_y: &SparseColMat<u32, f32>,
     ) {
         let x_ncols = mat_x.col_ptr();
         let y_ncols = mat_y.col_ptr();
+
         for (column, x) in mat.col_iter_mut().enumerate() {
             for (row, y) in x.iter_mut().enumerate() {
                 if *y != 0.0 {
@@ -690,7 +717,7 @@ impl LFBuffers {
 
 impl DrawUI for LFBuffers {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
-        let title = title.unwrap_or("Light Field Sampler".to_string());
+        let title = title.unwrap_or("Separable Approach".to_string());
         let _ = ui;
 
         egui_winit::egui::Window::new(title)
@@ -700,59 +727,36 @@ impl DrawUI for LFBuffers {
             .default_open(false)
             .show(ctx, |ui| {
                 ui.label("Iteration count");
-                ui.add(egui::Slider::new(&mut self.iter_count, 1..=1000));
-                ui.checkbox(&mut self.show_steps, "Print steps");
-                ui.checkbox(&mut self.early_stop, "Early stop?");
-                ui.checkbox(&mut self.filter, "Filter Columns");
-                ui.checkbox(&mut self.save_error, "Save Error");
+                let settings = &mut self.settings;
+                ui.add(egui::Slider::new(&mut settings.iter_count, 1..=1000));
+                ui.checkbox(&mut settings.show_steps, "Print steps");
+                ui.checkbox(&mut settings.early_stop, "Early stop?");
+                ui.checkbox(&mut settings.filter, "Filter Columns");
+                ui.checkbox(&mut settings.save_error, "Save Error");
 
                 if ui.button("Sample").clicked() {
-                    self.sample_next_redraw_flag = true;
+                    settings.sample_next_redraw_flag = true;
                 }
                 if ui.button("Solve").clicked() {
-                    self.solve_next_redraw_flag = true;
+                    settings.solve_next_redraw_flag = true;
                 }
                 if ui.button("Reset").clicked() {
                     self.matrix_rep = None;
                 }
-                ui.checkbox(&mut self.blend, "Blend Out Image");
+                ui.checkbox(&mut settings.blend, "Blend Out Image");
                 ui.label("Sigma");
-                ui.add(egui::Slider::new(&mut self.blend_sigma, 0.0..=1.0));
-                ui.checkbox(&mut self.rng, "Random starting values");
+                ui.add(egui::Slider::new(&mut settings.blend_sigma, 0.0..=1.0));
+                ui.checkbox(&mut settings.rng, "Random starting values");
                 ui.label("Initial guesses");
                 ui.add(egui::Slider::new(
-                    &mut self.starting_values.0,
+                    &mut settings.starting_values.0,
                     0.0f32..=1.0f32,
                 ));
 
                 ui.add(egui::Slider::new(
-                    &mut self.starting_values.1,
+                    &mut settings.starting_values.1,
                     0.0f32..=1.0f32,
                 ));
             });
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use super::*;
-
-    #[test]
-    fn image_around_the_world() {
-        let mut image = image::open("./resources/textures/Gibbon.jpg").unwrap();
-        image = image.grayscale();
-        let matrix = image_to_matrix(&image);
-        let new_image = matrix_to_image(&matrix);
-        let new_matrix = image_to_matrix(&new_image);
-        // Write both into
-        image.save("./resources/test/OG.png").unwrap();
-        new_image.save("./resources/test/NEW.png").unwrap();
-        for (og, new) in std::iter::zip(image.pixels(), new_image.pixels()) {
-            assert_eq!(og, new);
-        }
-
-        //assert_eq!(image, new_image);
-        assert_eq!(new_matrix, matrix);
     }
 }

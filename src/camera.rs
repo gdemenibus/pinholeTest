@@ -2,6 +2,8 @@ use cgmath::*;
 use crevice::std140::AsStd140;
 use crevice::std140::Std140;
 use crevice::std140::Writer;
+use egui::Color32;
+use egui::RichText;
 use egui::Slider;
 use egui::Ui;
 use serde::Deserialize;
@@ -9,6 +11,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
+use std::time::Instant;
 use wgpu::util::DeviceExt;
 use wgpu::BindGroup;
 use wgpu::BindGroupLayout;
@@ -22,6 +25,18 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::scene::DrawUI;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
+fn lerp_vec3(a: Point3<f32>, b: Point3<f32>, t: f32) -> Point3<f32> {
+    a + (b - a) * t
+}
+fn lerp_angle(a: Rad<f32>, b: Rad<f32>, t: f32) -> Rad<f32> {
+    let mut delta = b.0 - a.0;
+    if delta > std::f32::consts::PI {
+        delta -= 2.0 * std::f32::consts::PI;
+    } else if delta < -std::f32::consts::PI {
+        delta += 2.0 * std::f32::consts::PI;
+    }
+    Rad(a.0 + delta * t)
+}
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Camera {
     pub position: Point3<f32>,
@@ -49,32 +64,49 @@ impl Camera {
 
         Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize()
     }
+    fn interpolate_camera(a: &Camera, b: &Camera, t: f32) -> Camera {
+        Camera {
+            position: lerp_vec3(a.position, b.position, t),
+            yaw: lerp_angle(a.yaw, b.yaw, t),
+            pitch: lerp_angle(a.pitch, b.pitch, t),
+            fov: Rad(a.fov.0 + (b.fov.0 - a.fov.0) * t), // or use same angle lerp
+        }
+    }
 }
 impl DrawUI for Camera {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Camera Settings".to_string());
-
-        egui_winit::egui::Window::new(title)
-            .resizable(true)
-            .vscroll(true)
-            .default_open(false)
-            .default_size([150.0, 125.0])
-            .show(ctx, |ui| {
-                ui.label("FOV");
-                // Present in Degrees
-                ui.add(
-                    Slider::new(&mut self.fov.0, 0.1..=std::f32::consts::PI)
-                        .custom_formatter(|n, _| {
-                            let print = n * 180.0 / std::f64::consts::PI;
-                            format!("{print}")
-                        })
-                        .custom_parser(|s| {
-                            s.parse::<f64>()
-                                .map(|r| r * std::f64::consts::PI / 180.0)
-                                .ok()
-                        }),
-                );
-            });
+        if let Some(ui) = ui {
+            ui.label(
+                RichText::new(format!(
+                    "Camera Position: ({:.2}, {:.2}, {:.2})",
+                    self.position.x, self.position.y, self.position.z
+                ))
+                .color(Color32::RED),
+            );
+        } else {
+            egui_winit::egui::Window::new(title)
+                .resizable(true)
+                .vscroll(true)
+                .default_open(false)
+                .default_size([150.0, 125.0])
+                .show(ctx, |ui| {
+                    ui.label("FOV");
+                    // Present in Degrees
+                    ui.add(
+                        Slider::new(&mut self.fov.0, 0.1..=std::f32::consts::PI)
+                            .custom_formatter(|n, _| {
+                                let print = n * 180.0 / std::f64::consts::PI;
+                                format!("{print}")
+                            })
+                            .custom_parser(|s| {
+                                s.parse::<f64>()
+                                    .map(|r| r * std::f64::consts::PI / 180.0)
+                                    .ok()
+                            }),
+                    );
+                });
+        }
     }
 }
 
@@ -196,10 +228,15 @@ impl CameraController {
 // Struct to store camera positions, especially when sampling!
 pub struct CameraHistory {
     pub history: VecDeque<Camera>,
+    pub kernel_size: f32,
+    pub kernel: bool,
     pub bind_group_layout: BindGroupLayout,
     pub bind_group: BindGroup,
     pub history_buffer: Buffer,
     pub size_buffer: Buffer,
+    pub animate: bool,
+    pub animation_duration: f32,
+    pub animation_start: Option<Instant>,
 }
 impl CameraHistory {
     pub fn new(device: &Device) -> Self {
@@ -208,7 +245,7 @@ impl CameraHistory {
             visibility: wgpu::ShaderStages::all(),
             count: None,
             ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -231,7 +268,7 @@ impl CameraHistory {
             // Each camera position is 3 f32s. 12 bytes. 21 postions should be fine
             size: 1024,
             label: Some("Camera History Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: true,
         });
         let size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -240,7 +277,7 @@ impl CameraHistory {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Binding For Panel group"),
+            label: Some("Binding For Camera History"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -256,10 +293,15 @@ impl CameraHistory {
         history_buffer.unmap();
 
         CameraHistory {
+            animation_start: None,
             bind_group_layout,
+            kernel: false,
+            animate: false,
+            animation_duration: 2.0,
             size_buffer,
             history_buffer,
             bind_group,
+            kernel_size: 0.01,
             history: VecDeque::new(),
         }
     }
@@ -268,7 +310,27 @@ impl CameraHistory {
     }
     pub fn save_point(&mut self, camera: &Camera) {
         if !self.history.contains(camera) {
-            self.history.push_back(camera.clone());
+            // Tiny kernel
+            let center_camera = camera.clone();
+
+            let mut top_camera = center_camera.clone();
+            top_camera.position += Vector3::new(0.00, self.kernel_size, 0.0);
+
+            let mut bottom_camera = center_camera.clone();
+            bottom_camera.position -= Vector3::new(0.00, self.kernel_size, 0.0);
+
+            let mut left_camera = center_camera.clone();
+            left_camera.position -= Vector3::new(self.kernel_size, 0.0, 0.0);
+            let mut right_camera = center_camera.clone();
+            right_camera.position += Vector3::new(self.kernel_size, 0.0, 0.0);
+
+            self.history.push_back(center_camera);
+            if self.kernel {
+                self.history.push_back(top_camera);
+                self.history.push_back(bottom_camera);
+                self.history.push_back(right_camera);
+                self.history.push_back(left_camera);
+            }
         }
     }
     pub fn next_save(&mut self) -> Option<&Camera> {
@@ -309,26 +371,83 @@ impl CameraHistory {
         queue.write_buffer(&self.history_buffer, 0, &self.history_to_bytes());
         queue.write_buffer(&self.size_buffer, 0, &self.size_to_bytes());
     }
+    pub fn reset(&mut self) {
+        self.history = VecDeque::new();
+    }
+
+    pub fn animate_camera(&self) -> Option<Camera> {
+        let time = self.animation_start?.elapsed().as_secs_f32();
+        let duration = self.animation_duration;
+        let keyframes = &self.history;
+        let num_segments = keyframes.len() - 1;
+        let total_time = duration * num_segments as f32;
+        let t = (time % total_time) / duration;
+        let i = ((time % total_time) / duration).floor() as usize;
+
+        let current = &keyframes[i];
+        let next = &keyframes[i + 1];
+        Some(Camera::interpolate_camera(current, next, t.fract()))
+    }
+}
+impl DrawUI for CameraController {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
+        let _ = title;
+        let _ = ctx;
+        let _ = ui;
+        if let Some(ui) = ui {
+            ui.label("Camera Speed:");
+            ui.add(egui::DragValue::new(&mut self.speed).speed(0.5));
+        }
+    }
 }
 
 impl DrawUI for CameraHistory {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
         let title = title.unwrap_or("Camera Settings".to_string());
+        let _ = ui;
+        if let Some(ui) = ui {
+            ui.label(format!(
+                "Current camera positions saved:{}",
+                self.history.len()
+            ));
 
-        egui_winit::egui::Window::new(title)
-            .resizable(true)
-            .vscroll(true)
-            .default_open(false)
-            .default_size([150.0, 125.0])
-            .show(ctx, |ui| {
-                ui.label(format!(
-                    "Current camera positions saved:{}",
-                    self.history.len()
-                ));
-
-                if ui.button("Reset").clicked() {
-                    self.history = VecDeque::new();
+            self.animate = ui.button("Play Animation").clicked();
+            if self.animate {
+                self.animation_start = Some(Instant::now());
+            } else if let Some(start) = self.animation_start {
+                if start.elapsed().as_secs_f32()
+                    > (self.animation_duration * (self.history.len() - 1) as f32)
+                {
+                    self.animation_start = None;
                 }
-            });
+            }
+
+            ui.label("Animation Position duration:");
+            ui.add(egui::DragValue::new(&mut self.animation_duration).speed(0.1));
+
+            if ui.button("Reset").clicked() {
+                self.history = VecDeque::new();
+            };
+            ui.label("Kernel size:");
+
+            ui.add(egui::DragValue::new(&mut self.kernel_size).speed(0.01));
+            ui.checkbox(&mut self.kernel, "Use Kernl");
+        } else {
+            egui_winit::egui::Window::new(title)
+                .resizable(true)
+                .vscroll(true)
+                .default_open(false)
+                .default_size([150.0, 125.0])
+                .show(ctx, |ui| {
+                    ui.label(format!(
+                        "Current camera positions saved:{}",
+                        self.history.len()
+                    ));
+
+                    if ui.button("Reset").clicked() {
+                        self.history = VecDeque::new();
+                    }
+                });
+        }
     }
 }
