@@ -25,15 +25,9 @@ pub const RAY_WIDTH: usize = 500;
 pub const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    println!("Arguments are: {args:?}");
-    if args[1] == "--bench" {
-        bench();
-    } else {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            pollster::block_on(execute());
-        }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        pollster::block_on(execute());
     }
 }
 fn bench() {
