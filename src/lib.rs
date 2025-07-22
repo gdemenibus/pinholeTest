@@ -920,6 +920,7 @@ impl Lff for StereoMatrix {
             let time_taken = end.duration_since(start);
             time_taken_total.push(time_taken);
         }
+
         utils::verify_matrix(&vec_a);
         utils::verify_matrix(&vec_b);
         let a = utils::vector_to_image(&vec_a, self.panel_a_size.0, self.panel_a_size.1);

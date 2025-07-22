@@ -19,34 +19,70 @@ use light_field_test::{LFMatrices, LFSettings, Lff, StereoMatrix};
 use notify::Watcher;
 use winit::event_loop::{EventLoop, EventLoopProxy};
 
-use std::{env, f32::consts::FRAC_PI_2, path::PathBuf, str::FromStr};
+use clap::Parser;
+use std::{f32::consts::FRAC_PI_2, path::PathBuf, str::FromStr};
+
 pub const RAY_HEIGHT: usize = 500;
 pub const RAY_WIDTH: usize = 500;
 pub const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
-fn main() {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        pollster::block_on(execute());
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum HeadlessType {
+    Sep,
+    SepOld,
+    Stereo,
+}
+impl std::fmt::Display for HeadlessType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }
-fn bench() {
-    let settings = LFSettings {
-        debug_prints: false,
-        ..Default::default()
-    };
-    let stereo = StereoMatrix::load("Kernel.ro".to_string());
-    println!("Initialized Stereo Matrices");
 
-    let mut diagonal = LFMatrices::load("Kernel.ro".to_string());
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Commands {
+    #[arg(short, long, default_value_t = false)]
+    headless: bool,
 
+    #[arg(short, long, default_value_t = HeadlessType::Sep)]
+    type_head: HeadlessType,
+}
+
+fn main() {
+    let args = Commands::parse();
+
+    if args.headless {
+        let mut diagonal = LFMatrices::load("Kernel.ro".to_string());
+
+        let stereo = StereoMatrix::load("Kernel.ro".to_string());
+        let settings = LFSettings {
+            debug_prints: false,
+            ..Default::default()
+        };
+        match args.type_head {
+            HeadlessType::Sep => bench_sep(settings, &mut diagonal),
+            HeadlessType::SepOld => bench_old(settings, &mut diagonal),
+            HeadlessType::Stereo => bench_stereo(settings, &stereo),
+        }
+    } else {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            pollster::block_on(execute());
+        }
+    }
+}
+fn bench_sep(settings: LFSettings, diagonal: &mut LFMatrices) {
     diagonal.c_t = DynamicImage::new_rgb8(diagonal.target_size.0, diagonal.target_size.1);
+    diagonal.factorize(&settings);
+}
+fn bench_old(settings: LFSettings, diagonal: &mut LFMatrices) {
+    diagonal.c_t = DynamicImage::new_rgb8(diagonal.target_size.0, diagonal.target_size.1);
+
     let stacked_matrices = diagonal.stack();
-    println!("Initialized Separable Matrices");
 
     diagonal.old_factorize(&settings, &stacked_matrices);
-    diagonal.factorize(&settings);
-
+}
+fn bench_stereo(settings: LFSettings, stereo: &StereoMatrix) {
     stereo.factorize(&settings);
 }
 
