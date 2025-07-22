@@ -19,15 +19,23 @@ use light_field_test::{LFMatrices, LFSettings, Lff, StereoMatrix};
 use notify::Watcher;
 use winit::event_loop::{EventLoop, EventLoopProxy};
 
-use std::{env, f32::consts::FRAC_PI_2, path::PathBuf, str::FromStr};
+use clap::Parser;
+use std::{f32::consts::FRAC_PI_2, path::PathBuf, str::FromStr};
+
 pub const RAY_HEIGHT: usize = 500;
 pub const RAY_WIDTH: usize = 500;
 pub const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Commands {
+    #[arg(short, long, default_value_t = false)]
+    headless: bool,
+}
+
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    println!("Arguments are: {args:?}");
-    if args[1] == "--bench" {
+    let args = Commands::parse();
+    if args.headless {
         bench();
     } else {
         #[cfg(not(target_arch = "wasm32"))]

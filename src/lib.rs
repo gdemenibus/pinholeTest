@@ -847,10 +847,17 @@ impl Lff for StereoMatrix {
                 settings.starting_values.1
             }
         });
+        let ray_space_size = self.l_vec.shape();
+        let number_rays = ray_space_size.0 * ray_space_size.1;
         // Precompute the transpose
         let m_a_trans = matrices.a_matrix.matrix.transpose();
         let m_b_trans = matrices.b_matrix.matrix.transpose();
+
         let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
+        let mut m_a_vec: Mat<f32> =
+            Mat::from_fn(ray_space_size.0, 1, |_, _| 1.0 / number_rays as f32);
+        let mut m_b_vec: Mat<f32> =
+            Mat::from_fn(ray_space_size.0, 1, |_, _| 1.0 / number_rays as f32);
 
         let mut error = VecDeque::with_capacity(settings.iter_count);
         if settings.debug_prints {
@@ -868,58 +875,38 @@ impl Lff for StereoMatrix {
 
             let start = Instant::now();
             {
-                let t2_rays = &matrices.b_matrix.matrix * &vec_b;
-                let t1_rays = &matrices.a_matrix.matrix * &vec_a;
+                let upper = zip!(&m_b_vec, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
 
-                let upper = zip!(&t1_rays, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
-                let numerator = m_b_trans * upper;
+                let lower = zip!(&m_b_vec, &m_a_vec).map(|unzip!(b, a)| *b * *b * *a);
 
-                let lower = zip!(&t2_rays, &t1_rays).map(|unzip!(t2, t1)| *t2 * *t1 * *t1);
-                let denominator = m_b_trans * lower;
-
-                zip!(&mut vec_b, &numerator, &denominator)
-                    .for_each(|unzip!(b, n, d)| *b = 1.0_f32.min(*b * *n / (*d + 0.0000001f32)));
-            }
-
-            // Step for A
-            {
-                // Upper area
-                let t2_rays = &matrices.b_matrix.matrix * &vec_b;
-                let t1_rays = &matrices.a_matrix.matrix * &vec_a;
-
-                let upper = zip!(&t2_rays, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
-                let numerator = m_a_trans * upper;
-
-                let lower = zip!(&t2_rays, &t1_rays).map(|unzip!(t2, t1)| *t2 * *t2 * *t1);
-                let denominator = m_a_trans * lower;
-                zip!(&mut vec_a, &numerator, &denominator)
+                zip!(&mut m_a_vec, &upper, &lower)
                     .for_each(|unzip!(a, n, d)| *a = 1.0_f32.min(*a * *n / (*d + 0.0000001f32)));
 
-                // Denominator
+                vec_a = m_a_trans * m_a_vec;
+                zip!(&mut vec_a).for_each(|unzip!(a)| *a = 1.0_f32.min(*a));
+                m_a_vec = matrices.a_matrix.matrix.as_ref() * vec_a.as_ref();
             }
-            {
-                // Compute error
-                if settings.save_error {
-                    let t2_rays = &matrices.b_matrix.matrix * &vec_b;
-                    let t1_rays = &matrices.a_matrix.matrix * &vec_a;
-                    let total = zip!(&t1_rays, &t2_rays, &matrices.l_vec)
-                        .map(|unzip!(t1, t2, l)| *l - (*t1 * *t2));
-                    let norm = total.norm_l2();
 
-                    if let Some(previous) = error.back() {
-                        let diff: f32 = norm - previous;
-                        if settings.early_stop && diff.abs() < 0.0000001f32 {
-                            break;
-                        }
-                    }
-                    error.push_back(norm);
-                }
+            {
+                let upper = zip!(&m_a_vec, &matrices.l_vec).map(|unzip!(u, l)| *u * *l);
+
+                let lower = zip!(&m_b_vec, &m_a_vec).map(|unzip!(b, a)| *b * *a * *a);
+
+                zip!(&mut m_b_vec, &upper, &lower)
+                    .for_each(|unzip!(b, n, d)| *b = 1.0_f32.min(*b * *n / (*d + 0.0000001f32)));
+
+                vec_b = m_b_trans * m_b_vec;
+                zip!(&mut vec_b).for_each(|unzip!(b)| *b = 1.0_f32.min(*b));
+                m_b_vec = matrices.b_matrix.matrix.as_ref() * vec_b.as_ref();
             }
 
             let end = Instant::now();
             let time_taken = end.duration_since(start);
             time_taken_total.push(time_taken);
         }
+        println!("Vec_a shape is: {:?}", vec_a.shape());
+        println!("Vec_b shape is: {:?}", vec_b.shape());
+
         utils::verify_matrix(&vec_a);
         utils::verify_matrix(&vec_b);
         let a = utils::vector_to_image(&vec_a, self.panel_a_size.0, self.panel_a_size.1);
