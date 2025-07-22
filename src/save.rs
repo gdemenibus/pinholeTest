@@ -36,7 +36,7 @@ impl ImageCache {
                 &self.separable_out
             }
         };
-        if let Some((x, y, Some(error))) = out {
+        if let Some((_x, _y, Some(error))) = out {
             let max = error.clone().into_iter().reduce(f32::max).unwrap();
 
             let root = BitMapBackend::new(&location, (640, 480)).into_drawing_area();
