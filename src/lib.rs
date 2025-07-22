@@ -61,6 +61,25 @@ impl From<SparseColMatRef<'_, u32, f32>> for SparseAsList {
 pub struct MappingMatrix {
     pub matrix: Vec<SparseColMat<u32, f32>>,
 }
+impl MappingMatrix {
+    pub fn stack(&self) -> SparseColMat<u32, f32> {
+        let n_views = self.matrix.len();
+        let (rays_per_view, columns) = self.matrix[0].shape();
+        let mut triplet_list: Vec<Triplet<u32, u32, f32>> = Vec::new();
+        for (index, matrix) in self.matrix.iter().enumerate() {
+            let list: SparseAsList = matrix.as_ref().into();
+            let triplet = list.triplet_list.iter().map(|(old_row, col, val)| {
+                let row = old_row + index * rays_per_view;
+
+                Triplet::new(row as u32, *col as u32, *val)
+            });
+            triplet_list.extend(triplet);
+        }
+        SparseColMat::try_new_from_triplets(rays_per_view * n_views, columns, &triplet_list)
+            .unwrap()
+    }
+}
+
 impl Serialize for MappingMatrix {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -111,6 +130,15 @@ pub struct LFMatrices {
     pub number_of_view_points: u32,
 }
 
+pub struct OldLFMatrices {
+    m_a_x: SparseColMat<u32, f32>,
+    m_a_y: SparseColMat<u32, f32>,
+    m_b_x: SparseColMat<u32, f32>,
+    m_b_y: SparseColMat<u32, f32>,
+    m_t_x: SparseColMat<u32, f32>,
+    m_t_y: SparseColMat<u32, f32>,
+}
+
 impl LFMatrices {
     pub fn new(
         a: CompleteMapping,
@@ -154,6 +182,238 @@ impl LFMatrices {
         let mut file = std::fs::File::open(path_core).unwrap();
         let config = bincode::config::standard();
         bincode::serde::decode_from_std_read(&mut file, config).unwrap()
+    }
+    pub fn stack(&self) -> OldLFMatrices {
+        let m_a_x = self.a.x.stack();
+        let m_a_y = self.a.y.stack();
+        let m_b_x = self.b.x.stack();
+        let m_b_y = self.b.y.stack();
+        let m_t_x = self.t.x.stack();
+        let m_t_y = self.t.y.stack();
+        OldLFMatrices {
+            m_a_x,
+            m_a_y,
+            m_b_x,
+            m_b_y,
+            m_t_x,
+            m_t_y,
+        }
+    }
+    pub fn old_factorize(
+        &self,
+        settings: &LFSettings,
+        matrices: &OldLFMatrices,
+    ) -> Option<(DynamicImage, DynamicImage, Option<L2Norm>)> {
+        faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
+        let target_size = self.target_size;
+        let number_of_view_points = self.number_of_view_points;
+        let c_t = &self.c_t;
+        if settings.debug_prints {
+            println!(
+                "Global Parallelism is: {:?}",
+                faer::get_global_parallelism()
+            );
+        }
+
+        let m_a_x = matrices.m_a_x.as_ref();
+        let m_a_y = matrices.m_a_y.as_ref();
+        let m_b_x = matrices.m_b_x.as_ref();
+        let m_b_y = matrices.m_b_y.as_ref();
+        let m_t_x = matrices.m_t_x.as_ref();
+        let m_t_y = matrices.m_t_y.as_ref();
+
+        let rays_cast = (
+            target_size.1 * number_of_view_points,
+            target_size.0 * number_of_view_points,
+        );
+        if settings.debug_prints {
+            println!("Rays Cast is: {rays_cast:?}");
+        }
+
+        let c_t = utils::image_to_matrix(c_t);
+        if settings.debug_prints {
+            println!("A_y shape: {:?}", m_a_y.shape());
+            println!("A_x shape: {:?}", m_a_x.shape());
+            println!("b_y shape: {:?}", m_b_y.shape());
+            println!("b_x shape: {:?}", m_b_x.shape());
+            println!("t_y shape: {:?}", m_t_y.shape());
+            println!("t_x shape: {:?}", m_t_x.shape());
+            println!("C_T shape: {:?}", c_t.shape());
+        }
+
+        utils::verify_matrix(&c_t);
+        utils::matrix_to_image(&c_t)
+            .save_with_format(
+                "./resources/panel_compute/intermediate/C_T.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let h_a = m_a_y.shape().1;
+        let w_a = m_a_x.shape().1;
+        let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
+            if settings.rng {
+                thread_rng().gen_range(0f32..1.0f32)
+            } else {
+                settings.starting_values.0
+            }
+        });
+
+        let h_b = m_b_y.shape().1;
+        let w_b = m_b_x.shape().1;
+        let mut c_b = Mat::from_fn(h_b, w_b, |_x, _y| {
+            if settings.rng {
+                thread_rng().gen_range(0f32..1.0f32)
+            } else {
+                settings.starting_values.1
+            }
+        });
+
+        let mut upper = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
+
+        let mut lower = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
+
+        // Move IO out of loop and into dedicated thread
+        let (sender, receiver) = channel::<(String, DynamicImage)>();
+        thread::spawn(move || {
+            for (path, image) in receiver {
+                image.save_with_format(path, image::ImageFormat::Png).ok();
+            }
+        });
+
+        // Doesn't change
+
+        let mut progress_bar = {
+            if settings.debug_prints {
+                Some(indicatif::ProgressBar::new(settings.iter_count as u64))
+            } else {
+                None
+            }
+        };
+        let mut error = VecDeque::with_capacity(settings.iter_count);
+
+        let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
+
+        let c_t_m_product = (m_t_y * c_t) * m_t_x.transpose();
+        if settings.debug_prints {
+            println!("C_T_M Shape: {:?}", c_t_m_product.shape());
+        }
+        for _x in 0..settings.iter_count {
+            let start = Instant::now();
+            progress_bar.as_mut().inspect(|x| x.inc(1));
+
+            // if settings.show_steps {
+            //     let path_1 = format!(
+            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+            //         x, 1
+            //     );
+            //     let path_2 = format!(
+            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
+            //         x, 2
+            //     );
+            //     let image_a = utils::matrix_to_image(&c_a);
+            //     let image_b = utils::matrix_to_image(&c_b);
+            //     sender.send((path_1, image_a)).unwrap();
+            //     sender.send((path_2, image_b)).unwrap();
+
+            //     // Dispatch a thread to do
+            // }
+            // CA update
+            //
+            {
+                let c_b_m_product = m_b_y.as_ref() * &c_b * m_b_x.transpose();
+                let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
+                if settings.debug_prints {
+                    println!("C_A_M shape {:?}", c_a_m_product.shape());
+                    println!("C_B_M shape {:?}", c_b_m_product.shape());
+                }
+                zip!(&mut upper, &c_b_m_product, &c_t_m_product).for_each(
+                    |unzip!(upper, c_b, c_t)| {
+                        *upper = *c_b * *c_t;
+                    },
+                );
+                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                    |unzip!(lower, c_b, c_a)| {
+                        *lower = *c_a * *c_b * *c_b;
+                    },
+                );
+                let numerator = m_a_y.transpose() * &upper * &m_a_x;
+                let denominator = m_a_y.transpose() * &lower * &m_a_x;
+                zip!(&mut c_a, &numerator, &denominator).for_each(|unzip!(c_a, n, d)| {
+                    *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32))
+                });
+            }
+
+            // C_B Update
+
+            {
+                let c_b_m_product = m_b_y.as_ref() * &c_b * m_b_x.transpose();
+                let c_a_m_product = m_a_y.as_ref() * &c_a * m_a_x.transpose();
+                zip!(&mut upper, &c_a_m_product, &c_t_m_product).for_each(
+                    |unzip!(upper, c_a, c_t)| {
+                        *upper = *c_a * *c_t;
+                    },
+                );
+                zip!(&mut lower, &c_b_m_product, &c_a_m_product).for_each(
+                    |unzip!(lower, c_b, c_a)| {
+                        *lower = *c_b * *c_a * *c_a;
+                    },
+                );
+
+                let numerator = m_b_y.transpose() * &upper * &m_b_x;
+                let denominator = m_b_y.transpose() * &lower * &m_b_x;
+                zip!(&mut c_b, &numerator, &denominator).for_each(|unzip!(c_b, n, d)| {
+                    *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
+                });
+            }
+
+            let end = Instant::now();
+            let time_taken = end.duration_since(start);
+            time_taken_total.push(time_taken);
+        }
+
+        let total_time: Duration = time_taken_total.iter().sum();
+        let average_time = total_time / settings.iter_count as u32;
+        if settings.debug_prints {
+            println!("Average time per iteration: {average_time:?}");
+        }
+
+        if settings.filter {
+            utils::filter_zeroes(&mut c_a, &self.a);
+            utils::filter_zeroes(&mut c_b, &self.b);
+        }
+        utils::verify_matrix(&c_a);
+        utils::verify_matrix(&c_b);
+
+        let image_a = utils::matrix_to_image(&c_a);
+        image_a
+            .save_with_format(
+                "./resources/panel_compute/panel_1.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let image_b = utils::matrix_to_image(&c_b);
+
+        image_b
+            .save_with_format(
+                "./resources/panel_compute/panel_2.png",
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        if settings.debug_prints {
+            println!("Errors is: {error:?}");
+        }
+        let error = {
+            if settings.save_error {
+                Some(error.into())
+            } else {
+                None
+            }
+        };
+
+        Some((image_a, image_b, error))
     }
 }
 
