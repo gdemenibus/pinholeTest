@@ -14,19 +14,46 @@ mod shape;
 mod stereoscope;
 mod texture;
 use crate::app::App;
+use image::DynamicImage;
+use light_field_test::{LFMatrices, LFSettings, Lff, StereoMatrix};
 use notify::Watcher;
 use winit::event_loop::{EventLoop, EventLoopProxy};
 
-use std::{f32::consts::FRAC_PI_2, path::PathBuf, str::FromStr};
+use std::{env, f32::consts::FRAC_PI_2, path::PathBuf, str::FromStr};
 pub const RAY_HEIGHT: usize = 500;
 pub const RAY_WIDTH: usize = 500;
 pub const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 fn main() {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        pollster::block_on(execute());
+    let args: Vec<String> = env::args().collect();
+    println!("Arguments are: {args:?}");
+    if args[1] == "--bench" {
+        bench();
+    } else {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            pollster::block_on(execute());
+        }
     }
+}
+fn bench() {
+    let settings = LFSettings {
+        debug_prints: false,
+        ..Default::default()
+    };
+    let stereo = StereoMatrix::load("Kernel.ro".to_string());
+    println!("Initialized Stereo Matrices");
+
+    let mut diagonal = LFMatrices::load("Kernel.ro".to_string());
+
+    diagonal.c_t = DynamicImage::new_rgb8(diagonal.target_size.0, diagonal.target_size.1);
+    let stacked_matrices = diagonal.stack();
+    println!("Initialized Separable Matrices");
+
+    diagonal.old_factorize(&settings, &stacked_matrices);
+    diagonal.factorize(&settings);
+
+    stereo.factorize(&settings);
 }
 
 async fn execute() {
