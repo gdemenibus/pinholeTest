@@ -104,9 +104,11 @@ var<storage, read_write> l_buffer: array<f32>;
 @compute @workgroup_size(128, 1, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
-    let starting_y = GlobalInvocationID.x;
-    let screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, starting_y);
+    var screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, 0);
     let camera_index = GlobalInvocationID.y;
+    if GlobalInvocationID.z == 1 {
+        screen_pos = vec2<u32>(0, GlobalInvocationID.x);
+    }
 
     if screen_pos.x <= scene.pixel_count.x && screen_pos.y <= scene.pixel_count.y {
         let pixel_location = pixel_to_world_location(scene, screen_pos);

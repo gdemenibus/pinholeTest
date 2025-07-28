@@ -205,7 +205,7 @@ impl ReverseProj {
                 compute_pass.dispatch_workgroups(
                     work_group_size,
                     camera_history.history.len() as u32,
-                    1,
+                    2,
                 );
             }
             {

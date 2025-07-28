@@ -44,8 +44,8 @@ struct Commands {
     #[arg(short, long, default_value_t = false)]
     headless: bool,
 
-    #[arg(short, long, default_value_t = HeadlessType::Sep)]
-    type_head: HeadlessType,
+    #[arg(short, long)]
+    type_head: Option<HeadlessType>,
 }
 
 fn main() {
@@ -59,7 +59,7 @@ fn main() {
             debug_prints: false,
             ..Default::default()
         };
-        match args.type_head {
+        match args.type_head.unwrap() {
             HeadlessType::Sep => bench_sep(settings, &mut diagonal),
             HeadlessType::SepOld => bench_old(settings, &mut diagonal),
             HeadlessType::Stereo => bench_stereo(settings, &stereo),
