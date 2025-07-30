@@ -1,8 +1,10 @@
+use std::time::Instant;
+
 use cgmath::Vector2;
 use egui::{ahash::HashSet, Context, Ui};
 use faer::{
     sparse::{SparseColMat, SparseRowMat, Triplet},
-    ColRef, Mat, MatMut, MatRef, RowRef,
+    Col, ColRef, Mat, MatMut, MatRef, Row, RowRef,
 };
 use image::{DynamicImage, GenericImageView, ImageBuffer};
 use rayon::iter::{
@@ -287,32 +289,54 @@ pub trait DrawUI {
 }
 
 pub fn filter_zeroes(mat: &mut Mat<f32, usize, usize>, mapping_mat: &CompleteMapping) {
+    let rows = mat.nrows();
+    let columns = mat.ncols();
+
     for x in 0..mapping_mat.x.matrix.len() {
         let mat_x = &mapping_mat.x.matrix[x];
         let mat_y = &mapping_mat.y.matrix[x];
-        filter_helper(mat.as_mut(), mat_x, mat_y);
+        filter_helper(mat, mat_x, mat_y);
     }
 }
 
 fn filter_helper(
-    mat: MatMut<f32, usize, usize>,
+    mat: &mut Mat<f32, usize, usize>,
     mat_x: &SparseColMat<u32, f32>,
     mat_y: &SparseColMat<u32, f32>,
 ) {
     let x_ncols = mat_x.col_ptr();
     let y_ncols = mat_y.col_ptr();
+    let rows = mat.nrows();
+    let columns = mat.ncols();
 
-    for (column, x) in mat.col_iter_mut().enumerate() {
-        for (row, y) in x.iter_mut().enumerate() {
-            if *y != 0.0 {
-                //break;
-            }
-            // This means there are no entries for this column
-            if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
-                *y = 1.0;
-            }
+    // Column Check
+    for column in 0..columns {
+        if x_ncols[column + 1] == x_ncols[column] {
+            let mut test = mat.as_mut().col_mut(column);
+            test.fill(1.0);
         }
     }
+
+    for row in 0..rows {
+        if y_ncols[row + 1] == y_ncols[row] {
+            let mut test = mat.as_mut().row_mut(row);
+
+            test.fill(1.0);
+        }
+    }
+    // Row Check
+
+    // for (column, x) in mat.col_iter_mut().enumerate() {
+    //     for (row, y) in x.iter_mut().enumerate() {
+    //         if *y != 0.0 {
+    //             //break;
+    //         }
+    //         // This means there are no entries for this column
+    //         if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
+    //             *y = 1.0;
+    //         }
+    //     }
+    // }
 }
 
 #[cfg(test)]
