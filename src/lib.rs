@@ -115,6 +115,10 @@ impl CompleteMapping {
     pub fn new(x: MappingMatrix, y: MappingMatrix, size: (u32, u32)) -> Self {
         CompleteMapping { x, y, size }
     }
+    pub fn debug_print(&self, name: String) {
+        println!("{}_X size: {:?}", name, self.x.matrix[0].shape());
+        println!("{}_Y size: {:?}", name, self.y.matrix[0].shape());
+    }
 }
 
 /// Struct to hold the matrices that we will build.
@@ -586,8 +590,8 @@ impl Lff for LFMatrices {
         }
 
         let rays_cast = (
-            target_size.1 * number_of_view_points,
             target_size.0 * number_of_view_points,
+            target_size.1 * number_of_view_points,
         );
         if settings.debug_prints {
             println!("Rays Cast is: {rays_cast:?}");
@@ -610,6 +614,10 @@ impl Lff for LFMatrices {
 
         let h_a = matrices.a.size.0 as usize;
         let w_a = matrices.a.size.1 as usize;
+        if settings.debug_prints {
+            println!("H_a is : {h_a}");
+            println!("w_a is : {w_a}");
+        }
         let mut c_a = Mat::from_fn(h_a, w_a, |_x, _y| {
             if settings.rng {
                 thread_rng().gen_range(0f32..1.0f32)
@@ -620,6 +628,11 @@ impl Lff for LFMatrices {
 
         let h_b = matrices.b.size.0 as usize;
         let w_b = matrices.b.size.1 as usize;
+
+        if settings.debug_prints {
+            println!("H_b is : {h_b}");
+            println!("w_b is : {w_b}");
+        }
         let mut c_b = Mat::from_fn(h_b, w_b, |_x, _y| {
             if settings.rng {
                 thread_rng().gen_range(0f32..1.0f32)
@@ -627,6 +640,12 @@ impl Lff for LFMatrices {
                 settings.starting_values.1
             }
         });
+        if settings.debug_prints {
+            self.a.debug_print("M_A".to_string());
+            self.b.debug_print("M_B".to_string());
+            self.t.debug_print("M_T".to_string());
+        }
+
         let single_pass_size = (
             rays_cast.0 / number_of_view_points,
             rays_cast.1 / number_of_view_points,
@@ -774,7 +793,14 @@ impl Lff for LFMatrices {
         }
 
         if settings.filter {
+            if settings.debug_prints {
+                println!("Filtering C_a");
+            }
             utils::filter_zeroes(&mut c_a, &matrices.a);
+
+            if settings.debug_prints {
+                println!("Filtering C_b");
+            }
             utils::filter_zeroes(&mut c_b, &matrices.b);
         }
         utils::verify_matrix(&c_a);

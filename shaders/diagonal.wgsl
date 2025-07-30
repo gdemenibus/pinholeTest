@@ -106,11 +106,13 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
     var screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, 0);
     let camera_index = GlobalInvocationID.y;
+
     if GlobalInvocationID.z == 1 {
         screen_pos = vec2<u32>(0, GlobalInvocationID.x);
     }
 
     if screen_pos.x <= scene.pixel_count.x && screen_pos.y <= scene.pixel_count.y {
+        //if true {
         let pixel_location = pixel_to_world_location(scene, screen_pos);
         let origin = pixel_location;
         let observer = camera_positions[camera_index];

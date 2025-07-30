@@ -289,10 +289,9 @@ pub trait DrawUI {
 }
 
 pub fn filter_zeroes(mat: &mut Mat<f32, usize, usize>, mapping_mat: &CompleteMapping) {
-    let rows = mat.nrows();
-    let columns = mat.ncols();
-
     for x in 0..mapping_mat.x.matrix.len() {
+        println!("Filtering entry: {}", x);
+
         let mat_x = &mapping_mat.x.matrix[x];
         let mat_y = &mapping_mat.y.matrix[x];
         filter_helper(mat, mat_x, mat_y);

@@ -159,7 +159,10 @@ impl LFBuffers {
                 },
             ],
         });
-        let settings = light_field_test::LFSettings::default();
+        let settings = light_field_test::LFSettings {
+            debug_prints: true,
+            ..Default::default()
+        };
         Self {
             matrix_rep: None,
             m_a_y_buffer,
@@ -196,6 +199,7 @@ impl LFBuffers {
     }
     pub fn build_m_t(
         &self,
+        number_of_view_points: u32,
         device: &wgpu::Device,
         rays_cast: (u32, u32),
         target_size: (u32, u32),
@@ -203,44 +207,29 @@ impl LFBuffers {
         println!("Building M_t_y");
 
         let m_t_y = {
-            let vec_t_y = buffer_to_sparse_triplet(&self.m_t_y_buffer, device, rays_cast.0);
-
-            let columns = target_size.0;
-
-            let triplets = utils::build_tripltes(vec_t_y, target_size.0 as usize);
-
-            let matrix = triplets
-                .iter()
-                .map(|triplet_list| {
-                    SparseColMat::try_new_from_triplets(
-                        target_size.0 as usize,
-                        columns as usize,
-                        triplet_list,
-                    )
-                    .unwrap()
-                })
+            let y_comp = target_size.0;
+            let entries: Vec<Triplet<u32, u32, f32>> = (0..y_comp as usize)
+                .map(|index| Triplet::new(index as u32, index as u32, 1.0))
                 .collect();
+
+            let identity_spares =
+                SparseColMat::try_new_from_triplets(y_comp as usize, y_comp as usize, &entries)
+                    .unwrap();
+            let matrix = vec![identity_spares; number_of_view_points as usize];
             MappingMatrix { matrix }
         };
 
         println!("Building M_t_x");
         let m_t_x = {
-            let vec_t_x = buffer_to_sparse_triplet(&self.m_t_x_buffer, device, rays_cast.1);
-            let columns = target_size.1;
-
-            let triplets = utils::build_tripltes(vec_t_x, target_size.1 as usize);
-
-            let matrix = triplets
-                .iter()
-                .map(|triplet_list| {
-                    SparseColMat::try_new_from_triplets(
-                        target_size.1 as usize,
-                        columns as usize,
-                        triplet_list,
-                    )
-                    .unwrap()
-                })
+            let x_comp = target_size.1;
+            let entries: Vec<Triplet<u32, u32, f32>> = (0..x_comp as usize)
+                .map(|index| Triplet::new(index as u32, index as u32, 1.0))
                 .collect();
+
+            let identity_spares =
+                SparseColMat::try_new_from_triplets(x_comp as usize, x_comp as usize, &entries)
+                    .unwrap();
+            let matrix = vec![identity_spares; number_of_view_points as usize];
             MappingMatrix { matrix }
         };
 
@@ -261,17 +250,17 @@ impl LFBuffers {
         println!("Building M_A_Y");
 
         let m_a_y = {
-            let vec_a_y = buffer_to_sparse_triplet(&self.m_a_y_buffer, device, rays_cast.0);
+            let vec_a_y = buffer_to_sparse_triplet(&self.m_a_y_buffer, device, rays_cast.1);
 
             let columns = panel_size.0;
 
-            let triplets = utils::build_tripltes(vec_a_y, rays_cast_per_viewpoint.0 as usize);
+            let triplets = utils::build_tripltes(vec_a_y, rays_cast_per_viewpoint.1 as usize);
 
             let matrix = triplets
                 .iter()
                 .map(|triplet_list| {
                     SparseColMat::try_new_from_triplets(
-                        rays_cast_per_viewpoint.0 as usize,
+                        rays_cast_per_viewpoint.1 as usize,
                         columns as usize,
                         triplet_list,
                     )
@@ -283,16 +272,16 @@ impl LFBuffers {
 
         println!("Building M_a_x");
         let m_a_x = {
-            let vec_a_x = buffer_to_sparse_triplet(&self.m_a_x_buffer, device, rays_cast.1);
+            let vec_a_x = buffer_to_sparse_triplet(&self.m_a_x_buffer, device, rays_cast.0);
             let columns = panel_size.1;
 
-            let triplets = utils::build_tripltes(vec_a_x, rays_cast_per_viewpoint.1 as usize);
+            let triplets = utils::build_tripltes(vec_a_x, rays_cast_per_viewpoint.0 as usize);
 
             let matrix = triplets
                 .iter()
                 .map(|triplet_list| {
                     SparseColMat::try_new_from_triplets(
-                        rays_cast_per_viewpoint.1 as usize,
+                        rays_cast_per_viewpoint.0 as usize,
                         columns as usize,
                         triplet_list,
                     )
@@ -318,17 +307,17 @@ impl LFBuffers {
     ) -> CompleteMapping {
         println!("Building M_B_Y");
         let m_b_y = {
-            let vec_b_y = buffer_to_sparse_triplet(&self.m_b_y_buffer, device, rays_cast.0);
+            let vec_b_y = buffer_to_sparse_triplet(&self.m_b_y_buffer, device, rays_cast.1);
 
             let columns = panel_size.0;
 
-            let triplets = utils::build_tripltes(vec_b_y, rays_cast_per_viewpoint.0 as usize);
+            let triplets = utils::build_tripltes(vec_b_y, rays_cast_per_viewpoint.1 as usize);
 
             let matrix = triplets
                 .iter()
                 .map(|triplet_list| {
                     SparseColMat::try_new_from_triplets(
-                        rays_cast_per_viewpoint.0 as usize,
+                        rays_cast_per_viewpoint.1 as usize,
                         columns as usize,
                         triplet_list,
                     )
@@ -340,16 +329,16 @@ impl LFBuffers {
 
         println!("Building M_b_x");
         let m_b_x = {
-            let vec_b_x = buffer_to_sparse_triplet(&self.m_b_x_buffer, device, rays_cast.1);
+            let vec_b_x = buffer_to_sparse_triplet(&self.m_b_x_buffer, device, rays_cast.0);
             let columns = panel_size.1;
 
-            let triplets = utils::build_tripltes(vec_b_x, rays_cast_per_viewpoint.1 as usize);
+            let triplets = utils::build_tripltes(vec_b_x, rays_cast_per_viewpoint.0 as usize);
 
             let matrix = triplets
                 .iter()
                 .map(|triplet_list| {
                     SparseColMat::try_new_from_triplets(
-                        rays_cast_per_viewpoint.1 as usize,
+                        rays_cast_per_viewpoint.0 as usize,
                         columns as usize,
                         triplet_list,
                     )
@@ -379,13 +368,16 @@ impl LFBuffers {
             target_size.1 * number_of_view_points,
             target_size.0 * number_of_view_points,
         );
+
+        let rays_per_view_point = (target_size.1, target_size.0);
+
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
 
-        let a = self.build_m_a(device, number_of_rays, target_size, panel_a_size);
-        let b = self.build_m_b(device, number_of_rays, target_size, panel_b_size);
+        let a = self.build_m_a(device, number_of_rays, rays_per_view_point, panel_a_size);
+        let b = self.build_m_b(device, number_of_rays, rays_per_view_point, panel_b_size);
         // TO BE CHANGED SOON
-        let t = self.build_m_t(device, number_of_rays, target_size);
+        let t = self.build_m_t(number_of_view_points, device, number_of_rays, target_size);
         let matrices = LFMatrices {
             a,
             b,
