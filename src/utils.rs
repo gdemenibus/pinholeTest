@@ -1,7 +1,10 @@
-use std::time::Instant;
+use std::{iter::zip, time::Instant};
 
 use cgmath::Vector2;
-use egui::{ahash::HashSet, Context, Ui};
+use egui::{
+    ahash::{HashSet, HashSetExt},
+    Context, Ui,
+};
 use faer::{
     sparse::{SparseColMat, SparseRowMat, Triplet},
     Col, ColRef, Mat, MatMut, MatRef, Row, RowRef,
@@ -12,7 +15,7 @@ use rayon::iter::{
 };
 use wgpu::Buffer;
 
-use crate::CompleteMapping;
+use crate::{CompleteMapping, MappingMatrix};
 
 pub fn sample_buffer(sample_buffer: &Buffer, device: &wgpu::Device) -> Vec<u8> {
     let buffer_slice = sample_buffer.slice(..);
@@ -289,13 +292,50 @@ pub trait DrawUI {
 }
 
 pub fn filter_zeroes(mat: &mut Mat<f32, usize, usize>, mapping_mat: &CompleteMapping) {
-    for x in 0..mapping_mat.x.matrix.len() {
-        println!("Filtering entry: {}", x);
+    let x_filter = filter_combine(&mapping_mat.x);
+    let y_filter = filter_combine(&mapping_mat.y);
+    let filters: Vec<(HashSet<usize>, HashSet<usize>)> = zip(x_filter, y_filter).collect();
 
-        let mat_x = &mapping_mat.x.matrix[x];
-        let mat_y = &mapping_mat.y.matrix[x];
-        filter_helper(mat, mat_x, mat_y);
+    for (row, x) in mat.row_iter_mut().enumerate() {
+        for (column, y) in x.iter_mut().enumerate() {
+            if !filters
+                .iter()
+                .any(|set| set.1.contains(&row) && set.0.contains(&column))
+            {
+                *y = 1.0;
+            }
+        }
     }
+
+    // for (column, mut col_mut) in mat.as_mut().col_iter_mut().enumerate() {
+    //     if !x_filter.contains(&column) {
+    //         col_mut.fill(1.0);
+    //     }
+    // }
+
+    // for (row, mut row_mut) in mat.as_mut().row_iter_mut().enumerate() {
+    //     if !y_filter.contains(&row) {
+    //         row_mut.fill(1.0);
+    //     }
+    // }
+
+    // let mat_x = mapping_mat.x.stack();
+    // let mat_y = mapping_mat.y.stack();
+    // filter_brute(mat, &mat_x, &mat_y);
+    //filter_helper(mat, &mat_x, &mat_y);
+}
+fn filter_combine(mapping: &MappingMatrix) -> Vec<HashSet<usize>> {
+    mapping.matrix.iter().map(active_columns).collect()
+}
+fn active_columns(mat: &SparseColMat<u32, f32>) -> HashSet<usize> {
+    let pntr = mat.col_ptr();
+    let mut set = HashSet::new();
+    for column in 0..mat.ncols() {
+        if pntr[column + 1] != pntr[column] {
+            set.insert(column);
+        }
+    }
+    set
 }
 
 fn filter_helper(
@@ -323,19 +363,21 @@ fn filter_helper(
             test.fill(1.0);
         }
     }
-    // Row Check
-
-    // for (column, x) in mat.col_iter_mut().enumerate() {
-    //     for (row, y) in x.iter_mut().enumerate() {
-    //         if *y != 0.0 {
-    //             //break;
-    //         }
-    //         // This means there are no entries for this column
-    //         if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
-    //             *y = 1.0;
-    //         }
-    //     }
-    // }
+}
+fn filter_brute(
+    mat: &mut Mat<f32, usize, usize>,
+    mat_x: &SparseColMat<u32, f32>,
+    mat_y: &SparseColMat<u32, f32>,
+) {
+    let x_ncols = mat_x.col_ptr();
+    let y_ncols = mat_y.col_ptr();
+    for (row, x) in mat.row_iter_mut().enumerate() {
+        for (column, y) in x.iter_mut().enumerate() {
+            if x_ncols[column + 1] == x_ncols[column] || y_ncols[row + 1] == y_ncols[row] {
+                *y = 1.0;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
