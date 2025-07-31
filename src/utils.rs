@@ -306,23 +306,6 @@ pub fn filter_zeroes(mat: &mut Mat<f32, usize, usize>, mapping_mat: &CompleteMap
             }
         }
     }
-
-    // for (column, mut col_mut) in mat.as_mut().col_iter_mut().enumerate() {
-    //     if !x_filter.contains(&column) {
-    //         col_mut.fill(1.0);
-    //     }
-    // }
-
-    // for (row, mut row_mut) in mat.as_mut().row_iter_mut().enumerate() {
-    //     if !y_filter.contains(&row) {
-    //         row_mut.fill(1.0);
-    //     }
-    // }
-
-    // let mat_x = mapping_mat.x.stack();
-    // let mat_y = mapping_mat.y.stack();
-    // filter_brute(mat, &mat_x, &mat_y);
-    //filter_helper(mat, &mat_x, &mat_y);
 }
 fn filter_combine(mapping: &MappingMatrix) -> Vec<HashSet<usize>> {
     mapping.matrix.iter().map(active_columns).collect()

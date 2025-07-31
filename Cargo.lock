@@ -1182,6 +1182,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "factorization"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "criterion",
+ "faer",
+ "image 0.25.5",
+ "indicatif",
+ "serde",
+]
+
+[[package]]
 name = "faer"
 version = "0.22.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2181,6 +2193,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "egui_file",
+ "factorization",
  "faer",
  "futures-intrusive",
  "image 0.25.5",

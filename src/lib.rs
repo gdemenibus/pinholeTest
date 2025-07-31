@@ -605,6 +605,7 @@ impl Lff for LFMatrices {
         }
 
         utils::verify_matrix(&c_t);
+
         utils::matrix_to_image(&c_t)
             .save_with_format(
                 "./resources/panel_compute/intermediate/C_T.png",
