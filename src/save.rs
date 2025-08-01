@@ -6,7 +6,7 @@ use plotters::{
     style::{IntoFont, RED, WHITE},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::VecDeque, fs, path::PathBuf};
+use std::{collections::VecDeque, default, fs, path::PathBuf};
 use walkdir::WalkDir;
 
 use crate::{
@@ -56,6 +56,17 @@ impl ImageCache {
             return Ok(());
         }
         Err("No Errors in this cache".into())
+    }
+    pub fn save_out_cache(
+        &self,
+        root_path: PathBuf,
+    ) -> (
+        Option<PathBuf>,
+        Option<PathBuf>,
+        Option<PathBuf>,
+        Option<PathBuf>,
+    ) {
+        todo!("Doesn't save output yet");
     }
 
     pub fn cache_output(&mut self, stereo: bool, out: OutCache) {
@@ -129,10 +140,10 @@ pub struct Save {
     pub target: Target,
     panel_1: ScenePanel,
     panel_2: ScenePanel,
-    panel_1_texture_sep: PathBuf,
-    panel_2_texture_sep: PathBuf,
-    panel_1_texture_stereo: PathBuf,
-    panel_2_texture_stereo: PathBuf,
+    panel_1_texture_sep: Option<PathBuf>,
+    panel_2_texture_sep: Option<PathBuf>,
+    panel_1_texture_stereo: Option<PathBuf>,
+    panel_2_texture_stereo: Option<PathBuf>,
     name: String,
 }
 
@@ -155,25 +166,18 @@ impl Save {
 
         let mut target_image_path = path_core.clone();
         target_image_path.push("target.png");
-        cache.target_image.save(&target_image_path).unwrap();
+        cache.target_image.save(&target_image_path).ok();
 
-        let mut panel_1_image_path = path_core.clone();
-        panel_1_image_path.push("panel_1.png");
-        cache.panels[0].save(&panel_1_image_path).unwrap();
-
-        let mut panel_2_image_path = path_core.clone();
-        panel_2_image_path.push("panel_2.png");
-        cache.panels[1].save(&panel_2_image_path).unwrap();
         let save = Save {
             target: scene.world.clone(),
             cameras: cameras.clone(),
             name,
             target_path: target_image_path,
-            panel_1_texture_sep: panel_1_image_path.clone(),
-            panel_2_texture_sep: panel_2_image_path.clone(),
+            panel_1_texture_sep: None,
+            panel_2_texture_sep: None,
 
-            panel_1_texture_stereo: panel_1_image_path,
-            panel_2_texture_stereo: panel_2_image_path,
+            panel_1_texture_stereo: None,
+            panel_2_texture_stereo: None,
             panel_1: scene.panels[0].clone(),
             panel_2: scene.panels[1].clone(),
         };
@@ -192,20 +196,12 @@ impl Save {
             .unwrap()
             .decode()
             .unwrap();
-        let panel_1 = ImageReader::open(&self.panel_1_texture_sep)
-            .unwrap()
-            .decode()
-            .unwrap();
-        let panel_2 = ImageReader::open(&self.panel_2_texture_sep)
-            .unwrap()
-            .decode()
-            .unwrap();
+
         ImageCache {
             target_image: target,
-            panels: vec![panel_1, panel_2],
-
             stereo_out: None,
             separable_out: None,
+            ..Default::default()
         }
     }
     pub fn update_scene(&self, scene: &mut Scene) {

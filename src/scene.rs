@@ -134,7 +134,7 @@ impl TextureBinds {
         //let texture_bytes = include_bytes!("../resources/textures/Aircraft_code.png");
 
         //let texture = texture::Texture::from_bytes(device, queue, texture_bytes, "Damn");
-        let img = image::DynamicImage::new_rgb8(3000, 3000);
+        let img = image::DynamicImage::new_rgb8(6000, 6000);
         let label = Some("Target Texture");
         let texture = texture::Texture::from_image(device, queue, &img, label);
 
@@ -411,8 +411,8 @@ impl TargetBinds {
 }
 impl PanelBinds {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &[u8]) -> Self {
-        let panel_1 = image::DynamicImage::new_rgb8(3000, 3000);
-        let panel_2 = image::DynamicImage::new_rgb8(3000, 3000);
+        let panel_1 = image::DynamicImage::new_rgb8(6000, 6000);
+        let panel_2 = image::DynamicImage::new_rgb8(6000, 6000);
         let texture_vec = vec![panel_1, panel_2];
 
         let panel_textures =

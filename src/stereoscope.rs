@@ -18,7 +18,7 @@ pub struct StereoscopeBuffer {
     matrix_rep: Option<StereoMatrix>,
     settings: light_field_test::LFSettings,
 }
-const BUFFER_SIZE: usize = 2560 * 1600 * 4 * 3;
+const BUFFER_SIZE: usize = 6000 * 6000 * 4 * 10;
 
 impl StereoscopeBuffer {
     pub fn set_up(device: &wgpu::Device) -> Self {
