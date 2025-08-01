@@ -148,7 +148,7 @@ impl ReverseProj {
         }
 
         let target = u32::max(target_dimensions.x, target_dimensions.y);
-        target.div_ceil(128)
+        target.div_ceil(64)
     }
     pub fn compute_pass(
         &self,

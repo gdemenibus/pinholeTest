@@ -101,7 +101,7 @@ var<storage, read_write> b_buffer: array<u32>;
 @group(6) @binding(2)
 var<storage, read_write> l_buffer: array<f32>;
 
-@compute @workgroup_size(128, 1, 1)
+@compute @workgroup_size(64, 1, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
 
     var screen_pos: vec2<u32> = vec2<u32>(GlobalInvocationID.x, 0);
@@ -111,7 +111,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>) {
         screen_pos = vec2<u32>(0, GlobalInvocationID.x);
     }
 
-    if screen_pos.x <= scene.pixel_count.x && screen_pos.y <= scene.pixel_count.y {
+    if screen_pos.x < scene.pixel_count.x && screen_pos.y < scene.pixel_count.y {
         //if true {
         let pixel_location = pixel_to_world_location(scene, screen_pos);
         let origin = pixel_location;
@@ -237,6 +237,7 @@ fn record_hit_T(
 ) {
 
     m_t_x_buffer[ray_index.x] = t_coords.x;
+
     m_t_y_buffer[ray_index.y] = t_coords.y;
 
 }
