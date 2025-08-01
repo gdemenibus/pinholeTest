@@ -25,9 +25,9 @@ fn bench_methods(c: &mut Criterion) {
     // c.bench_function("Separable Old Approach", |b| {
     //     b.iter(|| diagonal.old_factorize(black_box(&settings), black_box(&stacked_matrices)))
     // });
-    // c.bench_function("Separable Approach", |b| {
-    //     b.iter(|| diagonal.factorize(black_box(&settings)))
-    // });
+    c.bench_function("Separable Approach", |b| {
+        b.iter(|| diagonal.factorize(black_box(&settings)))
+    });
 
     c.bench_function("Stereo Approach", |b| {
         b.iter(|| stereo.factorize(black_box(&settings)))

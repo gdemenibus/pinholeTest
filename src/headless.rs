@@ -97,7 +97,7 @@ impl HeadlessImage {
     }
 
     pub fn print_image(&mut self, device: &wgpu::Device) {
-        println!("Printing Texture!");
+        println!("Printing Screen!");
         let pixel_size: u32 = 4;
         let actual_bytes_per_row = self.width * pixel_size;
         let aligned_bytes_per_row = actual_bytes_per_row.div_ceil(256) * 256;

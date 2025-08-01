@@ -604,15 +604,6 @@ impl Lff for LFMatrices {
             println!("C_T shape: {:?}", c_t.shape());
         }
 
-        utils::verify_matrix(&c_t);
-
-        utils::matrix_to_image(&c_t)
-            .save_with_format(
-                "./resources/panel_compute/intermediate/C_T.png",
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-
         let h_a = matrices.a.size.0 as usize;
         let w_a = matrices.a.size.1 as usize;
         if settings.debug_prints {
@@ -808,21 +799,8 @@ impl Lff for LFMatrices {
         utils::verify_matrix(&c_b);
 
         let image_a = utils::matrix_to_image(&c_a);
-        image_a
-            .save_with_format(
-                "./resources/panel_compute/panel_1.png",
-                image::ImageFormat::Png,
-            )
-            .unwrap();
 
         let image_b = utils::matrix_to_image(&c_b);
-
-        image_b
-            .save_with_format(
-                "./resources/panel_compute/panel_2.png",
-                image::ImageFormat::Png,
-            )
-            .unwrap();
 
         if settings.debug_prints {
             println!("Errors is: {error:?}");

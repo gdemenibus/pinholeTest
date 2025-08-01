@@ -324,12 +324,20 @@ impl CameraHistory {
             let mut right_camera = center_camera.clone();
             right_camera.position += Vector3::new(self.kernel_size, 0.0, 0.0);
 
+            let mut front_camera = center_camera.clone();
+            front_camera.position += Vector3::new(0.00, 0.0, self.kernel_size);
+
+            let mut back_camera = center_camera.clone();
+            back_camera.position -= Vector3::new(0.00, 0.0, self.kernel_size);
+
             self.history.push_back(center_camera);
             if self.kernel {
                 self.history.push_back(top_camera);
                 self.history.push_back(bottom_camera);
                 self.history.push_back(right_camera);
                 self.history.push_back(left_camera);
+                self.history.push_back(front_camera);
+                self.history.push_back(back_camera);
             }
         }
     }

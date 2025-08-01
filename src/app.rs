@@ -819,7 +819,7 @@ impl App {
         state.camera_history.save_point(&self.camera);
         // Have one compute pass ready to go.
         state.verify_m_a();
-        state.rev_proj.print_image(&state.device);
+        //state.rev_proj.print_image(&state.device);
         let mut new_camera = self.camera.clone();
         new_camera.position += Vector3::new(1.0, 1.0, 1.0);
 
@@ -1015,10 +1015,12 @@ impl App {
 
 impl ApplicationHandler<FileWatcher> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(Window::default_attributes())
-            .unwrap();
-        pollster::block_on(self.set_window(window));
+        if self.state.is_none() {
+            let window = event_loop
+                .create_window(Window::default_attributes())
+                .unwrap();
+            pollster::block_on(self.set_window(window));
+        }
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: FileWatcher) {
         let _ = event_loop;
