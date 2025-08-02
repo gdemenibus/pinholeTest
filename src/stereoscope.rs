@@ -7,8 +7,8 @@ use faer::Mat;
 use image::DynamicImage;
 use wgpu::{util::DeviceExt, Buffer};
 
-use light_field_test::utils::DrawUI;
-use light_field_test::*;
+use crate::utils::DrawUI;
+use crate::*;
 
 pub struct StereoscopeBuffer {
     l_buffer: Buffer,
@@ -18,7 +18,7 @@ pub struct StereoscopeBuffer {
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
     matrix_rep: Option<StereoMatrix>,
-    settings: light_field_test::LFSettings,
+    settings: crate::LFSettings,
 }
 const BUFFER_SIZE: usize = 6000 * 6000 * 4 * 10;
 
@@ -172,25 +172,17 @@ impl StereoscopeBuffer {
         target_size: (u32, u32),
         number_of_view_points: u32,
     ) {
-        let start = Instant::now();
         let rays_cast = target_size.0 * target_size.1 * number_of_view_points;
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
-        println!("Building L");
         let l_vec = self.build_l(device, rays_cast);
         let ray_total_memory = 4 * rays_cast;
         if ray_total_memory as usize > BUFFER_SIZE {
             panic!("Cannot store the results of all rays in allocated buffers");
         }
 
-        println!("Building Stereo A");
         let a_matrix = self.build_m_a(device, rays_cast, panel_a_size).into();
-        println!("Building Stereo B");
         let b_matrix = self.build_m_b(device, rays_cast, panel_b_size).into();
-        println!(
-            "Time taken to Build: {:?}",
-            Instant::now().duration_since(start)
-        );
         let stereo = StereoMatrix {
             panel_a_size: (pixel_count_a.x, pixel_count_a.y),
             panel_b_size: (pixel_count_b.x, pixel_count_b.y),

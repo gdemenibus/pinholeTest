@@ -26,6 +26,7 @@ pollster = "0.4.0"
 rayon = "1.10.0"
 ron = "0.10.1"
 serde = { version = "1.0.219", features = ["std", "derive"] }
+vec-utilities = "0.0.2"
 walkdir = "2.5.0"
 wgpu = "24.0.1"
 winit = "0.30.9"

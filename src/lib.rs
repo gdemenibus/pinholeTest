@@ -1,3 +1,18 @@
+pub mod app;
+mod camera;
+mod compute_pass;
+mod egui_tools;
+mod file_picker;
+mod headless;
+mod light_factor;
+mod raytracer;
+mod save;
+mod scene;
+mod shape;
+mod stereoscope;
+mod texture;
+pub mod vertex;
+
 pub mod utils;
 use std::{num::NonZero, path::PathBuf};
 
@@ -878,4 +893,8 @@ impl Lff for StereoMatrix {
         };
         Some((a, b, error))
     }
+}
+
+pub enum FileWatcher {
+    FileChange,
 }

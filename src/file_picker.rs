@@ -3,10 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::utils::DrawUI;
 use egui::{Context, Ui};
 use egui_file::FileDialog;
 use image::DynamicImage;
-use light_field_test::utils::DrawUI;
 
 pub struct FilePicker {
     pub texture_file: PathBuf,

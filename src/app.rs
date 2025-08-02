@@ -8,6 +8,7 @@ use crate::save::{ImageCache, Save, SaveManager};
 use crate::scene::Scene;
 use crate::shape::Quad;
 use crate::stereoscope::StereoscopeBuffer;
+use crate::utils::DrawUI;
 use crate::vertex;
 use crate::FileWatcher;
 use crevice::std140::AsStd140;
@@ -16,16 +17,14 @@ use egui_notify::Toasts;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::GenericImageView;
-use light_field_test::utils::DrawUI;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vec_utilities::maths::Statistics;
-use walkdir::WalkDir;
 use wgpu::util::DeviceExt;
-use wgpu::{Backends, RenderPipeline};
+use wgpu::{Adapter, Backends, RenderPipeline};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
@@ -37,13 +36,13 @@ use winit::window::{Window, WindowId};
 pub struct AppState {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub surface_config: wgpu::SurfaceConfiguration,
-    pub surface: wgpu::Surface<'static>,
+    pub surface_config: Option<wgpu::SurfaceConfiguration>,
+    pub surface: Option<wgpu::Surface<'static>>,
     pub scale_factor: f32,
-    pub egui_renderer: EguiRenderer,
-    pub render_pipe: RenderPipeline,
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
+    pub egui_renderer: Option<EguiRenderer>,
+    pub render_pipe: Option<RenderPipeline>,
+    pub vertex_buffer: Option<wgpu::Buffer>,
+    pub index_buffer: Option<wgpu::Buffer>,
     pub num_index: u32,
     pub scene: Scene,
     pub factorizer: LFBuffers,
@@ -61,7 +60,7 @@ impl AppState {
     async fn new(
         instance: &wgpu::Instance,
         surface: wgpu::Surface<'static>,
-        window: &Window,
+        window: Option<&Window>,
         width: u32,
         height: u32,
     ) -> Self {
@@ -130,7 +129,19 @@ impl AppState {
         let stereoscope = StereoscopeBuffer::set_up(&device);
         let headless = HeadlessImage::new(&device, &queue, image_width, image_height);
 
-        let egui_renderer = EguiRenderer::new(&device, surface_config.format, None, 1, window);
+        let egui_renderer = {
+            if let Some(window) = window {
+                Some(EguiRenderer::new(
+                    &device,
+                    surface_config.format,
+                    None,
+                    1,
+                    window,
+                ))
+            } else {
+                None
+            }
+        };
 
         let scale_factor = 1.0;
 
@@ -243,14 +254,102 @@ impl AppState {
             image_cache,
             device,
             queue,
-            surface,
-            surface_config,
+            surface: Some(surface),
+            surface_config: Some(surface_config),
             egui_renderer,
             scale_factor,
-            render_pipe,
-            vertex_buffer,
-            index_buffer,
+            render_pipe: Some(render_pipe),
+            vertex_buffer: Some(vertex_buffer),
+            index_buffer: Some(index_buffer),
             num_index: index_list.len() as u32,
+            scene,
+            factorizer,
+            stereoscope,
+            rev_proj,
+            camera_history,
+            headless,
+        }
+    }
+    async fn request_adapter(instance: &wgpu::Instance) -> Adapter {
+        let power_pref = wgpu::PowerPreference::HighPerformance;
+        instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: power_pref,
+                force_fallback_adapter: false,
+                compatible_surface: None,
+            })
+            .await
+            .expect("Failed to find an appropriate adapter")
+    }
+
+    fn headless_app(instance: &wgpu::Instance) -> Self {
+        let adapter = pollster::block_on(Self::request_adapter(instance));
+
+        let features = wgpu::Features::VERTEX_WRITABLE_STORAGE
+            | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
+            | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+            | wgpu::Features::BGRA8UNORM_STORAGE
+            | wgpu::Features::MULTI_DRAW_INDIRECT
+            | wgpu::Features::TIMESTAMP_QUERY
+            | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        let limites = adapter.limits();
+        let request = async {
+            adapter
+                .request_device(
+                    &wgpu::DeviceDescriptor {
+                        label: None,
+                        required_features: features,
+                        required_limits: limites,
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .await
+                .expect("Failed to create device")
+        };
+
+        let (device, queue) = pollster::block_on(request);
+
+        let camera_history = CameraHistory::new(&device);
+        let camera = &camera_history.current_camera;
+
+        let image_height = 1;
+        let image_width = 1;
+        let rt_test = RayTraceInfo::test(camera, image_height, image_width);
+        let scene = Scene::new(rt_test, camera, &device, &queue);
+
+        let factorizer = LFBuffers::set_up(&device);
+        let stereoscope = StereoscopeBuffer::set_up(&device);
+        let headless = HeadlessImage::new(&device, &queue, image_width, image_height);
+
+        let rev_proj = ReverseProj::new(
+            &device,
+            &queue,
+            &scene,
+            &factorizer,
+            &stereoscope,
+            &camera_history,
+        );
+        let mut image_cache = ImageCache::default();
+        let target = scene.world.texture.load_texture();
+        image_cache.target_image = target;
+
+        let save_manager = SaveManager::boot();
+        Self {
+            displaying_panel_textures: false,
+            distort_rays: true,
+            save_manager,
+            image_cache,
+            device,
+            queue,
+            surface: None,
+            surface_config: None,
+            egui_renderer: None,
+            scale_factor: 0.0,
+            render_pipe: None,
+            vertex_buffer: None,
+            index_buffer: None,
+            num_index: 0u32,
             scene,
             factorizer,
             stereoscope,
@@ -306,7 +405,7 @@ impl AppState {
                     targets: &[
                         Some(wgpu::ColorTargetState {
                             // 4. // What color outputs it should set up!
-                            format: self.surface_config.format,
+                            format: self.surface_config.as_ref().unwrap().format,
                             blend: Some(wgpu::BlendState::REPLACE),
                             write_mask: wgpu::ColorWrites::ALL,
                         }),
@@ -340,7 +439,7 @@ impl AppState {
                 multiview: None, // 5. === USEFUL FOR RENDERING TO ARRAY TEXTURES ====
                 cache: None,     // 6.
             });
-            self.render_pipe = render_pipe;
+            self.render_pipe = Some(render_pipe);
         }
     }
     fn compute_pass(&mut self) {
@@ -573,9 +672,12 @@ impl AppState {
     }
 
     fn resize_surface(&mut self, width: u32, height: u32) {
-        self.surface_config.width = width;
-        self.surface_config.height = height;
-        self.surface.configure(&self.device, &self.surface_config);
+        self.surface_config.as_mut().unwrap().width = width;
+        self.surface_config.as_mut().unwrap().height = height;
+        self.surface
+            .as_ref()
+            .unwrap()
+            .configure(&self.device, &self.surface_config.as_ref().unwrap());
         self.headless
             .handle_resize(width, height, &self.device, &self.queue);
     }
@@ -654,7 +756,29 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(headless: bool) -> Self {
+        if headless {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends: Backends::VULKAN,
+                ..Default::default()
+            });
+
+            let state = AppState::headless_app(&instance);
+            let mut output = Self {
+                instance,
+                toasts: Toasts::default(),
+                mouse_press: false,
+                mouse_on_ui: false,
+                disable_controls: false,
+                cache_stereo: false,
+                state: None,
+                window: None,
+                previous_draw: Instant::now(),
+                pressed_keys: HashSet::default(),
+            };
+            output.state = Some(state);
+            return output;
+        }
         // Fore opengl backend?
         let instance = egui_wgpu::wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: Backends::VULKAN,
@@ -834,7 +958,7 @@ impl App {
 
     pub fn next_camera(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            state.camera_history.next_save().clone();
+            state.camera_history.next_save().unwrap();
         }
     }
     pub fn play_animation(&mut self) {
@@ -903,7 +1027,7 @@ impl App {
         let mut state = AppState::new(
             &self.instance,
             surface,
-            &window,
+            Some(&window),
             initial_width,
             initial_width,
         )
@@ -958,12 +1082,15 @@ impl App {
         }
 
         let screen_descriptor = ScreenDescriptor {
-            size_in_pixels: [state.surface_config.width, state.surface_config.height],
+            size_in_pixels: [
+                state.surface_config.as_ref().unwrap().width,
+                state.surface_config.as_ref().unwrap().height,
+            ],
             pixels_per_point: self.window.as_ref().unwrap().scale_factor() as f32
                 * state.scale_factor,
         };
 
-        let surface_texture = state.surface.get_current_texture();
+        let surface_texture = state.surface.as_ref().unwrap().get_current_texture();
 
         match surface_texture {
             Err(SurfaceError::Outdated) => {
@@ -995,8 +1122,8 @@ impl App {
         {
             state.scene.update_rt_info(
                 &state.camera_history.current_camera,
-                state.surface_config.height,
-                state.surface_config.width,
+                state.surface_config.as_ref().unwrap().height,
+                state.surface_config.as_ref().unwrap().width,
             );
             state.scene.update_draw(
                 &state.queue,
@@ -1041,14 +1168,17 @@ impl App {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            render_pass.set_pipeline(&state.render_pipe);
+            render_pass.set_pipeline(&state.render_pipe.as_ref().unwrap());
             // Pass uniform!
             state.scene.render_pass(&mut render_pass);
             render_pass.set_bind_group(3, &state.factorizer.bind_group, &[]);
             //render_pass.set_bind_group(4, &state.headless.bind_group, &[]);
             // Takes 2 params, as you might pass multiple vertex buffers
-            render_pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(0, state.vertex_buffer.as_ref().unwrap().slice(..));
+            render_pass.set_index_buffer(
+                state.index_buffer.as_ref().unwrap().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
             render_pass.draw_indexed(0..state.num_index, 0, 0..1);
         }
 
@@ -1056,9 +1186,9 @@ impl App {
             state.headless.draw_pass(&mut encoder);
         }
 
-        state.egui_renderer.begin_frame(window);
+        state.egui_renderer.as_mut().unwrap().begin_frame(window);
 
-        let context = state.egui_renderer.context();
+        let context = state.egui_renderer.as_ref().unwrap().context();
 
         self.toasts.show(context);
         // TODO: Make this slightly more elegant!
@@ -1070,7 +1200,7 @@ impl App {
             state.camera_history.draw_ui(context, None, None);
             state.save_manager.draw_ui(context, None, None);
 
-            state.egui_renderer.end_frame_and_draw(
+            state.egui_renderer.as_mut().unwrap().end_frame_and_draw(
                 &state.device,
                 &state.queue,
                 &mut encoder,
@@ -1118,6 +1248,8 @@ impl ApplicationHandler<FileWatcher> for App {
             .as_mut()
             .unwrap()
             .egui_renderer
+            .as_mut()
+            .unwrap()
             .handle_input(self.window.as_ref().unwrap(), &event);
 
         match event {

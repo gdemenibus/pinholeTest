@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
+use crate::utils::DrawUI;
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
-use light_field_test::utils::DrawUI;
 use serde::{Deserialize, Serialize};
 
 pub trait Shape: crevice::std140::AsStd140 {

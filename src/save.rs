@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, fs, path::PathBuf};
 use walkdir::WalkDir;
 
+use crate::utils::DrawUI;
 use crate::{
     camera::Camera,
     scene::{Scene, ScenePanel, Target},
 };
-use light_field_test::utils::DrawUI;
 
 type OutCache = Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)>;
 /// Cache the current textures if they need to be saved

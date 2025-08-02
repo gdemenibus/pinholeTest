@@ -1,20 +1,7 @@
 #[macro_use]
-pub mod vertex;
-mod app;
-mod camera;
-mod compute_pass;
-mod egui_tools;
-mod file_picker;
-mod headless;
-mod light_factor;
-mod raytracer;
-mod save;
-mod scene;
-mod shape;
-mod stereoscope;
-mod texture;
-use crate::app::App;
 use image::DynamicImage;
+use light_field_test::app::*;
+use light_field_test::FileWatcher;
 use light_field_test::{LFMatrices, LFSettings, Lff, StereoMatrix};
 use notify::Watcher;
 use winit::event_loop::{EventLoop, EventLoopProxy};
@@ -59,10 +46,17 @@ fn main() {
             debug_prints: false,
             ..Default::default()
         };
-        match args.type_head.unwrap() {
-            HeadlessType::Sep => bench_sep(settings, &mut diagonal),
-            HeadlessType::SepOld => bench_old(settings, &mut diagonal),
-            HeadlessType::Stereo => bench_stereo(settings, &stereo),
+        if let Some(bench) = args.type_head {
+            match bench {
+                HeadlessType::Sep => bench_sep(settings, &mut diagonal),
+                HeadlessType::SepOld => bench_old(settings, &mut diagonal),
+                HeadlessType::Stereo => bench_stereo(settings, &stereo),
+            }
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                pollster::block_on(execute());
+            }
         }
     } else {
         #[cfg(not(target_arch = "wasm32"))]
@@ -95,12 +89,8 @@ async fn execute() {
     let proxy = event_loop.create_proxy();
     start_file_watcher(proxy);
 
-    let mut app = App::new();
+    let mut app = App::new(false);
     let _ = event_loop.run_app(&mut app);
-}
-
-enum FileWatcher {
-    FileChange,
 }
 
 fn start_file_watcher(proxy: EventLoopProxy<FileWatcher>) {

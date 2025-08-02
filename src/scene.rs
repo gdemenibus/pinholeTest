@@ -1,5 +1,5 @@
+use crate::utils::DrawUI;
 use image::{DynamicImage, GenericImageView};
-use light_field_test::utils::DrawUI;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use wgpu::{util::DeviceExt, BindGroupLayout, ComputePass, Queue, RenderPass};
@@ -818,6 +818,7 @@ impl Scene {
 
         render_pass.set_bind_group(2, Some(&self.panel_binds.bind_group), &[]);
     }
+
     pub fn compute_pass(&self, compute_pass: &mut ComputePass) {
         compute_pass.set_bind_group(0, Some(&self.target_binds.bind_group), &[]);
         compute_pass.set_bind_group(1, Some(&self.texture_binds.bind_group), &[]);

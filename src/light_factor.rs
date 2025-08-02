@@ -1,14 +1,12 @@
-use std::time::Instant;
-
 use cgmath::Vector2;
 use egui::Ui;
 use faer::sparse::{SparseColMat, Triplet};
 use image::DynamicImage;
 use wgpu::{util::DeviceExt, Buffer};
 
-use light_field_test::utils::buffer_to_sparse_triplet;
-use light_field_test::utils::DrawUI;
-use light_field_test::*;
+use crate::utils::buffer_to_sparse_triplet;
+use crate::utils::DrawUI;
+use crate::*;
 
 /// Objective is to implement the write up
 pub struct LFBuffers {
@@ -161,7 +159,7 @@ impl LFBuffers {
                 },
             ],
         });
-        let settings = light_field_test::LFSettings {
+        let settings = crate::LFSettings {
             debug_prints: true,
             ..Default::default()
         };
@@ -386,7 +384,6 @@ impl LFBuffers {
         target_size: (u32, u32),
         number_of_view_points: u32,
     ) {
-        let start = Instant::now();
         let number_of_rays = (
             target_size.1 * number_of_view_points,
             target_size.0 * number_of_view_points,
@@ -408,10 +405,6 @@ impl LFBuffers {
             rays_per_view_point,
         );
 
-        println!(
-            "Time taken to Build: {:?}",
-            Instant::now().duration_since(start)
-        );
         let matrices = LFMatrices {
             a,
             b,

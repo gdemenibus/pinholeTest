@@ -22,7 +22,7 @@ use winit::event::ElementState;
 use winit::event::KeyEvent;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-use light_field_test::utils::DrawUI;
+use crate::utils::DrawUI;
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 fn lerp_vec3(a: Point3<f32>, b: Point3<f32>, t: f32) -> Point3<f32> {
