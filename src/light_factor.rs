@@ -160,7 +160,7 @@ impl LFBuffers {
             ],
         });
         let settings = crate::LFSettings {
-            debug_prints: true,
+            debug_prints: false,
             ..Default::default()
         };
         Self {
@@ -200,18 +200,6 @@ impl LFBuffers {
         rays_cast_per_viewpoint: (u32, u32),
         target_size: (u32, u32),
     ) -> CompleteMapping {
-        println!("Building M_t_y");
-
-        println!("Rays Cast:{rays_cast:?}");
-        println!("Rays Cast per view points: {rays_cast_per_viewpoint:?}");
-        println!("Target size: {target_size:?}");
-        println!("Number of view points: {number_of_view_points:?}");
-
-        println!(
-            "Building M_t_x, size {}, {}",
-            rays_cast_per_viewpoint.0, target_size.0
-        );
-
         let m_t_x = {
             let vec_t_x = buffer_to_sparse_triplet(&self.m_t_x_buffer, device, rays_cast.0);
             let columns = target_size.0;
@@ -267,8 +255,6 @@ impl LFBuffers {
         rays_cast_per_viewpoint: (u32, u32),
         panel_size: (u32, u32),
     ) -> CompleteMapping {
-        println!("Building M_A_Y");
-
         let m_a_y = {
             let vec_a_y = buffer_to_sparse_triplet(&self.m_a_y_buffer, device, rays_cast.1);
 
@@ -290,7 +276,6 @@ impl LFBuffers {
             MappingMatrix { matrix }
         };
 
-        println!("Building M_a_x");
         let m_a_x = {
             let vec_a_x = buffer_to_sparse_triplet(&self.m_a_x_buffer, device, rays_cast.0);
             let columns = panel_size.1;
@@ -325,7 +310,6 @@ impl LFBuffers {
         rays_cast_per_viewpoint: (u32, u32),
         panel_size: (u32, u32),
     ) -> CompleteMapping {
-        println!("Building M_B_Y");
         let m_b_y = {
             let vec_b_y = buffer_to_sparse_triplet(&self.m_b_y_buffer, device, rays_cast.1);
 
@@ -347,7 +331,6 @@ impl LFBuffers {
             MappingMatrix { matrix }
         };
 
-        println!("Building M_b_x");
         let m_b_x = {
             let vec_b_x = buffer_to_sparse_triplet(&self.m_b_x_buffer, device, rays_cast.0);
             let columns = panel_size.1;

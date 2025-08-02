@@ -16,7 +16,7 @@ use egui::ahash::HashSet;
 use egui_notify::Toasts;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -442,7 +442,7 @@ impl AppState {
             self.render_pipe = Some(render_pipe);
         }
     }
-    fn compute_pass(&mut self) {
+    pub fn compute_pass(&mut self) {
         // Update the world first!
         self.camera_history.update_buffer(&self.queue);
 
@@ -553,10 +553,13 @@ impl AppState {
         for file in dir {
             println!("File {file:?}");
             let new_target = image::open(file.unwrap().path()).unwrap();
-            self.image_cache.target_image = new_target;
-            self.update_target_texture();
+            self.update_target(new_target);
             self.run_benchmark();
         }
+    }
+    pub fn update_target(&mut self, image: DynamicImage) {
+        self.image_cache.target_image = image;
+        self.update_target_texture();
     }
 
     fn verify_m_a(&mut self) {
@@ -568,9 +571,7 @@ impl AppState {
 
         //self.stereoscope.verify_m_a(&self.device, rays_cast);
     }
-
-    fn sample_both(&mut self) {
-        self.compute_pass();
+    pub fn sample_stereo(&mut self) {
         let c_t = &self.image_cache.target_image;
         let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
         let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
@@ -579,8 +580,9 @@ impl AppState {
             self.scene.world.pixel_count.y,
             self.scene.world.pixel_count.x,
         );
-        println!("sampling!");
+
         let number_of_view_points = self.camera_history.len() as u32;
+
         self.stereoscope.sample_light_field(
             &self.device,
             pixel_count_a,
@@ -588,6 +590,19 @@ impl AppState {
             target_size,
             number_of_view_points,
         );
+    }
+    pub fn sample_sep(&mut self) {
+        let c_t = &self.image_cache.target_image;
+        let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
+        let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
+
+        let target_size = (
+            self.scene.world.pixel_count.y,
+            self.scene.world.pixel_count.x,
+        );
+
+        let number_of_view_points = self.camera_history.len() as u32;
+
         self.factorizer.sample_light_field(
             &self.device,
             pixel_count_a,
@@ -598,19 +613,24 @@ impl AppState {
         );
     }
 
-    fn solve_stereo(&mut self) {
-        println!("Factorizing");
+    fn sample_both(&mut self) {
+        self.compute_pass();
+
+        self.sample_sep();
+        self.sample_stereo();
+    }
+
+    pub fn solve_stereo(&mut self) {
         let imgs = self.stereoscope.factorize_stereo();
         self.image_cache.cache_output(true, imgs);
         self.update_panel(0);
         self.update_panel(1);
     }
 
-    fn solver_light_field(&mut self) {
+    pub fn solver_light_field(&mut self) {
         self.compute_pass();
 
         // Y here maps to additional rows and X to additional Columns
-        println!("Factorizing");
         let images = self.factorizer.alternative_factorization();
 
         self.image_cache.cache_output(false, images);
@@ -744,7 +764,7 @@ impl AppState {
 // Handles the drawing and the app logic
 pub struct App {
     instance: wgpu::Instance,
-    state: Option<AppState>,
+    pub state: Option<AppState>,
     window: Option<Arc<Window>>,
     previous_draw: Instant,
     mouse_press: bool,

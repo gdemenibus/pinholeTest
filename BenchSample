@@ -1,0 +1,30 @@
+BENCH: Size Vector2 [4000, 4000], Kernel: false , ViewPoints: 1  
+STEREO: 222047.2
+SEP: 5700
+BENCH: Size Vector2 [2000, 2000], Kernel: false , ViewPoints: 1  
+STEREO: 68191.6
+SEP: 6348
+BENCH: Size Vector2 [1000, 1000], Kernel: false , ViewPoints: 1  
+STEREO: 28454.4
+SEP: 8652.8
+BENCH: Size Vector2 [500, 500], Kernel: false , ViewPoints: 1  
+STEREO: 18461.2
+SEP: 9419.6
+BENCH: Size Vector2 [6000, 6000], Kernel: false , ViewPoints: 1  
+STEREO: 501468.8
+SEP: 6030.4
+BENCH: Size Vector2 [4000, 4000], Kernel: true , ViewPoints: 0  
+STEREO: 221911.6
+SEP: 7916.4
+BENCH: Size Vector2 [2000, 2000], Kernel: true , ViewPoints: 0  
+STEREO: 81926.4
+SEP: 6942
+BENCH: Size Vector2 [1000, 1000], Kernel: true , ViewPoints: 0  
+STEREO: 27986.8
+SEP: 7802.4
+BENCH: Size Vector2 [500, 500], Kernel: true , ViewPoints: 0  
+STEREO: 11473.2
+SEP: 7764.4
+BENCH: Size Vector2 [6000, 6000], Kernel: true , ViewPoints: 0  
+STEREO: 778212.4
+SEP: 8217.2

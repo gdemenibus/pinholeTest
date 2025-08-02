@@ -73,18 +73,6 @@ var<uniform> panel_texture_size: vec2<u32>;
 // (x + y * column) * 3
 // we need to give every x 3 entries.
 // WARNING: This needs to be double tested!
-@group(3) @binding(0)
-var<storage, read_write> m_a_y_buffer: array<u32>;
-@group(3) @binding(1)
-var<storage, read_write> m_a_x_buffer: array<u32>;
-@group(3) @binding(2)
-var<storage, read_write> m_b_y_buffer: array<u32>;
-@group(3) @binding(3)
-var<storage, read_write> m_b_x_buffer: array<u32>;
-@group(3) @binding(4)
-var<storage, read_write> m_t_y_buffer: array<u32>;
-@group(3) @binding(5)
-var<storage, read_write> m_t_x_buffer: array<u32>;
 
 @group(4) @binding(0) var color_buffer: texture_storage_2d<rgba8unorm, write>;
 

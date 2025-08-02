@@ -316,6 +316,10 @@ impl CameraHistory {
             history: VecDeque::new(),
         }
     }
+    pub fn benchmove(&mut self) {
+        self.current_camera.position += Vector3::new(3.0, 1.0, -2.0);
+    }
+
     pub fn update_history(&mut self, new_vec: VecDeque<Camera>) {
         self.history = new_vec.clone();
     }
@@ -427,6 +431,10 @@ impl CameraHistory {
 
         Some(camera)
     }
+}
+
+fn Vecctor3() -> Vector3<f32> {
+    todo!()
 }
 impl DrawUI for CameraController {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {

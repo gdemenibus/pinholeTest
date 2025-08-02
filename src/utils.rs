@@ -40,11 +40,11 @@ pub fn check_triplets(rows: u32, columns: u32, triplets: &mut Vec<Triplet<u32, u
     triplets.retain(|x| x.row < rows && x.col < columns);
     let post_filer = triplets.len();
     let diff = pre_filter - post_filer;
-    println!("Filtered {diff} entries");
-    println!("Triplet size is: {}", triplets.len());
-    if triplets.len() < 5 {
-        println!("Triplets are: {triplets:#?}");
-    }
+    //println!("Filtered {diff} entries");
+    //println!("Triplet size is: {}", triplets.len());
+    // if triplets.len() < 5 {
+    //     println!("Triplets are: {triplets:#?}");
+    // }
 }
 
 pub fn buffer_to_triplet(buffer: &Buffer, device: &wgpu::Device) -> HashSet<(u32, u32)> {

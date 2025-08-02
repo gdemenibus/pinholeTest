@@ -97,7 +97,10 @@ impl StereoscopeBuffer {
                 },
             ],
         });
-        let settings = LFSettings::default();
+        let settings = LFSettings {
+            debug_prints: false,
+            ..Default::default()
+        };
         Self {
             a_buffer,
             b_buffer,
@@ -115,7 +118,6 @@ impl StereoscopeBuffer {
             .chunks(4)
             .map(|x| f32::from_ne_bytes(x[0..4].try_into().unwrap()))
             .collect();
-        println!("L is of size: {}", entries.len());
         Mat::from_fn(rays_cast as usize, 1, |x, _y| entries[x])
         // TODO:
         // Debug print to check for sanity (is it being sampled correctly)
