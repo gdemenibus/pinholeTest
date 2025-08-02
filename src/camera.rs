@@ -454,6 +454,9 @@ impl DrawUI for CameraHistory {
                     "Current camera positions saved:{}",
                     self.history.len()
                 ));
+                if ui.button("Save Position").clicked() {
+                    self.save_point();
+                }
 
                 if ui.button("Reset").clicked() {
                     self.history = VecDeque::new();

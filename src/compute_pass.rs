@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use cgmath::Vector2;
+use vec_utilities::maths::Statistics;
 use wgpu::{
     BindGroup, Buffer, CommandEncoder, ComputePipeline, ComputePipelineDescriptor, QuerySet,
 };
@@ -35,13 +36,15 @@ impl ReverseProj {
                 include_str!("../shaders/reverse_projection.wgsl").into(),
             ),
         });
+
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             count: 4, // start and end
             ty: wgpu::QueryType::Timestamp,
             label: Some("Compute Benchmark QuerySet"),
         });
+
         let query_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            size: 32, // 4 * u64
+            size: 4 * 400, // 4 * u64
             usage: wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::QUERY_RESOLVE
                 | wgpu::BufferUsages::MAP_READ,
@@ -134,6 +137,14 @@ impl ReverseProj {
             debug_texture_texture: texture,
             debug_bind_group: bind_group,
         }
+    }
+    pub fn update_query_set(&mut self, device: &wgpu::Device, iteration: usize) {
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            count: iteration as u32 * 2, // start and end
+            ty: wgpu::QueryType::Timestamp,
+            label: Some("Compute Benchmark QuerySet"),
+        });
+        self.query_set = query_set;
     }
 
     pub fn work_group_size(target_dimensions: Vector2<u32>) -> (u32, u32) {
@@ -237,6 +248,92 @@ impl ReverseProj {
             );
         }
     }
+    pub fn stereo_pass(
+        &self,
+        encoder: &mut CommandEncoder,
+        scene: &scene::Scene,
+        iteration: usize,
+        camera_history: &CameraHistory,
+
+        factorizer: &LFBuffers,
+        stereoscope: &StereoscopeBuffer,
+    ) {
+        {
+            let work_group_size = Self::work_group_size(scene.world.pixel_count);
+            let compute_pass_desc = wgpu::ComputePassDescriptor {
+                label: Some("Compute pass"),
+                timestamp_writes: None,
+            };
+
+            {
+                encoder.write_timestamp(&self.query_set, (iteration * 2) as u32);
+            }
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
+                compute_pass.set_pipeline(&self.compute_pipeline);
+                scene.compute_pass(&mut compute_pass);
+
+                compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
+                compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
+                compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
+                compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
+
+                compute_pass.dispatch_workgroups(work_group_size.0, work_group_size.1, 1);
+            }
+
+            {
+                encoder.write_timestamp(&self.query_set, (iteration * 2 + 1) as u32);
+            }
+        }
+    }
+    pub fn sep_pass(
+        &self,
+        encoder: &mut CommandEncoder,
+        scene: &scene::Scene,
+        iteration: usize,
+        camera_history: &CameraHistory,
+        factorizer: &LFBuffers,
+        stereoscope: &StereoscopeBuffer,
+    ) {
+        let compute_pass_desc = wgpu::ComputePassDescriptor {
+            label: Some("Compute pass"),
+            timestamp_writes: None,
+        };
+        let work_group_size = Self::diagonal_work_group(scene.world.pixel_count);
+        {
+            encoder.write_timestamp(&self.query_set, (iteration * 2) as u32);
+        }
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&compute_pass_desc);
+
+            compute_pass.set_pipeline(&self.diagonal_pipeline);
+
+            scene.compute_pass(&mut compute_pass);
+
+            compute_pass.set_bind_group(3, &factorizer.bind_group, &[]);
+            compute_pass.set_bind_group(4, Some(&self.debug_bind_group), &[]);
+            compute_pass.set_bind_group(5, &camera_history.bind_group, &[]);
+            compute_pass.set_bind_group(6, &stereoscope.bind_group, &[]);
+
+            compute_pass.dispatch_workgroups(
+                work_group_size,
+                camera_history.history.len() as u32,
+                2,
+            );
+        }
+        {
+            encoder.write_timestamp(&self.query_set, (iteration * 2 + 1) as u32);
+        }
+        //encoder.resolve_query_set(&self.query_set, 0..3, &self.query_buffer, 0);
+    }
+    pub fn resolve_queries(&self, encoder: &mut CommandEncoder, iteration: usize) {
+        encoder.resolve_query_set(
+            &self.query_set,
+            0..(iteration as u32 * 2),
+            &self.query_buffer,
+            0,
+        );
+    }
     pub fn print_image(&self, device: &wgpu::Device) {
         let texture_size = 256;
 
@@ -281,6 +378,31 @@ impl ReverseProj {
         }
 
         self.query_buffer.unmap();
+    }
+    pub fn benchmark_time_total(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        iteration: usize,
+    ) -> Vec<f32> {
+        let raw_data = {
+            let buffer_slice = self.query_buffer.slice(..);
+            buffer_slice.map_async(wgpu::MapMode::Read, |_| ());
+            device.poll(wgpu::Maintain::Wait);
+
+            let data = buffer_slice.get_mapped_range();
+            // Buffer is larger than this
+            let timestamps: &[u64] = &bytemuck::cast_slice(&data)[0..iteration * 2];
+            let tick_duration = queue.get_timestamp_period();
+            let run_data: Vec<f32> = timestamps
+                .chunks(2)
+                .map(|timestamps| (timestamps[1] - timestamps[0]) as f32 * tick_duration)
+                .collect();
+            run_data
+        };
+
+        self.query_buffer.unmap();
+        raw_data
     }
 }
 

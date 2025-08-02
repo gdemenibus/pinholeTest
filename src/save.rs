@@ -298,7 +298,7 @@ impl DrawUI for SaveManager {
 
                 // Create the text field with auto focus
                 let text_edit = egui::TextEdit::singleline(&mut self.current_save_name)
-                    .hint_text("filename.txt")
+                    .hint_text("Dir Name")
                     .id(Id::new(20))
                     .desired_width(f32::INFINITY);
                 if !self.first_draw {

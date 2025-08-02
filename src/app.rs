@@ -1,4 +1,4 @@
-use crate::camera::{Camera, CameraController, CameraHistory};
+use crate::camera::CameraHistory;
 use crate::compute_pass::ReverseProj;
 use crate::egui_tools::EguiRenderer;
 use crate::headless::HeadlessImage;
@@ -17,9 +17,13 @@ use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
 use image::GenericImageView;
 use light_field_test::utils::DrawUI;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant};
+use vec_utilities::maths::Statistics;
+use walkdir::WalkDir;
 use wgpu::util::DeviceExt;
 use wgpu::{Backends, RenderPipeline};
 use winit::application::ApplicationHandler;
@@ -359,6 +363,103 @@ impl AppState {
         self.device.poll(wgpu::MaintainBase::Wait);
         self.rev_proj.time_taken(&self.device, &self.queue);
     }
+    /// Function runs compute pipeline 100 times. Collects Data on run time
+    /// Uses the current state of the world ()
+    fn benchmark_stereo_pass(&mut self, iterations: usize) -> Vec<f32> {
+        self.camera_history.update_buffer(&self.queue);
+        {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+            for index in 0..iterations {
+                self.rev_proj.stereo_pass(
+                    &mut encoder,
+                    &self.scene,
+                    index,
+                    &self.camera_history,
+                    &self.factorizer,
+                    &self.stereoscope,
+                );
+            }
+            {
+                self.rev_proj.resolve_queries(&mut encoder, iterations);
+            }
+            self.queue.submit(Some(encoder.finish()));
+        }
+        self.device.poll(wgpu::MaintainBase::Wait);
+        self.rev_proj
+            .benchmark_time_total(&self.device, &self.queue, iterations)
+    }
+
+    fn benchmark_sep_pass(&mut self, iterations: usize) -> Vec<f32> {
+        self.camera_history.update_buffer(&self.queue);
+        {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+            for index in 0..iterations {
+                self.rev_proj.sep_pass(
+                    &mut encoder,
+                    &self.scene,
+                    index,
+                    &self.camera_history,
+                    &self.factorizer,
+                    &self.stereoscope,
+                );
+            }
+            {
+                self.rev_proj.resolve_queries(&mut encoder, iterations);
+            }
+            self.queue.submit(Some(encoder.finish()));
+        }
+        self.device.poll(wgpu::MaintainBase::Wait);
+        self.rev_proj
+            .benchmark_time_total(&self.device, &self.queue, iterations)
+    }
+    fn run_benchmark(&mut self) {
+        let iterations = 100;
+        self.rev_proj.update_query_set(&self.device, iterations + 1);
+        let stereo_data = self.benchmark_stereo_pass(iterations);
+        let stereo_average = stereo_data.iter().mean().unwrap();
+
+        self.rev_proj.update_query_set(&self.device, iterations + 1);
+        let sep_data = self.benchmark_sep_pass(iterations);
+        let sep_mean = sep_data.iter().mean().unwrap();
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("./BenchSample")
+            .unwrap();
+
+        let title_line = format!(
+            "BENCH: Size {:?}, Kernel: {} , ViewPoints: {}  ",
+            self.scene.world.pixel_count,
+            self.camera_history.kernel,
+            self.camera_history.len()
+        );
+        println!("Sep: {:?}", Duration::from_nanos(sep_mean as u64));
+        println!("Stereo: {:?}", Duration::from_nanos(stereo_average as u64));
+        writeln!(file, "{title_line}").unwrap();
+        let stereo_line = format!("STEREO: {stereo_average}");
+        writeln!(file, "{stereo_line}").unwrap();
+        let sep_line = format!("SEP: {sep_mean}");
+        writeln!(file, "{sep_line}",).unwrap();
+    }
+    fn run_through_curated(&mut self) {
+        let path = PathBuf::from("./resources/textures/Curated/");
+        let dir = fs::read_dir(path).unwrap();
+        for file in dir {
+            println!("File {file:?}");
+            let new_target = image::open(file.unwrap().path()).unwrap();
+            self.image_cache.target_image = new_target;
+            self.update_target_texture();
+            self.run_benchmark();
+        }
+    }
+
     fn verify_m_a(&mut self) {
         println!("Length of history is: {}", self.camera_history.len());
         self.compute_pass();
@@ -636,6 +737,11 @@ impl App {
                         self.toasts.info(format!("Loading next save {name:?}"));
                         self.next_camera();
                     }
+                }
+            }
+            PhysicalKey::Code(KeyCode::Digit2) => {
+                if let Some(state) = self.state.as_mut() {
+                    state.run_through_curated();
                 }
             }
 
