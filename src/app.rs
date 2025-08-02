@@ -497,9 +497,10 @@ impl AppState {
         }
     }
 
-    fn load_next_save(&mut self) {
+    fn load_next_save(&mut self) -> Option<String> {
         let next_save = self.save_manager.next_save();
         if let Some(save) = next_save {
+            let name = save.name.clone();
             let new_cache = save.to_cache();
             let cameras = save.cameras.clone();
             save.update_scene(&mut self.scene);
@@ -509,11 +510,15 @@ impl AppState {
             self.update_panel(1);
             self.displaying_panel_textures = true;
             self.camera_history.update_history(cameras);
+            Some(name)
+        } else {
+            None
         }
     }
-    fn load_previous_save(&mut self) {
+    fn load_previous_save(&mut self) -> Option<String> {
         let next_save = self.save_manager.previous_save();
         if let Some(save) = next_save {
+            let name = save.name.clone();
             let new_cache = save.to_cache();
             let cameras = save.cameras.clone();
 
@@ -525,6 +530,10 @@ impl AppState {
             self.update_panel(0);
             self.update_panel(1);
             self.displaying_panel_textures = true;
+
+            Some(name)
+        } else {
+            None
         }
     }
 }
@@ -623,8 +632,8 @@ impl App {
                     || self.pressed_keys.contains(&KeyCode::ShiftRight)
                 {
                     if let Some(state) = self.state.as_mut() {
-                        self.toasts.info("Loading next save");
-                        state.load_next_save();
+                        let name = state.load_next_save();
+                        self.toasts.info(format!("Loading next save {name:?}"));
                         self.next_camera();
                     }
                 }
@@ -635,9 +644,9 @@ impl App {
                     || self.pressed_keys.contains(&KeyCode::ShiftRight)
                 {
                     if let Some(state) = self.state.as_mut() {
-                        state.load_previous_save();
+                        let name = state.load_previous_save();
 
-                        self.toasts.info("Previous next save");
+                        self.toasts.info(format!("Previous next save{name:?}"));
 
                         self.next_camera();
                     }

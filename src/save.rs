@@ -145,7 +145,7 @@ pub struct Save {
     panel_2_texture_sep: Option<PathBuf>,
     panel_1_texture_stereo: Option<PathBuf>,
     panel_2_texture_stereo: Option<PathBuf>,
-    name: String,
+    pub name: String,
 }
 
 impl Save {
