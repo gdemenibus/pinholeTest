@@ -8,8 +8,6 @@ use utils::DrawUI;
 
 use std::{
     collections::VecDeque,
-    sync::mpsc::channel,
-    thread,
     time::{Duration, Instant},
 };
 
@@ -278,12 +276,6 @@ impl LFMatrices {
         let mut lower = Mat::<f32>::zeros(rays_cast.0 as usize, rays_cast.1 as usize);
 
         // Move IO out of loop and into dedicated thread
-        let (sender, receiver) = channel::<(String, DynamicImage)>();
-        thread::spawn(move || {
-            for (path, image) in receiver {
-                image.save_with_format(path, image::ImageFormat::Png).ok();
-            }
-        });
 
         // Doesn't change
 
@@ -294,7 +286,7 @@ impl LFMatrices {
                 None
             }
         };
-        let mut error = VecDeque::with_capacity(settings.iter_count);
+        let error = VecDeque::with_capacity(settings.iter_count);
 
         let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
 
@@ -306,27 +298,9 @@ impl LFMatrices {
             let start = Instant::now();
             progress_bar.as_mut().inspect(|x| x.inc(1));
 
-            // if settings.show_steps {
-            //     let path_1 = format!(
-            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-            //         x, 1
-            //     );
-            //     let path_2 = format!(
-            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-            //         x, 2
-            //     );
-            //     let image_a = utils::matrix_to_image(&c_a);
-            //     let image_b = utils::matrix_to_image(&c_b);
-            //     sender.send((path_1, image_a)).unwrap();
-            //     sender.send((path_2, image_b)).unwrap();
-
-            //     // Dispatch a thread to do
-            // }
-            // CA update
-            //
             {
                 let c_b_m_product = m_b_y.as_ref() * &c_b * m_b_x.transpose();
-                let c_a_m_product = &m_a_y * &c_a * m_a_x.transpose();
+                let c_a_m_product = m_a_y * &c_a * m_a_x.transpose();
                 if settings.debug_prints {
                     println!("C_A_M shape {:?}", c_a_m_product.shape());
                     println!("C_B_M shape {:?}", c_b_m_product.shape());
@@ -341,8 +315,8 @@ impl LFMatrices {
                         *lower = *c_a * *c_b * *c_b;
                     },
                 );
-                let numerator = m_a_y.transpose() * &upper * &m_a_x;
-                let denominator = m_a_y.transpose() * &lower * &m_a_x;
+                let numerator = m_a_y.transpose() * &upper * m_a_x;
+                let denominator = m_a_y.transpose() * &lower * m_a_x;
                 zip!(&mut c_a, &numerator, &denominator).for_each(|unzip!(c_a, n, d)| {
                     *c_a = 1.0_f32.min(*c_a * *n / (*d + 0.0000001f32))
                 });
@@ -364,8 +338,8 @@ impl LFMatrices {
                     },
                 );
 
-                let numerator = m_b_y.transpose() * &upper * &m_b_x;
-                let denominator = m_b_y.transpose() * &lower * &m_b_x;
+                let numerator = m_b_y.transpose() * &upper * m_b_x;
+                let denominator = m_b_y.transpose() * &lower * m_b_x;
                 zip!(&mut c_b, &numerator, &denominator).for_each(|unzip!(c_b, n, d)| {
                     *c_b = 1.0_f32.min(*c_b * *n / (*d + 0.000000001f32));
                 });
@@ -500,7 +474,6 @@ pub struct LFSettings {
     pub show_steps: bool,
     pub starting_values: (f32, f32),
     pub rng: bool,
-    pub sample_next_redraw_flag: bool,
     pub solve_next_redraw_flag: bool,
     pub early_stop: bool,
     pub filter: bool,
@@ -515,7 +488,6 @@ impl Default for LFSettings {
             iter_count: 10,
             show_steps: false,
             starting_values: (0.5, 0.5),
-            sample_next_redraw_flag: false,
             solve_next_redraw_flag: false,
             early_stop: false,
             filter: false,
@@ -538,9 +510,6 @@ impl DrawUI for LFSettings {
             ui.checkbox(&mut self.filter, "Filter Columns");
             ui.checkbox(&mut self.save_error, "Save Error");
 
-            if ui.button("Sample").clicked() {
-                self.sample_next_redraw_flag = true;
-            }
             if ui.button("Solve").clicked() {
                 self.solve_next_redraw_flag = true;
             }
@@ -648,12 +617,6 @@ impl Lff for LFMatrices {
         let mut lower = Mat::<f32>::zeros(single_pass_size.0 as usize, single_pass_size.1 as usize);
 
         // Move IO out of loop and into dedicated thread
-        let (sender, receiver) = channel::<(String, DynamicImage)>();
-        thread::spawn(move || {
-            for (path, image) in receiver {
-                image.save_with_format(path, image::ImageFormat::Png).ok();
-            }
-        });
 
         // Doesn't change
 
@@ -666,35 +629,14 @@ impl Lff for LFMatrices {
         };
         let mut error = VecDeque::with_capacity(settings.iter_count);
 
-        let mut time_taken_total: Vec<Duration> = Vec::with_capacity(settings.iter_count);
-
         let mut numerator_a = Mat::zeros(c_a.nrows(), c_a.ncols());
         let mut denominator_a = Mat::zeros(c_a.nrows(), c_a.ncols());
 
         let mut numerator_b = Mat::zeros(c_b.nrows(), c_b.ncols());
         let mut denominator_b = Mat::zeros(c_b.nrows(), c_b.ncols());
         for _x in 0..settings.iter_count {
-            let start = Instant::now();
             progress_bar.as_mut().inspect(|x| x.inc(1));
 
-            // if settings.show_steps {
-            //     let path_1 = format!(
-            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-            //         x, 1
-            //     );
-            //     let path_2 = format!(
-            //         "./resources/panel_compute/intermediate/intermdiate_{}_panel_{}.png",
-            //         x, 2
-            //     );
-            //     let image_a = utils::matrix_to_image(&c_a);
-            //     let image_b = utils::matrix_to_image(&c_b);
-            //     sender.send((path_1, image_a)).unwrap();
-            //     sender.send((path_2, image_b)).unwrap();
-
-            //     // Dispatch a thread to do
-            // }
-            // CA update
-            //
             {
                 for view_point in 0..number_of_view_points as usize {
                     let m_a_x = matrices.a.x.matrix[view_point].as_ref();
@@ -772,16 +714,6 @@ impl Lff for LFMatrices {
                     },
                 );
             }
-
-            let end = Instant::now();
-            let time_taken = end.duration_since(start);
-            time_taken_total.push(time_taken);
-        }
-
-        let total_time: Duration = time_taken_total.iter().sum();
-        let average_time = total_time / settings.iter_count as u32;
-        if settings.debug_prints {
-            println!("Average time per iteration: {average_time:?}");
         }
 
         if settings.filter {

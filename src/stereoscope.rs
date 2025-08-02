@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use cgmath::Vector2;
 use egui::Ui;
 use faer::sparse::{SparseColMat, Triplet};
@@ -170,6 +172,7 @@ impl StereoscopeBuffer {
         target_size: (u32, u32),
         number_of_view_points: u32,
     ) {
+        let start = Instant::now();
         let rays_cast = target_size.0 * target_size.1 * number_of_view_points;
         let panel_a_size = (pixel_count_a.x, pixel_count_a.y);
         let panel_b_size = (pixel_count_b.x, pixel_count_b.y);
@@ -184,6 +187,10 @@ impl StereoscopeBuffer {
         let a_matrix = self.build_m_a(device, rays_cast, panel_a_size).into();
         println!("Building Stereo B");
         let b_matrix = self.build_m_b(device, rays_cast, panel_b_size).into();
+        println!(
+            "Time taken to Build: {:?}",
+            Instant::now().duration_since(start)
+        );
         let stereo = StereoMatrix {
             panel_a_size: (pixel_count_a.x, pixel_count_a.y),
             panel_b_size: (pixel_count_b.x, pixel_count_b.y),
@@ -196,14 +203,8 @@ impl StereoscopeBuffer {
         self.matrix_rep = Some(stereo);
     }
 
-    pub fn has_sampled(&mut self) {
-        self.settings.sample_next_redraw_flag = false;
-    }
     pub fn has_solved(&mut self) {
         self.settings.solve_next_redraw_flag = false;
-    }
-    pub fn will_sample(&self) -> bool {
-        self.settings.sample_next_redraw_flag
     }
     pub fn will_solve(&self) -> bool {
         self.settings.solve_next_redraw_flag

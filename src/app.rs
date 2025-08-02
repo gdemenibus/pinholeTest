@@ -10,7 +10,6 @@ use crate::shape::Quad;
 use crate::stereoscope::StereoscopeBuffer;
 use crate::vertex;
 use crate::FileWatcher;
-use cgmath::Vector3;
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
 use egui_notify::Toasts;
@@ -61,7 +60,6 @@ impl AppState {
         window: &Window,
         width: u32,
         height: u32,
-        camera: &Camera,
     ) -> Self {
         let power_pref = wgpu::PowerPreference::HighPerformance;
         let adapter = instance
@@ -94,6 +92,9 @@ impl AppState {
             )
             .await
             .expect("Failed to create device");
+
+        let camera_history = CameraHistory::new(&device);
+        let camera = &camera_history.current_camera;
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let selected_format = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -217,7 +218,6 @@ impl AppState {
             contents: bytemuck::cast_slice(&index_list),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let camera_history = CameraHistory::new(&device);
         let rev_proj = ReverseProj::new(
             &device,
             &queue,
@@ -368,65 +368,54 @@ impl AppState {
 
         //self.stereoscope.verify_m_a(&self.device, rays_cast);
     }
-    fn solve_stereo(&mut self) {
+
+    fn sample_both(&mut self) {
         self.compute_pass();
+        let c_t = &self.image_cache.target_image;
+        let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
+        let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
 
-        {
-            // Y here maps to additional rows and X to additional Columns
-            let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
-            let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
+        let target_size = (
+            self.scene.world.pixel_count.y,
+            self.scene.world.pixel_count.x,
+        );
+        println!("sampling!");
+        let number_of_view_points = self.camera_history.len() as u32;
+        self.stereoscope.sample_light_field(
+            &self.device,
+            pixel_count_a,
+            pixel_count_b,
+            target_size,
+            number_of_view_points,
+        );
+        self.factorizer.sample_light_field(
+            &self.device,
+            pixel_count_a,
+            pixel_count_b,
+            c_t,
+            target_size,
+            number_of_view_points,
+        );
+    }
 
-            let target_size = (
-                self.scene.world.pixel_count.y,
-                self.scene.world.pixel_count.x,
-            );
-            println!("sampling!");
-            let number_of_view_points = self.camera_history.len() as u32;
-            self.stereoscope.sample_light_field(
-                &self.device,
-                pixel_count_a,
-                pixel_count_b,
-                target_size,
-                number_of_view_points,
-            );
-            println!("Factorizing");
-            let imgs = self.stereoscope.factorize_stereo();
-            self.image_cache.cache_output(true, imgs);
-            self.update_panel(0);
-            self.update_panel(1);
-        }
+    fn solve_stereo(&mut self) {
+        println!("Factorizing");
+        let imgs = self.stereoscope.factorize_stereo();
+        self.image_cache.cache_output(true, imgs);
+        self.update_panel(0);
+        self.update_panel(1);
     }
 
     fn solver_light_field(&mut self) {
         self.compute_pass();
 
-        let ct_image = &self.image_cache.target_image;
-        {
-            // Y here maps to additional rows and X to additional Columns
-            let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
-            let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
+        // Y here maps to additional rows and X to additional Columns
+        println!("Factorizing");
+        let images = self.factorizer.alternative_factorization();
 
-            let target_size = (
-                self.scene.world.pixel_count.y,
-                self.scene.world.pixel_count.x,
-            );
-            println!("sampling!");
-            let number_of_view_points = self.camera_history.len() as u32;
-            self.factorizer.sample_light_field(
-                &self.device,
-                pixel_count_a,
-                pixel_count_b,
-                ct_image,
-                target_size,
-                number_of_view_points,
-            );
-            println!("Factorizing");
-            let images = self.factorizer.alternative_factorization();
-
-            self.image_cache.cache_output(false, images);
-            self.update_panel(0);
-            self.update_panel(1);
-        }
+        self.image_cache.cache_output(false, images);
+        self.update_panel(0);
+        self.update_panel(1);
     }
 
     fn update_panel(&self, panel_entry: usize) {
@@ -492,19 +481,22 @@ impl AppState {
     fn print_compute(&self) {
         self.rev_proj.print_image(&self.device);
     }
-    fn save(&mut self) {
-        let time = SystemTime::now();
-        let name = format!("{time:?}");
-
-        let save = Save::from_cache(
-            &self.camera_history.history,
-            name,
-            &self.image_cache,
-            &self.scene,
-        );
-        println!("RON: {}", ron::ser::to_string(&save).unwrap());
-        self.save_manager.add_save(save);
+    fn save_pop_up(&mut self) {
+        self.save_manager.save_open = true;
     }
+    fn save(&mut self) {
+        if self.save_manager.name_inserted {
+            let name = &self.save_manager.current_save_name;
+            let save = Save::from_cache(
+                &self.camera_history.history,
+                name,
+                &self.image_cache,
+                &self.scene,
+            );
+            self.save_manager.add_save(save);
+        }
+    }
+
     fn load_next_save(&mut self) {
         let next_save = self.save_manager.next_save();
         if let Some(save) = next_save {
@@ -535,20 +527,6 @@ impl AppState {
             self.displaying_panel_textures = true;
         }
     }
-
-    fn camera_ui(&mut self, camera: &mut Camera, controller: &mut CameraController) {
-        let ctx = self.egui_renderer.context();
-        egui_winit::egui::Window::new("Camera Settings:")
-            .resizable(true)
-            .vscroll(true)
-            .default_open(false)
-            .default_size([150.0, 125.0])
-            .show(ctx, |ui| {
-                self.camera_history.draw_ui(ctx, None, Some(ui));
-                controller.draw_ui(ctx, None, Some(ui));
-                camera.draw_ui(ctx, None, Some(ui));
-            });
-    }
 }
 
 // Handles the drawing and the app logic
@@ -556,8 +534,6 @@ pub struct App {
     instance: wgpu::Instance,
     state: Option<AppState>,
     window: Option<Arc<Window>>,
-    camera: Camera,
-    camera_control: CameraController,
     previous_draw: Instant,
     mouse_press: bool,
     mouse_on_ui: bool,
@@ -583,13 +559,6 @@ impl App {
             cache_stereo: false,
             state: None,
             window: None,
-            camera: Camera::new(
-                (0.0, 2.0, 4.0),
-                cgmath::Deg(-90.0),
-                cgmath::Deg(-20.0),
-                cgmath::Deg(45.0),
-            ),
-            camera_control: CameraController::new(1.0, 1.0),
             previous_draw: Instant::now(),
             pressed_keys: HashSet::default(),
         }
@@ -606,6 +575,20 @@ impl App {
                 self.pressed_keys.remove(&code);
             }
         }
+        // Only check if controls have been renabled
+        if self.disable_controls {
+            if let PhysicalKey::Code(KeyCode::Minus) = event.physical_key {
+                self.disable_controls = !self.disable_controls;
+
+                if self.disable_controls {
+                    self.toasts.info("Controls Disabled");
+                } else {
+                    self.toasts.info("Controls Enabled");
+                }
+            }
+            return;
+        }
+
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Minus) => {
                 self.disable_controls = !self.disable_controls;
@@ -616,10 +599,16 @@ impl App {
                     self.toasts.info("Controls Enabled");
                 }
             }
+            PhysicalKey::Code(KeyCode::Digit1) => {
+                if let Some(state) = self.state.as_mut() {
+                    state.sample_both();
+                }
+            }
             PhysicalKey::Code(KeyCode::Backslash) => {
                 self.toasts.info("Saving Scene!");
+                self.disable_controls = true;
                 if let Some(state) = self.state.as_mut() {
-                    state.save();
+                    state.save_pop_up();
                 }
             }
             PhysicalKey::Code(KeyCode::Enter) => {
@@ -730,27 +719,17 @@ impl App {
 
     pub fn next_camera(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            self.camera = state
-                .camera_history
-                .next_save()
-                .unwrap_or(&self.camera)
-                .clone();
+            state.camera_history.next_save().clone();
         }
     }
     pub fn play_animation(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            if let Some(new_camera) = state.camera_history.animate_camera() {
-                self.camera = new_camera;
-            }
+            state.camera_history.animate_camera();
         }
     }
     pub fn previous_camera(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            self.camera = state
-                .camera_history
-                .previous_save()
-                .unwrap_or(&self.camera)
-                .clone();
+            state.camera_history.previous_save();
         }
     }
 
@@ -812,19 +791,13 @@ impl App {
             &window,
             initial_width,
             initial_width,
-            &self.camera,
         )
         .await;
 
-        state.camera_history.save_point(&self.camera);
+        state.camera_history.save_point();
         // Have one compute pass ready to go.
         state.verify_m_a();
         //state.rev_proj.print_image(&state.device);
-        let mut new_camera = self.camera.clone();
-        new_camera.position += Vector3::new(1.0, 1.0, 1.0);
-
-        state.camera_history.save_point(&new_camera);
-        state.verify_m_a();
         state.camera_history.reset();
 
         self.window.get_or_insert(window);
@@ -855,22 +828,12 @@ impl App {
         //
 
         let state = self.state.as_mut().unwrap();
+        state.save();
 
-        if state.factorizer.will_sample() {
-            self.toasts.info("Saved Camera");
-            state.camera_history.save_point(&self.camera);
-            state.factorizer.has_sampled();
-        }
         if state.factorizer.will_solve() {
             state.solver_light_field();
             state.displaying_panel_textures = true;
             state.factorizer.has_solved();
-        }
-
-        if state.stereoscope.will_sample() {
-            self.toasts.info("Saved Camera");
-            state.camera_history.save_point(&self.camera);
-            state.stereoscope.has_sampled();
         }
 
         if state.stereoscope.will_solve() {
@@ -916,13 +879,13 @@ impl App {
         // The render pass
         {
             state.scene.update_rt_info(
-                &self.camera,
+                &state.camera_history.current_camera,
                 state.surface_config.height,
                 state.surface_config.width,
             );
             state.scene.update_draw(
                 &state.queue,
-                &self.camera,
+                &state.camera_history.current_camera,
                 state.displaying_panel_textures,
                 state.distort_rays,
             );
@@ -989,7 +952,8 @@ impl App {
             state.scene.draw_ui(context, None, None);
             state.factorizer.draw_ui(context, None, None);
             state.stereoscope.draw_ui(context, None, None);
-            state.camera_ui(&mut self.camera, &mut self.camera_control);
+            state.camera_history.draw_ui(context, None, None);
+            state.save_manager.draw_ui(context, None, None);
 
             state.egui_renderer.end_frame_and_draw(
                 &state.device,
@@ -1050,7 +1014,9 @@ impl ApplicationHandler<FileWatcher> for App {
                 self.handle_redraw();
                 let now = Instant::now();
                 let dt = now.duration_since(self.previous_draw);
-                self.camera_control.update_camera(&mut self.camera, dt);
+                if let Some(state) = self.state.as_mut() {
+                    state.camera_history.update_camera(dt);
+                }
                 self.previous_draw = now;
 
                 self.window.as_ref().unwrap().request_redraw();
@@ -1064,8 +1030,11 @@ impl ApplicationHandler<FileWatcher> for App {
                 is_synthetic: _,
             } => {
                 self.process_keyboard(&event);
-                self.camera_control
-                    .process_keyboard(event, self.disable_controls);
+                if let Some(state) = self.state.as_mut() {
+                    state
+                        .camera_history
+                        .process_keyboard(event, self.disable_controls);
+                }
             }
             WindowEvent::MouseInput {
                 device_id: _,
@@ -1087,7 +1056,12 @@ impl ApplicationHandler<FileWatcher> for App {
     ) {
         if let DeviceEvent::MouseMotion { delta } = event {
             if self.mouse_press && !self.mouse_on_ui {
-                self.camera_control.process_mouse(delta.0, delta.1);
+                if let Some(state) = self.state.as_mut() {
+                    state
+                        .camera_history
+                        .camera_control
+                        .process_mouse(delta.0, delta.1);
+                }
             }
         }
     }

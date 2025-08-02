@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use cgmath::Vector2;
 use egui::Ui;
 use faer::sparse::{SparseColMat, Triplet};
@@ -177,14 +179,8 @@ impl LFBuffers {
         }
     }
 
-    pub fn has_sampled(&mut self) {
-        self.settings.sample_next_redraw_flag = false;
-    }
     pub fn has_solved(&mut self) {
         self.settings.solve_next_redraw_flag = false;
-    }
-    pub fn will_sample(&self) -> bool {
-        self.settings.sample_next_redraw_flag
     }
     pub fn will_solve(&self) -> bool {
         self.settings.solve_next_redraw_flag
@@ -390,6 +386,7 @@ impl LFBuffers {
         target_size: (u32, u32),
         number_of_view_points: u32,
     ) {
+        let start = Instant::now();
         let number_of_rays = (
             target_size.1 * number_of_view_points,
             target_size.0 * number_of_view_points,
@@ -409,6 +406,11 @@ impl LFBuffers {
             number_of_rays,
             rays_per_view_point,
             rays_per_view_point,
+        );
+
+        println!(
+            "Time taken to Build: {:?}",
+            Instant::now().duration_since(start)
         );
         let matrices = LFMatrices {
             a,

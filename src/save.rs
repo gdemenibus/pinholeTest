@@ -1,3 +1,4 @@
+use egui::Id;
 use image::{DynamicImage, ImageReader};
 use plotters::{
     chart::ChartBuilder,
@@ -6,7 +7,7 @@ use plotters::{
     style::{IntoFont, RED, WHITE},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::VecDeque, default, fs, path::PathBuf};
+use std::{collections::VecDeque, fs, path::PathBuf};
 use walkdir::WalkDir;
 
 use crate::{
@@ -150,7 +151,7 @@ pub struct Save {
 impl Save {
     pub fn from_cache(
         cameras: &VecDeque<Camera>,
-        name: String,
+        name: &String,
         cache: &ImageCache,
         scene: &Scene,
     ) -> Self {
@@ -171,7 +172,7 @@ impl Save {
         let save = Save {
             target: scene.world.clone(),
             cameras: cameras.clone(),
-            name,
+            name: name.clone(),
             target_path: target_image_path,
             panel_1_texture_sep: None,
             panel_2_texture_sep: None,
@@ -214,6 +215,10 @@ impl Save {
 /// Structure to load and manage saves
 pub struct SaveManager {
     pub saves: VecDeque<Save>,
+    pub current_save_name: String,
+    pub save_open: bool,
+    pub first_draw: bool,
+    pub name_inserted: bool,
 }
 impl SaveManager {
     pub fn boot() -> SaveManager {
@@ -239,11 +244,22 @@ impl SaveManager {
             }
         }
         println!("Saves found: {}", saves.len());
-        SaveManager { saves }
+        let current_save_name = "".to_string();
+        SaveManager {
+            current_save_name,
+            saves,
+            save_open: false,
+            first_draw: false,
+            name_inserted: false,
+        }
     }
+
     pub fn add_save(&mut self, save: Save) {
+        save.save_settings();
         self.saves.push_back(save);
+        self.save_open = false;
     }
+
     pub fn next_save(&mut self) -> Option<&Save> {
         if self.saves.is_empty() {
             return None;
@@ -264,8 +280,50 @@ impl SaveManager {
 
 impl DrawUI for SaveManager {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut egui::Ui>) {
-        let _title = title.unwrap_or("Save manaer".to_string());
+        let _title = title.unwrap_or("Save manager".to_string());
         let _ = ctx;
         let _ = ui;
+        // Early exit, was not requested
+        if !self.save_open {
+            self.first_draw = true;
+            self.name_inserted = false;
+            return;
+        }
+
+        egui_winit::egui::Window::new("SAVE:")
+            .resizable(false)
+            .vscroll(false)
+            .show(ctx, |ui| {
+                ui.label("Save file as:");
+
+                // Create the text field with auto focus
+                let text_edit = egui::TextEdit::singleline(&mut self.current_save_name)
+                    .hint_text("filename.txt")
+                    .id(Id::new(20))
+                    .desired_width(f32::INFINITY);
+                if !self.first_draw {
+                    ui.add(text_edit);
+                } else {
+                    ui.add(text_edit).request_focus();
+                }
+
+                // Only request focus the first frame we show the prompt
+
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        println!("Saving to file: {}", self.current_save_name);
+
+                        self.first_draw = false;
+                        self.name_inserted = true;
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        self.save_open = false;
+                        self.name_inserted = false;
+                        self.current_save_name.clear(); // optional
+                    }
+                });
+                self.first_draw = false;
+            });
     }
 }

@@ -227,6 +227,8 @@ impl CameraController {
 
 // Struct to store camera positions, especially when sampling!
 pub struct CameraHistory {
+    pub current_camera: Camera,
+    pub camera_control: CameraController,
     pub history: VecDeque<Camera>,
     pub kernel_size: f32,
     pub kernel: bool,
@@ -240,6 +242,13 @@ pub struct CameraHistory {
 }
 impl CameraHistory {
     pub fn new(device: &Device) -> Self {
+        let current_camera = Camera::new(
+            (0.0, 2.0, 4.0),
+            cgmath::Deg(-90.0),
+            cgmath::Deg(-20.0),
+            cgmath::Deg(45.0),
+        );
+        let camera_control = CameraController::new(1.0, 1.0);
         let history_layout = wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStages::all(),
@@ -293,6 +302,8 @@ impl CameraHistory {
         history_buffer.unmap();
 
         CameraHistory {
+            current_camera,
+            camera_control,
             animation_start: None,
             bind_group_layout,
             kernel: false,
@@ -308,7 +319,12 @@ impl CameraHistory {
     pub fn update_history(&mut self, new_vec: VecDeque<Camera>) {
         self.history = new_vec.clone();
     }
-    pub fn save_point(&mut self, camera: &Camera) {
+
+    pub fn process_keyboard(&mut self, event: KeyEvent, disabled: bool) -> bool {
+        self.camera_control.process_keyboard(event, disabled)
+    }
+    pub fn save_point(&mut self) {
+        let camera: &Camera = &self.current_camera;
         if !self.history.contains(camera) {
             // Tiny kernel
             let center_camera = camera.clone();
@@ -347,6 +363,9 @@ impl CameraHistory {
         }
         self.history.rotate_left(1);
         let next = self.history.back();
+        if let Some(camera) = next {
+            self.current_camera = camera.clone();
+        }
         next
     }
     pub fn previous_save(&mut self) -> Option<&Camera> {
@@ -355,6 +374,10 @@ impl CameraHistory {
         }
         self.history.rotate_right(1);
         let next = self.history.back();
+
+        if let Some(camera) = next {
+            self.current_camera = camera.clone();
+        }
         next
     }
     pub fn len(&self) -> usize {
@@ -375,6 +398,11 @@ impl CameraHistory {
 
         buffer
     }
+    pub fn update_camera(&mut self, dt: Duration) {
+        self.camera_control
+            .update_camera(&mut self.current_camera, dt);
+    }
+
     pub fn update_buffer(&self, queue: &Queue) {
         queue.write_buffer(&self.history_buffer, 0, &self.history_to_bytes());
         queue.write_buffer(&self.size_buffer, 0, &self.size_to_bytes());
@@ -383,7 +411,7 @@ impl CameraHistory {
         self.history = VecDeque::new();
     }
 
-    pub fn animate_camera(&self) -> Option<Camera> {
+    pub fn animate_camera(&mut self) -> Option<Camera> {
         let time = self.animation_start?.elapsed().as_secs_f32();
         let duration = self.animation_duration;
         let keyframes = &self.history;
@@ -394,7 +422,10 @@ impl CameraHistory {
 
         let current = &keyframes[i];
         let next = &keyframes[i + 1];
-        Some(Camera::interpolate_camera(current, next, t.fract()))
+        let camera = Camera::interpolate_camera(current, next, t.fract());
+        self.current_camera = camera.clone();
+
+        Some(camera)
     }
 }
 impl DrawUI for CameraController {
@@ -411,51 +442,44 @@ impl DrawUI for CameraController {
 
 impl DrawUI for CameraHistory {
     fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut Ui>) {
-        let title = title.unwrap_or("Camera Settings".to_string());
+        let _ = title;
         let _ = ui;
-        if let Some(ui) = ui {
-            ui.label(format!(
-                "Current camera positions saved:{}",
-                self.history.len()
-            ));
+        egui_winit::egui::Window::new("Camera Settings:")
+            .resizable(true)
+            .vscroll(true)
+            .default_open(false)
+            .default_size([150.0, 125.0])
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "Current camera positions saved:{}",
+                    self.history.len()
+                ));
 
-            self.animate = ui.button("Play Animation").clicked();
-            if self.animate {
-                self.animation_start = Some(Instant::now());
-            } else if let Some(start) = self.animation_start {
-                if start.elapsed().as_secs_f32()
-                    > (self.animation_duration * (self.history.len() - 1) as f32)
-                {
-                    self.animation_start = None;
-                }
-            }
+                if ui.button("Reset").clicked() {
+                    self.history = VecDeque::new();
+                };
 
-            ui.label("Animation Position duration:");
-            ui.add(egui::DragValue::new(&mut self.animation_duration).speed(0.1));
-
-            if ui.button("Reset").clicked() {
-                self.history = VecDeque::new();
-            };
-            ui.label("Kernel size:");
-
-            ui.add(egui::DragValue::new(&mut self.kernel_size).speed(0.01));
-            ui.checkbox(&mut self.kernel, "Use Kernl");
-        } else {
-            egui_winit::egui::Window::new(title)
-                .resizable(true)
-                .vscroll(true)
-                .default_open(false)
-                .default_size([150.0, 125.0])
-                .show(ctx, |ui| {
-                    ui.label(format!(
-                        "Current camera positions saved:{}",
-                        self.history.len()
-                    ));
-
-                    if ui.button("Reset").clicked() {
-                        self.history = VecDeque::new();
+                self.animate = ui.button("Play Animation").clicked();
+                if self.animate {
+                    self.animation_start = Some(Instant::now());
+                } else if let Some(start) = self.animation_start {
+                    if start.elapsed().as_secs_f32()
+                        > (self.animation_duration * (self.history.len() - 1) as f32)
+                    {
+                        self.animation_start = None;
                     }
-                });
-        }
+                }
+
+                ui.label("Animation Position duration:");
+                ui.add(egui::DragValue::new(&mut self.animation_duration).speed(0.1));
+
+                ui.label("Kernel size:");
+
+                ui.add(egui::DragValue::new(&mut self.kernel_size).speed(0.01));
+                ui.checkbox(&mut self.kernel, "Use Kernl");
+
+                self.camera_control.draw_ui(ctx, None, Some(ui));
+                self.current_camera.draw_ui(ctx, None, Some(ui));
+            });
     }
 }
