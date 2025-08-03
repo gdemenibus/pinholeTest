@@ -3,7 +3,7 @@ use light_field_test::app::AppState;
 use std::{path::PathBuf, time::Duration};
 fn bench_transport(c: &mut Criterion) {
     let app = light_field_test::app::App::new(true);
-    let sizes = [6000];
+    let sizes = [256, 500, 1000, 2000, 4000, 6000];
     //let sizes = [500];
     // Grab a target image from curated
     let mut state = app.state.unwrap();
@@ -16,16 +16,6 @@ fn bench_transport(c: &mut Criterion) {
     benchmark_solving_1vp(c, &mut state, &sizes, samples);
     benchmark_solving_1kernel(c, &mut state, &sizes, samples);
     //benchmark_solving_2kernel(c, &mut state, &sizes, samples);
-
-    let sizes = [256];
-    let samples = 200;
-    benchmark_transfer_1vp(c, &mut state, &sizes, samples);
-    benchmark_transfer_1kernel(c, &mut state, &sizes, samples);
-    benchmark_transfer_2kernel(c, &mut state, &sizes, samples);
-
-    benchmark_solving_1kernel(c, &mut state, &sizes, samples);
-    benchmark_solving_2kernel(c, &mut state, &sizes, samples);
-    benchmark_solving_1vp(c, &mut state, &sizes, samples);
 }
 
 pub fn benchmark_transfer_1kernel(
@@ -39,7 +29,7 @@ pub fn benchmark_transfer_1kernel(
         state.camera_history.kernel = true;
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("Kernel Curated");
+        let mut group = c.benchmark_group("Kernel Transfer");
         group.warm_up_time(Duration::from_secs(20));
 
         group.sample_size(sample_size);
@@ -52,11 +42,11 @@ pub fn benchmark_transfer_1kernel(
             state.compute_pass();
 
             // DO a compute pass
-            group.bench_with_input(BenchmarkId::new("KernelSep", size), size, |b, &_size| {
+            group.bench_with_input(BenchmarkId::new("Sep", size), size, |b, &_size| {
                 b.iter(|| state.sample_sep());
             });
 
-            group.bench_with_input(BenchmarkId::new("KernelStereo", size), size, |b, &_size| {
+            group.bench_with_input(BenchmarkId::new("Stereo", size), size, |b, &_size| {
                 b.iter(|| state.sample_stereo());
             });
         }
@@ -78,7 +68,7 @@ pub fn benchmark_transfer_2kernel(
         state.camera_history.benchmove();
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("2 Kernels Curated");
+        let mut group = c.benchmark_group("2 Kernels Transfer");
 
         group.warm_up_time(Duration::from_secs(20));
         group.sample_size(sample_size);
@@ -91,11 +81,11 @@ pub fn benchmark_transfer_2kernel(
             state.compute_pass();
 
             // DO a compute pass
-            group.bench_with_input(BenchmarkId::new("KernelSep", size), size, |b, &_size| {
+            group.bench_with_input(BenchmarkId::new("Sep", size), size, |b, &_size| {
                 b.iter(|| state.sample_sep());
             });
 
-            group.bench_with_input(BenchmarkId::new("KernelStereo", size), size, |b, &_size| {
+            group.bench_with_input(BenchmarkId::new("Stereo", size), size, |b, &_size| {
                 b.iter(|| state.sample_stereo());
             });
         }
@@ -114,7 +104,7 @@ pub fn benchmark_transfer_1vp(
     {
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("1 View point Curated");
+        let mut group = c.benchmark_group("1 View point Transfer");
 
         group.warm_up_time(Duration::from_secs(20));
         group.sample_size(sample_size);

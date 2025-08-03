@@ -500,7 +500,7 @@ impl Default for LFSettings {
     fn default() -> Self {
         LFSettings {
             rng: false,
-            iter_count: 10,
+            iter_count: 5,
             show_steps: false,
             starting_values: (0.5, 0.5),
             solve_next_redraw_flag: false,
