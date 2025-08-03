@@ -57,9 +57,13 @@ impl FilePicker {
             let path = &self.texture_file;
             println!("{path:?}");
 
-            let file = File::open(path).unwrap();
-            if file.metadata().unwrap().is_file() {
-                path
+            if let Ok(file) = File::open(path) {
+                if file.metadata().unwrap().is_file() {
+                    path
+                } else {
+                    println!("Default Texture ");
+                    self.default_texture()
+                }
             } else {
                 println!("Default Texture ");
                 self.default_texture()
