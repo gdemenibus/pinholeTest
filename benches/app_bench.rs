@@ -10,6 +10,8 @@ fn bench_transport(c: &mut Criterion) {
     let mut state = app.state.unwrap();
     let samples = 100;
     for panel_size in panel_sizes {
+        state.scene.change_panel_res(panel_size);
+
         benchmark_transfer_1vp(c, &mut state, &sizes, samples, panel_size);
         benchmark_transfer_1kernel(c, &mut state, &sizes, samples, panel_size);
         benchmark_transfer_2kernel(c, &mut state, &sizes, samples, panel_size);
@@ -24,8 +26,8 @@ pub fn benchmark_transfer_1kernel(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
-    panel_size: usize,
     sample_size: usize,
+    panel_size: usize,
 ) {
     {
         state.camera_history.reset();
@@ -64,8 +66,8 @@ pub fn benchmark_transfer_2kernel(
     state: &mut AppState,
     sizes: &[u64],
 
-    panel_size: usize,
     sample_size: usize,
+    panel_size: usize,
 ) {
     {
         state.camera_history.reset();
@@ -106,9 +108,8 @@ pub fn benchmark_transfer_1vp(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
-
-    panel_size: usize,
     sample_size: usize,
+    panel_size: usize,
 ) {
     state.camera_history.reset();
     {
@@ -147,8 +148,8 @@ pub fn benchmark_solving_1kernel(
     state: &mut AppState,
     sizes: &[u64],
 
-    panel_size: usize,
     sample_size: usize,
+    panel_size: usize,
 ) {
     {
         state.camera_history.reset();
@@ -189,9 +190,8 @@ pub fn benchmark_solving_2kernel(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
-
-    panel_size: usize,
     sample_size: usize,
+    panel_size: usize,
 ) {
     state.camera_history.reset();
     state.camera_history.kernel = true;
@@ -232,8 +232,8 @@ pub fn benchmark_solving_1vp(
     state: &mut AppState,
     sizes: &[u64],
 
-    panel_size: usize,
     sample_size: usize,
+    panel_size: usize,
 ) {
     state.camera_history.reset();
     {

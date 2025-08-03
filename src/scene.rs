@@ -860,6 +860,11 @@ impl Scene {
         let _count = writer.write(panels.as_slice()).unwrap();
         buffer
     }
+    pub fn change_panel_res(&mut self, new_res: usize) {
+        let new_res = new_res as u32;
+        self.panels[0].panel.pixel_count = Vector2::new(new_res, new_res);
+        self.panels[1].panel.pixel_count = Vector2::new(new_res, new_res);
+    }
 }
 
 impl DrawUI for ScenePanel {
