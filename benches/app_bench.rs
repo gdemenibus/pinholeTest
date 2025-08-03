@@ -7,7 +7,7 @@ fn bench_transport(c: &mut Criterion) {
     //let sizes = [500];
     // Grab a target image from curated
     let mut state = app.state.unwrap();
-    let samples = 20;
+    let samples = 100;
 
     benchmark_transfer_1vp(c, &mut state, &sizes, samples);
     benchmark_transfer_1kernel(c, &mut state, &sizes, samples);
