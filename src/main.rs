@@ -28,6 +28,9 @@ impl std::fmt::Display for HeadlessType {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Commands {
+    #[arg(short, long, default_value_t = false)]
+    headless: bool,
+
     #[arg(short, long)]
     type_head: Option<HeadlessType>,
 }
@@ -35,18 +38,25 @@ struct Commands {
 fn main() {
     let args = Commands::parse();
 
-    let mut diagonal = LFMatrices::load("Kernel.ro".to_string());
+    if args.headless {
+        let mut diagonal = LFMatrices::load("Kernel.ro".to_string());
 
-    let stereo = StereoMatrix::load("Kernel.ro".to_string());
-    let settings = LFSettings {
-        debug_prints: false,
-        ..Default::default()
-    };
-    if let Some(bench) = args.type_head {
-        match bench {
-            HeadlessType::Sep => bench_sep(settings, &mut diagonal),
-            HeadlessType::SepOld => bench_old(settings, &mut diagonal),
-            HeadlessType::Stereo => bench_stereo(settings, &stereo),
+        let stereo = StereoMatrix::load("Kernel.ro".to_string());
+        let settings = LFSettings {
+            debug_prints: false,
+            ..Default::default()
+        };
+        if let Some(bench) = args.type_head {
+            match bench {
+                HeadlessType::Sep => bench_sep(settings, &mut diagonal),
+                HeadlessType::SepOld => bench_old(settings, &mut diagonal),
+                HeadlessType::Stereo => bench_stereo(settings, &stereo),
+            }
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                pollster::block_on(execute());
+            }
         }
     } else {
         #[cfg(not(target_arch = "wasm32"))]

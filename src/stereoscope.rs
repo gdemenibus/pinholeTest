@@ -20,7 +20,7 @@ pub struct StereoscopeBuffer {
     matrix_rep: Option<StereoMatrix>,
     settings: crate::LFSettings,
 }
-const BUFFER_SIZE: usize = 6000 * 6000 * 4 * 14;
+const BUFFER_SIZE: usize = 6000 * 6000 * 4 * 10;
 
 impl StereoscopeBuffer {
     pub fn set_up(device: &wgpu::Device) -> Self {
