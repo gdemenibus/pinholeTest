@@ -8,45 +8,32 @@ fn bench_transport(c: &mut Criterion) {
     // Grab a target image from curated
     let mut state = app.state.unwrap();
     let samples = 20;
-    benchmark_transfer(c, &mut state, &sizes, samples);
-    benchmark_solving(c, &mut state, &sizes, samples);
+
+    benchmark_transfer_1vp(c, &mut state, &sizes, samples);
+    benchmark_transfer_1kernel(c, &mut state, &sizes, samples);
+    //benchmark_transfer_2kernel(c, &mut state, &sizes, samples);
+
+    benchmark_solving_1vp(c, &mut state, &sizes, samples);
+    benchmark_solving_1kernel(c, &mut state, &sizes, samples);
+    //benchmark_solving_2kernel(c, &mut state, &sizes, samples);
+
     let sizes = [256];
     let samples = 200;
-    benchmark_transfer(c, &mut state, &sizes, samples);
-    benchmark_solving(c, &mut state, &sizes, samples);
+    benchmark_transfer_1vp(c, &mut state, &sizes, samples);
+    benchmark_transfer_1kernel(c, &mut state, &sizes, samples);
+    benchmark_transfer_2kernel(c, &mut state, &sizes, samples);
+
+    benchmark_solving_1kernel(c, &mut state, &sizes, samples);
+    benchmark_solving_2kernel(c, &mut state, &sizes, samples);
+    benchmark_solving_1vp(c, &mut state, &sizes, samples);
 }
-pub fn benchmark_transfer(
+
+pub fn benchmark_transfer_1kernel(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
     sample_size: usize,
 ) {
-    state.camera_history.reset();
-    {
-        state.camera_history.save_point();
-
-        let mut group = c.benchmark_group("1 View point Curated");
-        group.sample_size(sample_size);
-        for size in sizes.iter() {
-            group.throughput(Throughput::Elements(*size ^ 2));
-            // Load image
-            let path = PathBuf::from(format!("./resources/textures/Curated/{size}.png"));
-            let new_image = image::open(path).unwrap();
-            state.update_target(new_image);
-            state.compute_pass();
-
-            // DO a compute pass
-            group.bench_with_input(BenchmarkId::new("Sep", size), size, |b, &_size| {
-                b.iter(|| state.sample_sep());
-            });
-
-            group.bench_with_input(BenchmarkId::new("Stereo", size), size, |b, &_size| {
-                b.iter(|| state.sample_stereo());
-            });
-        }
-
-        group.finish();
-    }
     {
         state.camera_history.reset();
         state.camera_history.kernel = true;
@@ -75,7 +62,14 @@ pub fn benchmark_transfer(
 
         group.finish();
     }
+}
 
+pub fn benchmark_transfer_2kernel(
+    c: &mut Criterion,
+    state: &mut AppState,
+    sizes: &[u64],
+    sample_size: usize,
+) {
     {
         state.camera_history.reset();
         state.camera_history.kernel = true;
@@ -108,7 +102,7 @@ pub fn benchmark_transfer(
     }
 }
 
-pub fn benchmark_solving(
+pub fn benchmark_transfer_1vp(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
@@ -118,8 +112,7 @@ pub fn benchmark_solving(
     {
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("1 View point Factorize");
-
+        let mut group = c.benchmark_group("1 View point Curated");
         group.sample_size(sample_size);
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
@@ -128,22 +121,27 @@ pub fn benchmark_solving(
             let new_image = image::open(path).unwrap();
             state.update_target(new_image);
             state.compute_pass();
-            state.sample_sep();
-            state.sample_stereo();
 
             // DO a compute pass
             group.bench_with_input(BenchmarkId::new("Sep", size), size, |b, &_size| {
-                b.iter(|| state.factorizer.alternative_factorization());
+                b.iter(|| state.sample_sep());
             });
 
             group.bench_with_input(BenchmarkId::new("Stereo", size), size, |b, &_size| {
-                b.iter(|| state.stereoscope.factorize_stereo());
+                b.iter(|| state.sample_stereo());
             });
         }
 
         group.finish();
     }
+}
 
+pub fn benchmark_solving_1kernel(
+    c: &mut Criterion,
+    state: &mut AppState,
+    sizes: &[u64],
+    sample_size: usize,
+) {
     {
         state.camera_history.reset();
         state.camera_history.kernel = true;
@@ -174,15 +172,56 @@ pub fn benchmark_solving(
 
         group.finish();
     }
+}
 
+pub fn benchmark_solving_2kernel(
+    c: &mut Criterion,
+    state: &mut AppState,
+    sizes: &[u64],
+    sample_size: usize,
+) {
+    state.camera_history.reset();
+    state.camera_history.kernel = true;
+    state.camera_history.save_point();
+    state.camera_history.benchmove();
+    state.camera_history.save_point();
+
+    let mut group = c.benchmark_group("2 Kernel Factorize");
+
+    group.sample_size(sample_size);
+    for size in sizes.iter() {
+        group.throughput(Throughput::Elements(*size ^ 2));
+        // Load image
+        let path = PathBuf::from(format!("./resources/textures/Curated/{size}.png"));
+        let new_image = image::open(path).unwrap();
+        state.update_target(new_image);
+        state.compute_pass();
+        state.sample_sep();
+        state.sample_stereo();
+
+        // DO a compute pass
+        group.bench_with_input(BenchmarkId::new("Sep", size), size, |b, _| {
+            b.iter(|| state.factorizer.alternative_factorization());
+        });
+
+        group.bench_with_input(BenchmarkId::new("Stereo", size), size, |b, _| {
+            b.iter(|| state.stereoscope.factorize_stereo());
+        });
+    }
+
+    group.finish();
+}
+pub fn benchmark_solving_1vp(
+    c: &mut Criterion,
+    state: &mut AppState,
+    sizes: &[u64],
+    sample_size: usize,
+) {
+    state.camera_history.reset();
     {
-        state.camera_history.reset();
-        state.camera_history.kernel = true;
-        state.camera_history.save_point();
-        state.camera_history.benchmove();
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("2 Kernel Factorize");
+        let mut group = c.benchmark_group("1 View point Factorize");
 
         group.sample_size(sample_size);
         for size in sizes.iter() {
@@ -196,11 +235,11 @@ pub fn benchmark_solving(
             state.sample_stereo();
 
             // DO a compute pass
-            group.bench_with_input(BenchmarkId::new("Sep", size), size, |b, _| {
+            group.bench_with_input(BenchmarkId::new("Sep", size), size, |b, &_size| {
                 b.iter(|| state.factorizer.alternative_factorization());
             });
 
-            group.bench_with_input(BenchmarkId::new("Stereo", size), size, |b, _| {
+            group.bench_with_input(BenchmarkId::new("Stereo", size), size, |b, &_size| {
                 b.iter(|| state.stereoscope.factorize_stereo());
             });
         }
