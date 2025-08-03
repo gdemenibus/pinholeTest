@@ -3,33 +3,37 @@ use light_field_test::app::AppState;
 use std::{path::PathBuf, time::Duration};
 fn bench_transport(c: &mut Criterion) {
     let app = light_field_test::app::App::new(true);
-    let sizes = [256, 500, 1000, 2000, 4000, 6000];
+    let sizes = [256, 500, 1000, 2000];
+    let panel_sizes = [250, 500, 1000, 2000];
     //let sizes = [500];
     // Grab a target image from curated
     let mut state = app.state.unwrap();
     let samples = 100;
+    for panel_size in panel_sizes {
+        benchmark_transfer_1vp(c, &mut state, &sizes, samples, panel_size);
+        benchmark_transfer_1kernel(c, &mut state, &sizes, samples, panel_size);
+        benchmark_transfer_2kernel(c, &mut state, &sizes, samples, panel_size);
 
-    benchmark_transfer_1vp(c, &mut state, &sizes, samples);
-    benchmark_transfer_1kernel(c, &mut state, &sizes, samples);
-    //benchmark_transfer_2kernel(c, &mut state, &sizes, samples);
-
-    benchmark_solving_1vp(c, &mut state, &sizes, samples);
-    benchmark_solving_1kernel(c, &mut state, &sizes, samples);
-    //benchmark_solving_2kernel(c, &mut state, &sizes, samples);
+        benchmark_solving_1vp(c, &mut state, &sizes, samples, panel_size);
+        benchmark_solving_1kernel(c, &mut state, &sizes, samples, panel_size);
+        benchmark_solving_2kernel(c, &mut state, &sizes, samples, panel_size);
+    }
 }
 
 pub fn benchmark_transfer_1kernel(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
+    panel_size: usize,
     sample_size: usize,
 ) {
     {
         state.camera_history.reset();
         state.camera_history.kernel = true;
         state.camera_history.save_point();
+        let group_name = format!("Kernel Transfer, Panel: {panel_size}");
 
-        let mut group = c.benchmark_group("Kernel Transfer");
+        let mut group = c.benchmark_group(group_name);
         group.warm_up_time(Duration::from_secs(30));
 
         group.sample_size(sample_size);
@@ -59,6 +63,8 @@ pub fn benchmark_transfer_2kernel(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
+
+    panel_size: usize,
     sample_size: usize,
 ) {
     {
@@ -68,7 +74,9 @@ pub fn benchmark_transfer_2kernel(
         state.camera_history.benchmove();
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("2 Kernels Transfer");
+        let group_name = format!(" 2 Kernel Transfer, Panel: {panel_size}");
+
+        let mut group = c.benchmark_group(group_name);
 
         group.warm_up_time(Duration::from_secs(30));
         group.sample_size(sample_size);
@@ -98,13 +106,17 @@ pub fn benchmark_transfer_1vp(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
+
+    panel_size: usize,
     sample_size: usize,
 ) {
     state.camera_history.reset();
     {
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("1 View point Transfer");
+        let group_name = format!("1VP transfer, Panel: {panel_size}");
+
+        let mut group = c.benchmark_group(group_name);
 
         group.warm_up_time(Duration::from_secs(30));
         group.sample_size(sample_size);
@@ -134,6 +146,8 @@ pub fn benchmark_solving_1kernel(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
+
+    panel_size: usize,
     sample_size: usize,
 ) {
     {
@@ -141,7 +155,9 @@ pub fn benchmark_solving_1kernel(
         state.camera_history.kernel = true;
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("1 Kernel Factorize");
+        let group_name = format!("1 Kernel Factorize, Panel: {panel_size}");
+
+        let mut group = c.benchmark_group(group_name);
         group.sample_size(sample_size);
 
         group.warm_up_time(Duration::from_secs(30));
@@ -173,6 +189,8 @@ pub fn benchmark_solving_2kernel(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
+
+    panel_size: usize,
     sample_size: usize,
 ) {
     state.camera_history.reset();
@@ -181,7 +199,9 @@ pub fn benchmark_solving_2kernel(
     state.camera_history.benchmove();
     state.camera_history.save_point();
 
-    let mut group = c.benchmark_group("2 Kernel Factorize");
+    let group_name = format!("2 Kernel Factorize, Panel: {panel_size}");
+
+    let mut group = c.benchmark_group(group_name);
 
     group.sample_size(sample_size);
     group.warm_up_time(Duration::from_secs(30));
@@ -211,13 +231,17 @@ pub fn benchmark_solving_1vp(
     c: &mut Criterion,
     state: &mut AppState,
     sizes: &[u64],
+
+    panel_size: usize,
     sample_size: usize,
 ) {
     state.camera_history.reset();
     {
         state.camera_history.save_point();
 
-        let mut group = c.benchmark_group("1 View point Factorize");
+        let group_name = format!("1VP Factorize, Panel: {panel_size}");
+
+        let mut group = c.benchmark_group(group_name);
 
         group.warm_up_time(Duration::from_secs(30));
         group.sample_size(sample_size);
