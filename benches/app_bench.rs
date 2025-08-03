@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use light_field_test::app::AppState;
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 fn bench_transport(c: &mut Criterion) {
     let app = light_field_test::app::App::new(true);
     let sizes = [6000];
@@ -40,6 +40,7 @@ pub fn benchmark_transfer_1kernel(
         state.camera_history.save_point();
 
         let mut group = c.benchmark_group("Kernel Curated");
+        group.warm_up_time(Duration::from_secs(20));
 
         group.sample_size(sample_size);
         for size in sizes.iter() {
@@ -79,6 +80,7 @@ pub fn benchmark_transfer_2kernel(
 
         let mut group = c.benchmark_group("2 Kernels Curated");
 
+        group.warm_up_time(Duration::from_secs(20));
         group.sample_size(sample_size);
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
@@ -113,6 +115,8 @@ pub fn benchmark_transfer_1vp(
         state.camera_history.save_point();
 
         let mut group = c.benchmark_group("1 View point Curated");
+
+        group.warm_up_time(Duration::from_secs(20));
         group.sample_size(sample_size);
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
@@ -150,6 +154,7 @@ pub fn benchmark_solving_1kernel(
         let mut group = c.benchmark_group("1 Kernel Factorize");
         group.sample_size(sample_size);
 
+        group.warm_up_time(Duration::from_secs(20));
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
             // Load image
@@ -189,6 +194,7 @@ pub fn benchmark_solving_2kernel(
     let mut group = c.benchmark_group("2 Kernel Factorize");
 
     group.sample_size(sample_size);
+    group.warm_up_time(Duration::from_secs(20));
     for size in sizes.iter() {
         group.throughput(Throughput::Elements(*size ^ 2));
         // Load image
@@ -223,6 +229,7 @@ pub fn benchmark_solving_1vp(
 
         let mut group = c.benchmark_group("1 View point Factorize");
 
+        group.warm_up_time(Duration::from_secs(20));
         group.sample_size(sample_size);
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
