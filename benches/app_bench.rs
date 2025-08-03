@@ -3,14 +3,14 @@ use light_field_test::app::AppState;
 use std::path::PathBuf;
 fn bench_transport(c: &mut Criterion) {
     let app = light_field_test::app::App::new(true);
-    let sizes = [4000];
+    let sizes = [6000];
     //let sizes = [500];
     // Grab a target image from curated
     let mut state = app.state.unwrap();
-    let samples = 10;
+    let samples = 20;
     benchmark_transfer(c, &mut state, &sizes, samples);
     benchmark_solving(c, &mut state, &sizes, samples);
-    let sizes = [500, 1000, 2000];
+    let sizes = [256];
     let samples = 200;
     benchmark_transfer(c, &mut state, &sizes, samples);
     benchmark_solving(c, &mut state, &sizes, samples);

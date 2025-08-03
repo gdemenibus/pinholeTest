@@ -55,6 +55,7 @@ impl FilePicker {
     pub fn load_texture(&self) -> DynamicImage {
         let path = {
             let path = &self.texture_file;
+            println!("{path:?}");
 
             let file = File::open(path).unwrap();
             if file.metadata().unwrap().is_file() {
