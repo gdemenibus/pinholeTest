@@ -36,9 +36,6 @@ winit = "0.30.9"
 [[bench]]
 name = "app_bench"
 harness = false
-[[bench]]
-name = "simple_bench"
-harness = false
 
 
 [profile.release]
