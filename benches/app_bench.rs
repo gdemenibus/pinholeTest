@@ -30,7 +30,7 @@ pub fn benchmark_transfer_1kernel(
         state.camera_history.save_point();
 
         let mut group = c.benchmark_group("Kernel Transfer");
-        group.warm_up_time(Duration::from_secs(20));
+        group.warm_up_time(Duration::from_secs(30));
 
         group.sample_size(sample_size);
         for size in sizes.iter() {
@@ -70,7 +70,7 @@ pub fn benchmark_transfer_2kernel(
 
         let mut group = c.benchmark_group("2 Kernels Transfer");
 
-        group.warm_up_time(Duration::from_secs(20));
+        group.warm_up_time(Duration::from_secs(30));
         group.sample_size(sample_size);
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
@@ -106,7 +106,7 @@ pub fn benchmark_transfer_1vp(
 
         let mut group = c.benchmark_group("1 View point Transfer");
 
-        group.warm_up_time(Duration::from_secs(20));
+        group.warm_up_time(Duration::from_secs(30));
         group.sample_size(sample_size);
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
@@ -144,7 +144,7 @@ pub fn benchmark_solving_1kernel(
         let mut group = c.benchmark_group("1 Kernel Factorize");
         group.sample_size(sample_size);
 
-        group.warm_up_time(Duration::from_secs(20));
+        group.warm_up_time(Duration::from_secs(30));
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
             // Load image
@@ -184,7 +184,7 @@ pub fn benchmark_solving_2kernel(
     let mut group = c.benchmark_group("2 Kernel Factorize");
 
     group.sample_size(sample_size);
-    group.warm_up_time(Duration::from_secs(20));
+    group.warm_up_time(Duration::from_secs(30));
     for size in sizes.iter() {
         group.throughput(Throughput::Elements(*size ^ 2));
         // Load image
@@ -219,7 +219,7 @@ pub fn benchmark_solving_1vp(
 
         let mut group = c.benchmark_group("1 View point Factorize");
 
-        group.warm_up_time(Duration::from_secs(20));
+        group.warm_up_time(Duration::from_secs(30));
         group.sample_size(sample_size);
         for size in sizes.iter() {
             group.throughput(Throughput::Elements(*size ^ 2));
