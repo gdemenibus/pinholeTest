@@ -3,6 +3,7 @@ use egui::Ui;
 use faer::sparse::{SparseColMat, Triplet};
 use image::DynamicImage;
 use wgpu::{util::DeviceExt, Buffer};
+use winit::event_loop::EventLoopProxy;
 
 use crate::utils::buffer_to_sparse_triplet;
 use crate::utils::DrawUI;

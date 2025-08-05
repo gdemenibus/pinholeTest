@@ -9,8 +9,7 @@ use crate::scene::Scene;
 use crate::shape::Quad;
 use crate::stereoscope::StereoscopeBuffer;
 use crate::utils::DrawUI;
-use crate::vertex;
-use crate::FileWatcher;
+use crate::{vertex, FileWatcher};
 use crevice::std140::AsStd140;
 use egui::ahash::HashSet;
 use egui_notify::Toasts;
@@ -517,6 +516,7 @@ impl AppState {
         self.rev_proj
             .benchmark_time_total(&self.device, &self.queue, iterations)
     }
+
     fn run_benchmark(&mut self) {
         let iterations = 100;
         self.rev_proj.update_query_set(&self.device, iterations + 1);
@@ -819,15 +819,15 @@ impl App {
     }
 
     pub fn process_keyboard(&mut self, event: &KeyEvent) {
-        if !(event.state == ElementState::Pressed) || self.mouse_on_ui {
-            return;
-        }
         if let PhysicalKey::Code(code) = event.physical_key {
             if event.state.is_pressed() {
                 self.pressed_keys.insert(code);
             } else {
                 self.pressed_keys.remove(&code);
             }
+        }
+        if !(event.state == ElementState::Pressed) || self.mouse_on_ui {
+            return;
         }
         // Only check if controls have been renabled
         if self.disable_controls {
@@ -854,8 +854,10 @@ impl App {
                 }
             }
             PhysicalKey::Code(KeyCode::Digit1) => {
-                if let Some(state) = self.state.as_mut() {
-                    state.sample_both();
+                if self.pressed_keys.contains(&KeyCode::ShiftLeft) {
+                    if let Some(state) = self.state.as_mut() {
+                        state.sample_both();
+                    }
                 }
             }
             PhysicalKey::Code(KeyCode::Backslash) => {
@@ -869,6 +871,7 @@ impl App {
                 self.toasts.info("Saving image");
                 if let Some(state) = self.state.as_mut() {
                     state.headless.retrieve_image = true;
+                    self.disable_controls = true;
                 }
             }
 
@@ -884,8 +887,10 @@ impl App {
                 }
             }
             PhysicalKey::Code(KeyCode::Digit2) => {
-                if let Some(state) = self.state.as_mut() {
-                    state.run_through_curated();
+                if self.pressed_keys.contains(&KeyCode::ShiftLeft) {
+                    if let Some(state) = self.state.as_mut() {
+                        state.run_through_curated();
+                    }
                 }
             }
 
@@ -1219,6 +1224,7 @@ impl App {
             state.stereoscope.draw_ui(context, None, None);
             state.camera_history.draw_ui(context, None, None);
             state.save_manager.draw_ui(context, None, None);
+            state.headless.draw_ui(context, None, None);
 
             state.egui_renderer.as_mut().unwrap().end_frame_and_draw(
                 &state.device,
@@ -1229,16 +1235,11 @@ impl App {
                 screen_descriptor,
             );
         }
-        {
-            //state.compute_pass(&mut encoder);
-        }
 
         state.queue.submit(Some(encoder.finish()));
         surface_texture.present();
 
-        if state.headless.retrieve_image {
-            state.headless.print_image(&state.device);
-        }
+        state.headless.print_image(&state.device);
     }
 }
 

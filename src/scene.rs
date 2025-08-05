@@ -3,6 +3,7 @@ use image::{DynamicImage, GenericImageView};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use wgpu::{util::DeviceExt, BindGroupLayout, ComputePass, Queue, RenderPass};
+use winit::event_loop::EventLoopProxy;
 
 use crate::{
     camera::Camera,

@@ -10,12 +10,10 @@ use faer::{
     Col, ColRef, Mat, MatMut, MatRef, Row, RowRef,
 };
 use image::{DynamicImage, GenericImageView, ImageBuffer};
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, ParallelBridge, ParallelIterator,
-};
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use wgpu::Buffer;
 
-use crate::{CompleteMapping, MappingMatrix};
+use crate::{CompleteMapping, FileWatcher, MappingMatrix};
 
 pub fn sample_buffer(sample_buffer: &Buffer, device: &wgpu::Device) -> Vec<u8> {
     let buffer_slice = sample_buffer.slice(..);

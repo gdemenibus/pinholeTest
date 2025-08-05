@@ -1,4 +1,5 @@
-use crate::texture::Texture;
+use crate::{texture::Texture, utils::DrawUI};
+use egui::Id;
 use wgpu::Buffer;
 pub struct HeadlessImage {
     pub texture_buffer: Buffer,
@@ -6,6 +7,9 @@ pub struct HeadlessImage {
     pub width: u32,
     pub height: u32,
     pub retrieve_image: bool,
+    pub first_draw: bool,
+    pub name_inserted: bool,
+    pub save_name: String,
 }
 impl HeadlessImage {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, width: u32, height: u32) -> Self {
@@ -29,6 +33,9 @@ impl HeadlessImage {
         let output_buffer = device.create_buffer(&output_buffer_desc);
 
         HeadlessImage {
+            first_draw: false,
+            save_name: "".to_string(),
+            name_inserted: false,
             width,
             height,
             texture_buffer: output_buffer,
@@ -97,6 +104,9 @@ impl HeadlessImage {
     }
 
     pub fn print_image(&mut self, device: &wgpu::Device) {
+        if !self.name_inserted {
+            return;
+        }
         println!("Printing Screen!");
         let pixel_size: u32 = 4;
         let actual_bytes_per_row = self.width * pixel_size;
@@ -129,9 +139,62 @@ impl HeadlessImage {
             let buffer =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(self.width, self.height, pixels).unwrap();
 
-            buffer.save("test.png").unwrap();
+            buffer.save(self.save_name.clone()).unwrap();
         }
         self.texture_buffer.unmap();
         self.retrieve_image = false;
+    }
+}
+
+impl DrawUI for HeadlessImage {
+    fn draw_ui(&mut self, ctx: &egui::Context, title: Option<String>, ui: Option<&mut egui::Ui>) {
+        let _title = title.unwrap_or("Save manager".to_string());
+        let _ = ctx;
+        let _ = ui;
+        // Early exit, was not requested
+        if !self.retrieve_image {
+            self.first_draw = true;
+            self.name_inserted = false;
+            return;
+        }
+
+        egui_winit::egui::Window::new("Save Print:")
+            .resizable(false)
+            .vscroll(false)
+            .show(ctx, |ui| {
+                ui.label("Save print as:");
+
+                // Create the text field with auto focus
+                let text_edit = egui::TextEdit::singleline(&mut self.save_name)
+                    .hint_text("Image name")
+                    .id(Id::new(20))
+                    .desired_width(f32::INFINITY);
+                if !self.first_draw {
+                    ui.add(text_edit);
+                } else {
+                    ui.add(text_edit).request_focus();
+                }
+
+                // Only request focus the first frame we show the prompt
+
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        println!("Saving to file: {}", self.save_name);
+                        if !self.save_name.ends_with(".png") {
+                            self.save_name.push_str(".png");
+                        }
+
+                        self.first_draw = false;
+                        self.name_inserted = true;
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        self.retrieve_image = false;
+                        self.name_inserted = false;
+                        self.save_name.clear(); // optional
+                    }
+                });
+                self.first_draw = false;
+            });
     }
 }

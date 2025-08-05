@@ -18,6 +18,7 @@ enum HeadlessType {
     Sep,
     SepOld,
     Stereo,
+    Load,
 }
 impl std::fmt::Display for HeadlessType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -39,9 +40,9 @@ fn main() {
     let args = Commands::parse();
 
     if args.headless {
-        let mut diagonal = LFMatrices::load("Kernel.ro".to_string());
+        let mut diagonal = LFMatrices::load("2000.ro".to_string());
 
-        let stereo = StereoMatrix::load("Kernel.ro".to_string());
+        let stereo = StereoMatrix::load("2000.ro".to_string());
         let settings = LFSettings {
             debug_prints: false,
             ..Default::default()
@@ -51,6 +52,7 @@ fn main() {
                 HeadlessType::Sep => bench_sep(settings, &mut diagonal),
                 HeadlessType::SepOld => bench_old(settings, &mut diagonal),
                 HeadlessType::Stereo => bench_stereo(settings, &stereo),
+                HeadlessType::Load => (),
             }
         } else {
             #[cfg(not(target_arch = "wasm32"))]

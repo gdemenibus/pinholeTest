@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use crate::utils::DrawUI;
 use cgmath::{EuclideanSpace, Matrix4, MetricSpace, Point3, Vector2, Vector3, Vector4};
 use serde::{Deserialize, Serialize};
+use winit::event_loop::EventLoopProxy;
 
 pub trait Shape: crevice::std140::AsStd140 {
     /* Return a new shape at the position that the model matrix determined
