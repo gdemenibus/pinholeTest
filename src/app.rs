@@ -983,7 +983,7 @@ impl App {
 
     pub fn next_camera(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            state.camera_history.next_save().unwrap();
+            state.camera_history.next_save();
         }
     }
     pub fn play_animation(&mut self) {
