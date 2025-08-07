@@ -572,7 +572,6 @@ impl AppState {
         //self.stereoscope.verify_m_a(&self.device, rays_cast);
     }
     pub fn sample_stereo(&mut self) {
-        let c_t = &self.image_cache.target_image;
         let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
         let pixel_count_b = self.scene.panels[1].panel.pixel_count.yx();
 
@@ -591,6 +590,7 @@ impl AppState {
             number_of_view_points,
         );
     }
+
     pub fn sample_sep(&mut self) {
         let c_t = &self.image_cache.target_image;
         let pixel_count_a = self.scene.panels[0].panel.pixel_count.yx();
@@ -628,8 +628,6 @@ impl AppState {
     }
 
     pub fn solver_light_field(&mut self) {
-        self.compute_pass();
-
         // Y here maps to additional rows and X to additional Columns
         let images = self.factorizer.alternative_factorization();
 
@@ -1095,12 +1093,16 @@ impl App {
         state.save();
 
         if state.factorizer.will_solve() {
+            state.compute_pass();
+            state.sample_sep();
             state.solver_light_field();
             state.displaying_panel_textures = true;
             state.factorizer.has_solved();
         }
 
         if state.stereoscope.will_solve() {
+            state.compute_pass();
+            state.sample_stereo();
             state.solve_stereo();
             state.displaying_panel_textures = true;
             state.stereoscope.has_solved();

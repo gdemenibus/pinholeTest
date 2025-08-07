@@ -161,7 +161,7 @@ impl LFBuffers {
             ],
         });
         let settings = crate::LFSettings {
-            debug_prints: false,
+            debug_prints: true,
             ..Default::default()
         };
         Self {
