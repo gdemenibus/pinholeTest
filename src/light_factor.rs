@@ -410,6 +410,13 @@ impl LFBuffers {
             None
         }
     }
+    pub fn old_factorization(&self) -> Option<(DynamicImage, DynamicImage, Option<Vec<f32>>)> {
+        if let Some(rep) = &self.matrix_rep {
+            rep.old_factorize(&self.settings, &rep.stack())
+        } else {
+            None
+        }
+    }
 }
 
 impl DrawUI for LFBuffers {
