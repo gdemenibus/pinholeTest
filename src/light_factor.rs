@@ -181,6 +181,9 @@ impl LFBuffers {
     pub fn has_solved(&mut self) {
         self.settings.solve_next_redraw_flag = false;
     }
+    pub fn set_solve(&mut self) {
+        self.settings.solve_next_redraw_flag = true;
+    }
     pub fn will_solve(&self) -> bool {
         self.settings.solve_next_redraw_flag
     }

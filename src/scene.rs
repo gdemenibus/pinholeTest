@@ -263,6 +263,7 @@ impl TextureBinds {
             );
             return Err(());
         }
+
         let copy = self.target_texture.texture.as_image_copy();
 
         queue.write_texture(

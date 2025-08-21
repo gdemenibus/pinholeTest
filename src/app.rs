@@ -445,6 +445,18 @@ impl AppState {
         // Update the world first!
         self.camera_history.update_buffer(&self.queue);
 
+        self.scene.update_rt_info(
+            &self.camera_history.current_camera,
+            self.surface_config.as_ref().unwrap().height,
+            self.surface_config.as_ref().unwrap().width,
+        );
+        self.scene.update_draw(
+            &self.queue,
+            &self.camera_history.current_camera,
+            self.displaying_panel_textures,
+            self.distort_rays,
+        );
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -757,6 +769,9 @@ impl AppState {
             None
         }
     }
+    fn give_image(&mut self) -> DynamicImage {
+        self.headless.give_image(&self.device)
+    }
 }
 
 // Handles the drawing and the app logic
@@ -886,9 +901,7 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::Digit2) => {
                 if self.pressed_keys.contains(&KeyCode::ShiftLeft) {
-                    if let Some(state) = self.state.as_mut() {
-                        state.run_through_curated();
-                    }
+                    self.cycle_image_creation();
                 }
             }
 
@@ -1011,6 +1024,66 @@ impl App {
         state.update_target_texture();
 
         //self.nmf_solver.reset();
+    }
+    fn image_clean(&mut self, target: usize, panel: usize) {
+        let state = self.state.as_mut().unwrap();
+        state.displaying_panel_textures = false;
+        state.distort_rays = false;
+        let path = "./resources/beakers/Beaker2000.png".to_string();
+        let image = image::open(path.clone()).unwrap();
+        state.update_target(image);
+        state.update_target_texture();
+
+        state.headless.retrieve_image = true;
+        self.handle_redraw();
+        let out = self.state.as_mut().unwrap().give_image();
+        let outpath = format!("./resources/cycle/PerfectTarget{target}paSMMvsSMVnel{panel}.png");
+        out.save(outpath).unwrap();
+    }
+
+    fn cycle_image_creation(&mut self) {
+        for panel in [250, 500, 1000, 2000, 4000, 6000] {
+            // Load up panel
+            for target in [250, 500, 1000, 2000, 4000, 6000] {
+                let state = self.state.as_mut().unwrap();
+
+                state.scene.change_panel_res(panel);
+                // Load new target image
+                //
+                let path = format!("./resources/beakers/Beaker{target}.png");
+
+                println!("Path is: {path}");
+                let image = image::open(path.clone()).unwrap();
+                state.update_target(image);
+
+                {
+                    state.camera_history.update_buffer(&state.queue);
+                    state.compute_pass();
+                    state.sample_sep();
+                    state.solver_light_field();
+                    state.displaying_panel_textures = true;
+                    state.factorizer.has_solved();
+                }
+                //state.factorizer.set_solve();
+                // To get this to talk back to the gpu
+                state.headless.retrieve_image = true;
+                self.handle_redraw();
+
+                let out = self.state.as_mut().unwrap().give_image();
+                let outpath = format!("./resources/cycle/Target{target}Panel{panel}.png");
+                out.save(outpath).unwrap();
+
+                self.image_clean(target, panel);
+            }
+        }
+        // for panel in [250, 250, 500, 500, 1000, 1000, 2000, 2000] {
+        //     let state = self.state.as_mut().unwrap();
+        //     state.scene.change_panel_res(panel);
+        //     // Load up panel
+        //     for target in [250, 250, 500, 500, 1000, 1000, 2000, 2000] {
+        //         self.image_clean(target, panel);
+        //     }
+        // }
     }
 
     /// This is highly inefficient, as it uses the os as the between layer. We can probably do

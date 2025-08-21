@@ -1,6 +1,9 @@
 use crate::{texture::Texture, utils::DrawUI};
-use egui::Id;
-use wgpu::Buffer;
+use dssim_core::{Dssim, DssimImage};
+use egui::{Id, Image};
+use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
+use rgb::FromSlice;
+use wgpu::{core::device, Buffer};
 pub struct HeadlessImage {
     pub texture_buffer: Buffer,
     pub texture: Texture,
@@ -107,12 +110,36 @@ impl HeadlessImage {
         if !self.name_inserted {
             return;
         }
+        let image = self.give_image(device);
+        image.save(self.save_name.clone()).unwrap();
+
+        self.retrieve_image = false;
+    }
+    pub fn give_image(&mut self, device: &wgpu::Device) -> DynamicImage {
+        let raw_data = self.raw_image(device);
+        let buffer =
+            ImageBuffer::<Rgba<u8>, _>::from_raw(self.width, self.height, raw_data).unwrap();
+        DynamicImage::ImageRgba8(buffer)
+    }
+
+    pub fn get_dssim_image(&mut self, dssim: &Dssim, device: &wgpu::Device) -> DssimImage<f32> {
+        let raw_data = self.raw_image(device);
+        dssim
+            .create_image_rgba(
+                raw_data.as_rgba(),
+                self.width as usize,
+                self.height as usize,
+            )
+            .unwrap()
+    }
+
+    pub fn raw_image(&mut self, device: &wgpu::Device) -> Vec<u8> {
         println!("Printing Screen!");
         let pixel_size: u32 = 4;
         let actual_bytes_per_row = self.width * pixel_size;
         let aligned_bytes_per_row = actual_bytes_per_row.div_ceil(256) * 256;
 
-        {
+        let output = {
             let buffer_slice = self.texture_buffer.slice(..);
 
             // NOTE: We have to create the mapping THEN device.poll() before await
@@ -134,15 +161,10 @@ impl HeadlessImage {
                 let dst_range = dst_offset..(dst_offset + actual_bytes_per_row as usize);
                 pixels[dst_range].copy_from_slice(&data[src_range]);
             }
-
-            use image::{ImageBuffer, Rgba};
-            let buffer =
-                ImageBuffer::<Rgba<u8>, _>::from_raw(self.width, self.height, pixels).unwrap();
-
-            buffer.save(self.save_name.clone()).unwrap();
-        }
+            pixels
+        };
         self.texture_buffer.unmap();
-        self.retrieve_image = false;
+        output
     }
 }
 

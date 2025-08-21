@@ -505,9 +505,9 @@ impl Default for LFSettings {
             starting_values: (0.5, 0.5),
             solve_next_redraw_flag: false,
             early_stop: false,
-            filter: false,
+            filter: true,
             save_error: false,
-            debug_prints: false,
+            debug_prints: true,
             save_to: "Default".to_string(),
         }
     }
