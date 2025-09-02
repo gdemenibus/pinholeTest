@@ -637,6 +637,7 @@ impl AppState {
         self.image_cache.cache_output(true, imgs);
         self.update_panel(0);
         self.update_panel(1);
+        self.image_cache.plot_error("L2Norm.png".into(), true);
     }
 
     pub fn solver_light_field(&mut self) {
@@ -1037,7 +1038,7 @@ impl App {
         state.headless.retrieve_image = true;
         self.handle_redraw();
         let out = self.state.as_mut().unwrap().give_image();
-        let outpath = format!("./resources/cycle/PerfectTarget{target}paSMMvsSMVnel{panel}.png");
+        let outpath = format!("./resources/cycle/PerfectTarget{target}Panel{panel}.png");
         out.save(outpath).unwrap();
     }
 

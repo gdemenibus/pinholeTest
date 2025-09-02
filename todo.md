@@ -499,3 +499,7 @@ Ray tracer and write back
 Place it in the results
 Why we picked these technologies
 Read me update.
+
+
+There are crates to do this
+https://en.wikipedia.org/wiki/Structural_similarity_index_measure

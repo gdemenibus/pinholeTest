@@ -43,13 +43,18 @@ impl ImageCache {
             let root = BitMapBackend::new(&location, (640, 480)).into_drawing_area();
             root.fill(&WHITE)?;
             let mut chart = ChartBuilder::on(&root)
-                .caption("Spectral Norm over time", ("sans-serif", 50).into_font())
+                .caption("L2 Norm over Iterations", ("IBM-Plex", 50).into_font())
                 .margin(5)
                 .x_label_area_size(30)
                 .y_label_area_size(30)
                 .build_cartesian_2d(0f32..(error.len() as f32), 0.0f32..max)?;
 
-            chart.configure_mesh().draw()?;
+            chart
+                .configure_mesh()
+                .x_desc("Iterations")
+                .y_desc("L2 Norm")
+                .axis_desc_style(("IBM-Plex", 10))
+                .draw()?;
             let series = LineSeries::new((0..error.len()).map(|x| (x as f32, error[x])), &RED);
 
             chart.draw_series(series)?;
@@ -163,7 +168,7 @@ impl Save {
 
         let mut plot_core = path_core.clone();
         plot_core.push("Errors.png");
-        //let _ = cache.plot_error(plot_core);
+        let _ = cache.plot_error(plot_core, true);
 
         let mut target_image_path = path_core.clone();
         target_image_path.push("target.png");
