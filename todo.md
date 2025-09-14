@@ -210,5 +210,296 @@ square of the pixel amount of possible light rays
 
 Ray trace the scene but replace the white rays with the red rays!
 
+## WGPU Check point:
+Managed to rebuild progress on wgpu!
+What is missing? 
+System for changing uniforms. There are many uniforms that likely need to be recomputed and repased at redraw (Camera, movement)
+Passing textures
+Expand world!
+Bringing in panels 
+
+Move towards light distortion
+Bring in the textures of the monkeys
 
 
+
+
+Move Uniform binding out of main, break it up into much smaller things
+
+
+QOL features:
+These two build on the same system
+Undo/redo (stack of app states?)
+save state (to file, read from file)
+Derive macro may be the way to go
+6 degrees of motion for world
+
+Other features:
+
+
+Split matrix across work group.
+Write to Buffer. Unpacking the buffer will be another job
+Build sample matrix
+sample the world as two vecs 
+
+
+
+
+
+## Before first stage review:
+Load textures of solving
+Stick to 30 by 30 for now?
+
+Yes
+
+And get writing
+
+Increase solver to be generic on scale!
+
+Scale correctly
+
+Writing should be done
+
+GO to example that can be written by hand
+
+4 by 1
+4 by 4
+
+Right now, there is a change the buffer is full of old readings. 
+
+There is something wrong at small sizes. I suspect the data coming back is somewhat compromised
+The borders are not good
+
+Go back and build.
+
+
+## After first stage
+
+Change coloring
+Done!
+Still, some pixels are not mapped to anything, and default to zero. 
+We have the same problem as before, which is kind of annoying?
+
+Something to think about, perhaps will get better over time?
+Can we run a nearest neighbour filter to improve our ruslts?
+The nebulous blur is still there. 
+What if we default to 1?
+
+All this requires a good ui, and ideally turning things around.
+
+So to make experimentation easier:
+1) Launch the sampling from ui [X]
+2) Provide launch settings [X]
+3) Provide a load bar ~. Little hard to do, might need to ask for help
+4) Switch as soon as computation is done [X]
+
+Sparse matrix representations: [X]
+
+C_t should be kept in memory basically.
+
+But where does C_t live? How do we handle changes?
+Rn, we load C_t when solving, as the mapping is C_T agnostis. All C_t's have the same size when sampling
+
+
+Now we need to split collection and creation
+
+switch to sparse matrices, as we need easy representation. 
+
+Sum them, then divide them?
+Yep
+
+
+Need to add:
+A button for sampling
+Rexamine how to split the rest
+
+Sample
+
+
+Lock system for more things:
+
+k
+
+Experiment with average, max, different view points
+Introduce units
+
+Can you change the mapping?
+
+
+STRANGE BUG AT LOW ANGLES, THREATENS EVERYTHING?
+
+
+## Review with Ricardo:
+
+Idea: Use the matrices to determine if a value is "unused" or "black"
+Worked out very well!
+
+Design new shaders to get raycasting done
+Probably compute shader needed?
+Fix the transparency bug
+Quentin feedback on writing
+Rewrite Related work
+Reframe introduction
+Contact Proffessors
+
+Main priority:
+1) Try our approach of using mapping matrix to determine if pixel interacts
+Worked real good!
+
+2) Quentin Feedback
+Taken in and working on it
+Mostly done!
+
+3) Related work
+
+4) Start justification
+
+5) Bug fixes!
+DOne!
+CONTACT PROFFESSORS FOR FORUM
+
+
+## Meeting on the 12th
+Why not use the general solution?
+Justification is much more important
+WHy was a custom solution needed
+Look at what other's have done
+Optimizing the input to get a better output?
+
+
+Experiment once the mulitview is done
+Preprocesses
+
+Image Metrics:
+Some are based on values, some are based on perception
+SSIM, how close are two images. Perception based model
+
+
+What is the traditional method?
+
+
+
+
+
+
+
+## Todo
+
+Test out with just a texture, not with text?
+Try one pixel in target?
+Why the slow down after solving once?
+
+
+
+
+Entries are being filtered. Strange strange
+Why do we not jut get the pixel when looking at pixel of size 1. Introduction of some amount of black?
+
+
+
+## Advice for exerpiment suite
+
+Test for isolated variables for have an interesting discussion
+Exploration, more so than 
+
+Having a config file that gets turned into experiment
+
+Call with rafael on what we are seeing, and double check what 
+
+
+Test the resolution, and then talk to rafael.
+
+
+
+## Todo:
+Focus on matrix free algorithm
+Writing, need to pivot
+Discussion on 
+
+
+## Todo:
+Place something in the background (World box!)
+Discuss with Vivian the matrix free approach
+Include a discussion on why we are seeing the results
+
+Simulate Object at a distance??
+
+
+## Plan of action:
+GPU acceleration?
+
+Ricardo:
+Focus that the results are clear:
+Nice show off scenes
+Different effects
+"Text message"
+Need to wow
+
+
+## Must 
+Methodology, Experiment, Results, Discussion
+Sphere in Raytracer (1 days)
+
+Collect my results 
+Design a couple examples
+Comparisons
+Different angles
+Different parameters
+
+Programming wise:
+
+
+## Could
+Expirment kernel size and kernel layout
+Matrix-free 
+Show the VR Render?
+
+## Should
+
+
+
+## When are we doing the defence:
+
+### Invite
+Good days for Marco:
+September 18th, anytime
+Tuesdau 23rd, afternoon
+
+Good days for Petr:
+Thursday 18th taken from 1-2 (morning )
+Tuesday 23rd completely free
+
+Once I have the date, I book the room
+Meeting room next door would also be good, can be done later
+Need to be set up
+2.5h should be good 
+
+Ricardo advice for writing:
+Keep it short (50 pages)
+No idea what you are talking about, but don't want to explain everything
+Motivation and Discussion is what maters most.
+Document disucssio
+"this was our first direction, but we noticed this and this"
+This is what is looked for 
+what went wrong
+Non negative matrix factorization.
+Make the story clear.
+
+Add thanks to rafael 
+and the library authors
+
+One more thing:
+Next meeting is the greenlight
+Send it as soon as possible
+
+Go over in thesis.
+Implementation details.
+Two paragraph
+Ray tracer and write back
+Place it in the results
+Why we picked these technologies
+Read me update.
+
+
+There are crates to do this
+https://en.wikipedia.org/wiki/Structural_similarity_index_measure

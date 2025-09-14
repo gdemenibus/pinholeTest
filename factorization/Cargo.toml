@@ -1,0 +1,22 @@
+[package]
+name = "factorization"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bincode = { version = "2.0.1", features = ["serde"] }
+criterion = "0.6.0"
+faer = {version = "0.22.6", features =["perf-warn", "rayon", "std", "serde"]}
+
+image = {version = "0.25.5", features= ["jpeg", "png", "rayon", "serde"]}
+
+indicatif = "0.17.11"
+serde = { version = "1.0.219", features = ["std", "derive"] }
+
+
+[profile.dev.package.faer]
+opt-level = 3
+
+[[bench]]
+name = "simple_bench"
+harness = false

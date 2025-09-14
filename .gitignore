@@ -23,4 +23,9 @@ Cargo.lock
 /target
 
 perf.data
+perf.data.old
 flamegraph.svg
+
+resources/panel_compute/
+
+# DO not include 

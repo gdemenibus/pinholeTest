@@ -6,4 +6,4 @@ Ensure you have rust installed.
 [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
 
 ## How to run?
-```cargo run```
+```cargo run -r```
