@@ -1,6 +1,7 @@
 use crate::camera::CameraHistory;
 use crate::compute_pass::ReverseProj;
 use crate::egui_tools::EguiRenderer;
+use crate::gif::GifPlayer;
 use crate::headless::HeadlessImage;
 use crate::light_factor::LFBuffers;
 use crate::raytracer::RayTraceInfo;
@@ -15,9 +16,10 @@ use egui::ahash::HashSet;
 use egui_notify::Toasts;
 use egui_wgpu::wgpu::SurfaceError;
 use egui_wgpu::{wgpu, ScreenDescriptor};
-use image::{DynamicImage, GenericImageView};
+use image::codecs::gif::GifDecoder;
+use image::{AnimationDecoder, DynamicImage, GenericImageView};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -53,6 +55,7 @@ pub struct AppState {
     displaying_panel_textures: bool,
     distort_rays: bool,
     pub headless: HeadlessImage,
+    pub gif: GifPlayer,
 }
 
 impl AppState {
@@ -267,6 +270,7 @@ impl AppState {
             rev_proj,
             camera_history,
             headless,
+            gif: GifPlayer::create(Vec::new()),
         }
     }
     async fn request_adapter(instance: &wgpu::Instance) -> Adapter {
@@ -355,6 +359,7 @@ impl AppState {
             rev_proj,
             camera_history,
             headless,
+            gif: GifPlayer::create(Vec::new()),
         }
     }
 
@@ -441,6 +446,44 @@ impl AppState {
             self.render_pipe = Some(render_pipe);
         }
     }
+    // Should be done in 2 steps
+    // Load gif, sample and produce output images
+    // Once cache is loaded, cycle through
+    pub fn load_sample_gif(&mut self) {
+        let path = "./resources/Clock.gif";
+
+        println!("Detected GIF");
+
+        let file_in = BufReader::new(File::open(path).unwrap());
+        let decoder = GifDecoder::new(file_in).unwrap();
+        let frames = decoder.into_frames().collect_frames().unwrap();
+        let target = DynamicImage::from(frames[10].clone().into_buffer());
+
+        self.update_target(target);
+        self.compute_pass();
+        self.sample_sep();
+
+        //self.factorizer.debug_on();
+        //
+        let values = frames.iter().map(|frame| {
+            let target = DynamicImage::from(frame.clone().into_buffer());
+            self.factorizer.update_target(&target);
+
+            let image = self.factorizer.alternative_factorization().unwrap();
+            (image.0, image.1)
+        });
+        self.gif = GifPlayer::create(values.collect());
+        //self.factorizer.debug_off();
+    }
+
+    pub fn play_gif(&mut self) {
+        if self.gif.animate_gif(&mut self.image_cache).is_some() {
+            self.update_panel(0);
+            self.update_panel(1);
+            self.displaying_panel_textures = true;
+        }
+    }
+
     pub fn compute_pass(&mut self) {
         // Update the world first!
         self.camera_history.update_buffer(&self.queue);
@@ -637,7 +680,7 @@ impl AppState {
         self.image_cache.cache_output(true, imgs);
         self.update_panel(0);
         self.update_panel(1);
-        self.image_cache.plot_error("L2Norm.png".into(), true);
+        let _ = self.image_cache.plot_error("L2Norm.png".into(), true);
     }
 
     pub fn solver_light_field(&mut self) {
@@ -708,7 +751,7 @@ impl AppState {
         self.surface
             .as_ref()
             .unwrap()
-            .configure(&self.device, &self.surface_config.as_ref().unwrap());
+            .configure(&self.device, self.surface_config.as_ref().unwrap());
         self.headless
             .handle_resize(width, height, &self.device, &self.queue);
     }
@@ -871,6 +914,14 @@ impl App {
                 if self.pressed_keys.contains(&KeyCode::ShiftLeft) {
                     if let Some(state) = self.state.as_mut() {
                         state.sample_both();
+                    }
+                }
+            }
+
+            PhysicalKey::Code(KeyCode::KeyG) => {
+                if self.pressed_keys.contains(&KeyCode::ShiftLeft) {
+                    if let Some(state) = self.state.as_mut() {
+                        state.load_sample_gif();
                     }
                 }
             }
@@ -1165,6 +1216,7 @@ impl App {
 
         let state = self.state.as_mut().unwrap();
         state.save();
+        state.play_gif();
 
         if state.factorizer.will_solve() {
             state.compute_pass();
@@ -1301,6 +1353,7 @@ impl App {
             state.camera_history.draw_ui(context, None, None);
             state.save_manager.draw_ui(context, None, None);
             state.headless.draw_ui(context, None, None);
+            state.gif.draw_ui(context, None, None);
 
             state.egui_renderer.as_mut().unwrap().end_frame_and_draw(
                 &state.device,

@@ -18,7 +18,7 @@ pub struct LFBuffers {
     m_t_x_buffer: Buffer,
     m_t_y_buffer: Buffer,
 
-    matrix_rep: Option<LFMatrices>,
+    pub matrix_rep: Option<LFMatrices>,
 
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
@@ -177,6 +177,11 @@ impl LFBuffers {
             settings,
         }
     }
+    pub fn update_target(&mut self, image: &DynamicImage) {
+        if self.matrix_rep.is_some() {
+            self.matrix_rep.as_mut().unwrap().c_t = image.clone();
+        }
+    }
 
     pub fn has_solved(&mut self) {
         self.settings.solve_next_redraw_flag = false;
@@ -186,6 +191,12 @@ impl LFBuffers {
     }
     pub fn will_solve(&self) -> bool {
         self.settings.solve_next_redraw_flag
+    }
+    pub fn debug_on(&mut self) {
+        self.settings.debug_prints = true;
+    }
+    pub fn debug_off(&mut self) {
+        self.settings.debug_prints = false;
     }
 
     pub fn build_sparse_matrix(

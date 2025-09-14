@@ -1,18 +1,20 @@
 use std::{
     fs::File,
+    io::BufReader,
     path::{Path, PathBuf},
 };
 
-use crate::utils::DrawUI;
+use crate::{save::ImageCache, utils::DrawUI};
 use egui::{Context, Ui};
 use egui_file::FileDialog;
-use image::DynamicImage;
+use image::{codecs::gif::GifDecoder, AnimationDecoder, DynamicImage, Frame};
 
 pub struct FilePicker {
     pub texture_file: PathBuf,
     pub file_dialog: FileDialog,
     pub change_file: bool,
     pub default_texture: PathBuf,
+    pub gif: Option<GifAnimation>,
 }
 impl Clone for FilePicker {
     fn clone(&self) -> Self {
@@ -21,6 +23,7 @@ impl Clone for FilePicker {
             file_dialog: FileDialog::open_file(Some(self.texture_file.clone())),
             change_file: self.change_file,
             default_texture: self.default_texture.clone(),
+            gif: None,
         }
     }
 }
@@ -36,6 +39,7 @@ impl FilePicker {
             file_dialog,
             change_file: false,
             default_texture,
+            gif: None,
         }
     }
     pub fn button(&mut self, ctx: &Context, ui: &mut egui::Ui) {
@@ -69,7 +73,6 @@ impl FilePicker {
                 self.default_texture()
             }
         };
-
         image::ImageReader::open(path).unwrap().decode().unwrap()
     }
 }
@@ -84,6 +87,7 @@ impl Default for FilePicker {
             file_dialog,
             change_file: false,
             default_texture: Default::default(),
+            gif: None,
         }
     }
 }
@@ -107,4 +111,8 @@ impl DrawUI for FilePicker {
                 }
             });
     }
+}
+struct GifAnimation {
+    frames: Vec<Frame>,
+    cache: Vec<ImageCache>,
 }

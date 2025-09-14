@@ -3,6 +3,7 @@ mod camera;
 mod compute_pass;
 mod egui_tools;
 mod file_picker;
+mod gif;
 mod headless;
 mod light_factor;
 mod raytracer;
