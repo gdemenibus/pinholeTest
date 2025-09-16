@@ -457,7 +457,7 @@ impl AppState {
         let file_in = BufReader::new(File::open(path).unwrap());
         let decoder = GifDecoder::new(file_in).unwrap();
         let frames = decoder.into_frames().collect_frames().unwrap();
-        let target = DynamicImage::from(frames[10].clone().into_buffer());
+        let target = DynamicImage::from(frames[0].clone().into_buffer());
 
         self.update_target(target);
         self.compute_pass();
@@ -465,13 +465,19 @@ impl AppState {
 
         //self.factorizer.debug_on();
         //
-        let values = frames.iter().map(|frame| {
-            let target = DynamicImage::from(frame.clone().into_buffer());
-            self.factorizer.update_target(&target);
+        let values = frames[0..10]
+            .iter()
+            .map(|frame| {
+                let target = DynamicImage::from(frame.clone().into_buffer());
+                self.factorizer.update_target(&target);
 
-            let image = self.factorizer.alternative_factorization().unwrap();
-            (image.0, image.1)
-        });
+                self.factorizer
+                    .alternative_factorization()
+                    .map(|im| (im.0, im.1))
+            })
+            .take_while(Option::is_some)
+            .map(|x| x.unwrap());
+
         self.gif = GifPlayer::create(values.collect());
         //self.factorizer.debug_off();
     }

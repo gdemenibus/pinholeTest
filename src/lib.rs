@@ -566,6 +566,9 @@ impl Lff for LFMatrices {
         faer::set_global_parallelism(faer::Par::Rayon(NonZero::new(10).unwrap()));
         let target_size = self.target_size;
         let number_of_view_points = self.number_of_view_points;
+        if number_of_view_points == 0 {
+            return None;
+        }
         let c_t = &self.c_t;
         if settings.debug_prints {
             println!(

@@ -7,7 +7,7 @@ use image::DynamicImage;
 pub struct GifPlayer {
     gif: Vec<(DynamicImage, DynamicImage)>,
     pub animation_duration: f32,
-
+    pub frames: Option<usize>,
     pub animate: bool,
     pub animation_start: Option<Instant>,
 }
@@ -19,6 +19,7 @@ impl GifPlayer {
             animation_duration: 0.5,
             animation_start: None,
             animate: false,
+            frames: None,
         }
     }
     pub fn start_animation(&mut self) {
@@ -61,6 +62,19 @@ impl DrawUI for GifPlayer {
                         self.animation_start = None;
                     }
                 }
+
+                if ui.button("Select Specific frames").clicked() {
+                    if self.frames.is_some() {
+                        self.frames = None;
+                    } else {
+                        self.frames = Some(self.gif.len());
+                    }
+                }
+                ui.label("Frame Selection");
+                ui.add_enabled(
+                    self.frames.is_some(),
+                    egui::Slider::new(self.frames.as_mut().unwrap_or(&mut 0), 0..=self.gif.len()),
+                );
             });
     }
 }
