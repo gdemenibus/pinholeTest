@@ -12,8 +12,8 @@ This approach improves sampling time massively, and compute time when a kernel i
 ## Graphs:
 Sep is our method; Stereo is state of the art.
 
-![Ray casting time](/Results/Ray Casting.png)
-![Total Time spent](/Results/Time Spent.png)
+![Ray casting time](Results/Ray Casting.png)
+![Total Time spent](Results/Time Spent.png)
 
 
 
