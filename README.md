@@ -12,18 +12,18 @@ This approach improves sampling time massively, and compute time when a kernel i
 ## Graphs:
 Sep is our method; Stereo is state of the art.
 
-![Ray casting time](Results/Ray Casting.png)
-![Total Time spent](Results/Time Spent.png)
+![Ray casting time](Results/Ray%20Casting.png)
+![Total Time spent](Results/Time%20Spent.png)
 
 
 
 
 ## Images Produced:
 Target Image:
-![Target 2D content](/pics/No kernel.png)
-![What an observer would see with our kernel](/pics/Kernel View Far.png)
+![Target 2D content](/pics/No%20kernel.png)
+![What an observer would see with our kernel](/pics/Kernel%20View%20Far.png)
 ![Target](/pics/Kernel View Far.png)
-![How the content gets split across both panels](/pics/Close Up to Kernel.png)
+![How the content gets split across both panels](/pics/Close%20Up%20to%20Kernel.png)
 
 
 ## Simulation
